@@ -31,6 +31,19 @@ TRACE의 부스 Jetson 앱·학습 데이터 촬영 도구 레포입니다. 담�
 Python 3.10(Jetson JetPack 6, CI는 3.12로 검사), OpenCV + v4l2-ctl 고정 설정(C920 2대), 업로드는 사전 서명 URL(requests) 또는 boto3(trace-raw), 실패분은 로컬 큐에 두고 재시도. 탐지는 TensorRT FP16 엔진(Jetson에서 빌드). 코드 값은 contracts codes.yaml 0.2.0. 테스트는 pytest + 가짜 카메라. ruff 통과.
 ```
 
+## 팀 운영 (모든 세션)
+
+- **세션을 시작하면 먼저 `/trace-standup start`, 끝내기 전에 `/trace-standup end`.** 보드와 어제·오늘 기록을 읽고, 오늘 할 일·한 일·남은 것·막힌 것을 GAKDO/docs `team/`에 적는다.
+- 세션에 이 레포와 함께 **GAKDO/docs를 연결**하면 바로 읽고 쓸 수 있다.
+- 남은 작업은 `team/board.md`, 코드 컨벤션 전체는 `team/conventions.md`. 아래는 이 레포에 해당하는 요약이다.
+
+## 코드 컨벤션 요약
+
+- `src/<패키지>/`, 테스트는 `tests/`. 외부 명령·장치·네트워크는 함수 하나로 감싸 테스트에서 바꿔 끼움.
+- ruff 통과, 타입 힌트 필수, 데이터는 dataclass. 읽지 못한 값은 `None` + 사유.
+- booth는 Jetson(Python 3.10)에서도 돌아야 함(3.11 이후 문법 금지).
+- 커밋 `<종류>(<범위>): <내용>`, PR 하나 = 백로그 기능 하나(코드 400줄 넘으면 나눔), PR 본문에 백로그 ID·요구사항 ID·테스트 방법.
+
 ## 꼭 지킬 것
 
 - 계약(API·이벤트·진단 JSON·코드 값)을 바꿔야 하면 코드를 고치지 말고 멈추고 사람에게 알린다.
