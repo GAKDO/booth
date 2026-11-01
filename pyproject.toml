@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "booth"
 version = "0.1.0"
 description = "TRACE booth: 부스 Jetson 앱(촬영·조명 전환·TensorRT 탐지)과 학습 데이터 촬영 도구"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
@@ -22,5 +22,6 @@ where = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
+extend-exclude = [".specify", ".claude"]
 line-length = 120
-target-version = "py311"
+target-version = "py310"
