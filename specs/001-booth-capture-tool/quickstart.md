@@ -23,8 +23,8 @@ export TRACE_BOOTH_DATA_DIR=~/trace-booth-data
 export TRACE_BOOTH_CAM1=<앞 카메라 경로>
 export TRACE_BOOTH_CAM2=<뒤 카메라 경로>
 export TRACE_BOOTH_PRESETS=~/trace-booth-presets.json   # 조명별 노출·WB·초점(부스 설정 날 실측)
-export MINIO_ENDPOINT=https://storage.java21.net   # gitops infra.env와 같은 이름
-export MINIO_ACCESS_KEY=...  MINIO_SECRET_KEY=...       # 값은 trace-secrets, 채팅·코드에 쓰지 않음
+export MINIO_ENDPOINT=http://storage.java21.net:8000   # S3 API(https://storage.java21.net/은 웹 화면이라 업로드 안 됨)
+# MINIO_ACCESS_KEY·MINIO_SECRET_KEY는 trace-capture 키. capture/README.md의 키 파일 방법으로 넣고 채팅·코드에 쓰지 않음
 export TRACE_RAW_BUCKET=trace-raw                     # 기본값
 # 출고·반납 모드(CA1 배포 뒤). 없으면 학습 데이터 모드만 켜진다
 export TRACE_API_URL=https://<gateway 주소>
