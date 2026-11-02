@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from . import __version__
@@ -13,6 +14,8 @@ from .camera_presets import Presets
 from .capture_client import BoothAuth, CaptureClient
 from .checkout import submit_session
 from .codes import Camera
+from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
+from .detect.runner import detect_set
 from .session import CaptureService, _now
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
@@ -110,6 +113,42 @@ def retry() -> int:
     return 1 if failed else 0
 
 
+NFR_DETECT_SECONDS = 30
+
+
+def _imread(path: str) -> object:
+    import cv2
+
+    return cv2.imread(path, cv2.IMREAD_COLOR)
+
+
+def detect(session_public_id: str, engine: str | None, make_detector: Callable[[Path], Detector] | None = None,
+           load: Callable[[str], object] = _imread) -> int:
+    """찍은 세션 하나의 면 사진을 탐지해 로컬에 JSON으로 남긴다(BO2). 원본 사진은 읽기만 한다."""
+    import json
+
+    data_dir = _data_dir()
+    store = Store(data_dir / "booth.db")
+    session = store.find_session(session_public_id)
+    if session is None:
+        raise SystemExit(f"세션이 없어요: {session_public_id}")
+    engine_path = Path(engine or _env("TRACE_BOOTH_ENGINE")).expanduser()
+    try:
+        info = ModelInfo.load(engine_path.parent / "model.json")
+        detector = (make_detector or UltralyticsDetector)(engine_path)
+    except DetectError as e:
+        raise SystemExit(f"탐지를 시작할 수 없어요: {e}") from e
+    result = detect_set(store.shots(session.id), detector, info, load)
+    out = data_dir / session.device_id / "detections" / f"{session.public_id}_{info.model_version}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"사진 {len(result.photos)}장, 흠집 {result.count}개, {result.seconds}초 → {out}")
+    if result.seconds > NFR_DETECT_SECONDS:
+        print(f"경고: 한 세트 {NFR_DETECT_SECONDS}초를 넘었어요")
+        return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="trace-booth")
     parser.add_argument("--version", action="store_true", help="버전만 출력")
@@ -121,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
     p_shots.add_argument("--device", required=True)
     p_shots.add_argument("--verify", action="store_true", help="저장소 해시와 비교")
     sub.add_parser("retry", help="올리지 못한 사진을 지금 올린다")
+    p_detect = sub.add_parser("detect", help="세션 하나의 면 사진을 탐지해 로컬 JSON으로 남긴다(Jetson)")
+    p_detect.add_argument("--session", required=True, help="세션 publicId(운영 화면의 sessionId)")
+    p_detect.add_argument("--engine", help="TensorRT 엔진(.engine). 같은 폴더에 model.json. 기본 TRACE_BOOTH_ENGINE")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "serve":
         return serve(args.host, args.port)
@@ -128,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         return shots(args.device, args.verify)
     if args.command == "retry":
         return retry()
+    if args.command == "detect":
+        return detect(args.session, args.engine)
     print(f"trace-booth {__version__}")
     return 0
 

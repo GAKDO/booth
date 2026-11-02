@@ -120,6 +120,10 @@ class Store:
             raise KeyError(session_id)
         return SessionRecord(**dict(row))
 
+    def find_session(self, public_id: str) -> SessionRecord | None:
+        row = self._one("SELECT * FROM session WHERE public_id = ?", (public_id,))
+        return SessionRecord(**dict(row)) if row else None
+
     def update_session(self, session_id: int, **values: object) -> None:
         allowed = {"current_step", "scr1_skip_reason", "status", "completed_at"}
         if not values or set(values) - allowed:

@@ -26,9 +26,19 @@ def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, floa
     return inter / union if union > 0 else 0.0
 
 
+def overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """작은 상자 넓이 대비 겹친 넓이. 타일 끝에 조금만 걸려 잘린 조각도 같은 흠집으로 본다."""
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return ix * iy / smaller if smaller > 0 else 0.0
+
+
 def dedupe(found: list[Found], threshold: float = 0.5) -> list[Found]:
+    """같은 클래스에서 IoU 또는 작은 상자 기준 겹침이 threshold 이상이면 신뢰도 높은 것만 남긴다."""
     kept: list[Found] = []
     for f in sorted(found, key=lambda x: x.confidence, reverse=True):
-        if all(k.defect_class != f.defect_class or iou(k.box, f.box) < threshold for k in kept):
+        if all(k.defect_class != f.defect_class or max(iou(k.box, f.box), overlap(k.box, f.box)) < threshold
+               for k in kept):
             kept.append(f)
     return kept
