@@ -22,7 +22,11 @@ trace-booth --version
 
 학교 와이파이는 pypi.org·files.pythonhosted.org를 막는다(github.com·ports.ubuntu.com은 열림). 이때는 우분투 패키지와 GitHub 소스를 홈 폴더에 풀어 쓴다. sudo가 필요 없다.
 
-먼저 `python3 -m venv --help`가 되는지 본다. `python3-venv`(ensurepip)가 없으면 venv를 만들 수 없으므로 관리자에게 `sudo apt install python3-venv`를 한 번 부탁한다(jetson2에는 이미 있었다).
+먼저 임시 폴더에 venv를 실제로 만들어 본다. `python3-venv`(ensurepip)가 없으면 여기서 실패하므로 관리자에게 `sudo apt install python3-venv`를 한 번 부탁한다(jetson2에는 이미 있었다).
+
+```bash
+t=$(mktemp -d); python3 -m venv --system-site-packages "$t/v" && echo venv OK; rm -rf "$t"
+```
 
 ```bash
 # v4l2-ctl과 필요한 런타임 라이브러리를 홈에 푼다
@@ -53,7 +57,12 @@ echo "$HOME/.local/pydeb/usr/lib/python3/dist-packages" > "$SP/trace-debs.pth"
 ~/trace-venv/bin/trace-booth --version
 ```
 
-도구는 `v4l2-ctl`을 PATH에서 찾으므로 `export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"`를 `~/.bashrc`에 넣는다.
+도구는 `v4l2-ctl`을 PATH에서 찾으므로 지금 셸에 적용하고 `~/.bashrc`에도 넣는다.
+
+```bash
+export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"
+grep -qF 'trace-venv/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"' >> ~/.bashrc
+```
 
 카메라 장치(`/dev/video*`)를 열려면 계정이 `video` 그룹에 있어야 한다(`id`로 확인). 없으면 관리자에게 `sudo usermod -aG video <계정>`을 부탁하고 다시 로그인한다.
 
