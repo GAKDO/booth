@@ -10,9 +10,11 @@ requires-python = ">=3.10"
 dependencies = ["nanoid>=2.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "boto3>=1.34"]
+dev = ["pytest>=8", "ruff>=0.6", "boto3>=1.34", "numpy>=1.24"]
 # Jetson은 JetPack의 시스템 OpenCV를 쓰므로 런타임 필수 의존성으로 두지 않는다
 camera = ["opencv-python-headless>=4.8"]
+# BO2 탐지: Jetson에서만. TensorRT 엔진은 Jetson에서 빌드한다
+detect = ["numpy>=1.24", "ultralytics>=8.3"]
 upload = ["boto3>=1.34"]
 
 [project.scripts]
