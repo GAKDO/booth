@@ -7,7 +7,7 @@
 ## 1. 설치
 
 ```bash
-sudo apt install -y v4l-utils          # v4l2-ctl. sudo 권한이 있는 관리자 계정으로
+sudo apt install -y v4l-utils python3-venv   # v4l2-ctl과 venv. sudo 권한이 있는 관리자 계정으로
 git clone https://github.com/GAKDO/booth.git ~/booth
 # 우분투 24.04 계열은 시스템 파이썬에 pip 설치를 막는다(externally-managed-environment). 가상환경을 쓴다.
 # --system-site-packages: JetPack에 들어 있는 OpenCV를 그대로 쓴다
@@ -21,6 +21,8 @@ trace-booth --version
 ### sudo가 없거나 pypi가 막힌 망에서 (11/2 jetson2에서 확인)
 
 학교 와이파이는 pypi.org·files.pythonhosted.org를 막는다(github.com·ports.ubuntu.com은 열림). 이때는 우분투 패키지와 GitHub 소스를 홈 폴더에 풀어 쓴다. sudo가 필요 없다.
+
+먼저 `python3 -m venv --help`가 되는지 본다. `python3-venv`(ensurepip)가 없으면 venv를 만들 수 없으므로 관리자에게 `sudo apt install python3-venv`를 한 번 부탁한다(jetson2에는 이미 있었다).
 
 ```bash
 # v4l2-ctl: 시스템에 없는 패키지만 받아 홈에 푼다
@@ -36,6 +38,8 @@ chmod +x ~/.local/bin/v4l2-ctl && ~/.local/bin/v4l2-ctl --version
 # boto3는 우분투 패키지, nanoid는 GitHub 소스
 mkdir -p ~/.local/py-debs ~/.local/src && cd ~/.local/py-debs
 apt download python3-boto3 python3-botocore python3-jmespath python3-s3transfer
+# botocore가 쓰는 python3-dateutil·python3-urllib3·python3-six는 보통 이미 있다. 없으면 같은 줄에 더해 받는다:
+#   python3 -c "import dateutil, urllib3, six"
 for d in *.deb; do dpkg -x "$d" ~/.local/pydeb; done
 git clone https://github.com/puyuan/py-nanoid.git ~/.local/src/py-nanoid
 
@@ -43,7 +47,9 @@ python3 -m venv --system-site-packages ~/trace-venv
 SP=$(~/trace-venv/bin/python -c "import site; print(site.getsitepackages()[0])")
 echo "$HOME/.local/pydeb/usr/lib/python3/dist-packages" > "$SP/trace-debs.pth"
 ~/trace-venv/bin/pip install --no-index --no-build-isolation --no-deps ~/.local/src/py-nanoid
-~/trace-venv/bin/pip install --no-index --no-build-isolation --no-deps -e ~/booth   # 시스템 setuptools 68로 빌드
+# --no-build-isolation이라 venv에 보이는 시스템 setuptools로 빌드한다. pyproject는 >=69를 적었지만
+# jetson2의 시스템 setuptools 68.1.2로 빌드·설치되는 것을 확인했다(pip가 버전 경고만 낼 수 있음).
+~/trace-venv/bin/pip install --no-index --no-build-isolation --no-deps -e ~/booth
 ~/trace-venv/bin/trace-booth --version
 ```
 
@@ -57,14 +63,15 @@ echo "$HOME/.local/pydeb/usr/lib/python3/dist-packages" > "$SP/trace-debs.pth"
 
 - [ ] **① 두 대가 보인다:** `v4l2-ctl --list-devices`에 C920이 두 번 나온다. 안 나오면 한 대씩 꽂아 보고 다른 USB 포트로 옮긴다.
 - [ ] **② 고정 경로를 찾았다:** `ls -l /dev/v4l/by-id/`에서 각 카메라의 `...-video-index0` 경로를 적는다. `/dev/videoN` 번호는 재부팅하면 바뀌므로 쓰지 않는다.
+  - C920은 by-id 이름에 시리얼이 없다(`usb-046d_HD_Pro_Webcam_C920-video-index0`, 11/2 jetson2에서 확인). 두 대를 같이 꽂으면 이름이 겹치므로 `ls -l /dev/v4l/by-path/`의 USB 포트 경로(`...-usb-0:2.3:1.0-video-index0` 꼴)를 쓰고, 카메라마다 꽂는 포트를 정해 둔다.
 - [ ] **③ 앞뒤를 정했다:** 한 대만 손으로 가리고 `v4l2-ctl -d <경로> --stream-mmap --stream-count=1 --stream-to=/tmp/x.jpg`로 찍어 보며 어느 경로가 CAM1(앞)·CAM2(뒤)인지 정한다. 카메라 몸체에 마스킹 테이프로 CAM1·CAM2를 적는다.
 - [ ] **④ 해상도가 된다:** `v4l2-ctl -d <경로> --list-formats-ext`에 MJPG 1920x1080이 있다.
 - [ ] **⑤ 수동 조절이 된다:** `v4l2-ctl -d <경로> --list-ctrls`에 노출·화이트밸런스·초점 컨트롤이 있다. 커널 버전마다 이름이 다르므로 아래 3장의 이름을 여기에 나온 이름으로 바꿔 쓴다.
 - [ ] **⑥ 도구가 찍는다:** 아래처럼 띄우고 태블릿에서 `http://<jetson 주소>:8320`을 열어 기기 ID `REG01`로 SLATE와 TOP·L1을 찍는다. 미리보기 두 장이 나오고 `~/trace-booth-data/REG01/`에 파일이 생긴다.
 
 ```bash
-export TRACE_BOOTH_CAM1=/dev/v4l/by-id/<CAM1 경로>
-export TRACE_BOOTH_CAM2=/dev/v4l/by-id/<CAM2 경로>
+export TRACE_BOOTH_CAM1=<CAM1 경로>   # ②에서 적은 by-id 또는 by-path 경로
+export TRACE_BOOTH_CAM2=<CAM2 경로>
 trace-booth serve --port 8320
 ```
 
