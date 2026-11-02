@@ -104,7 +104,7 @@ description: "BO1 촬영 도구 작업 목록"
 ## Phase 6: 마무리
 
 - [ ] T036 [P] `README.md`: 실행 방법·환경 변수 갱신
-- [ ] T037 [P] `capture/README.md`: Jetson에 C920 연결 확인, `/dev/v4l/by-id` 찾기, 조명별 노출·WB·초점 측정과 프리셋 파일 만들기
+- [x] T037 [P] `capture/README.md`: Jetson에 C920 연결 확인, `/dev/v4l/by-id` 찾기, 조명별 노출·WB·초점 측정과 프리셋 파일 만들기
 - [ ] T038 `ruff check . && pytest -q`, `scripts/check-no-secrets.sh` 통과
 - [ ] T039 Jetson에서 quickstart.md 절차대로 REG01 한 바퀴(랜선 뽑기 포함)
 
