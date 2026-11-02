@@ -3,7 +3,7 @@
 ## 개발 PC (카메라 없이)
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]"          # Jetson: pip install -e ".[upload]" (OpenCV는 시스템 것)
 ruff check . && pytest -q
 ```
 
@@ -23,7 +23,9 @@ export TRACE_BOOTH_DATA_DIR=~/trace-booth-data
 export TRACE_BOOTH_CAM1=/dev/v4l/by-id/<앞 카메라>
 export TRACE_BOOTH_CAM2=/dev/v4l/by-id/<뒤 카메라>
 export TRACE_BOOTH_PRESETS=~/trace-booth-presets.json   # 조명별 노출·WB·초점(부스 설정 날 실측)
-export TRACE_MINIO_ENDPOINT=...  TRACE_MINIO_ACCESS_KEY=...  TRACE_MINIO_SECRET_KEY=...   # 값은 trace-secrets
+export MINIO_ENDPOINT=https://storage.java21.net   # gitops infra.env와 같은 이름
+export MINIO_ACCESS_KEY=...  MINIO_SECRET_KEY=...       # 값은 trace-secrets, 채팅·코드에 쓰지 않음
+export TRACE_RAW_BUCKET=trace-raw                     # 기본값
 trace-booth serve --port 8320
 ```
 

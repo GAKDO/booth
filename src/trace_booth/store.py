@@ -138,6 +138,33 @@ class Store:
         row = self._one("SELECT * FROM shot WHERE id = ?", (shot_id,))
         return ShotRecord(**dict(row)) if row else None
 
+    def pending_uploads(self, limit: int = 20) -> list[ShotRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM shot WHERE upload_status IN ('PENDING', 'FAILED') ORDER BY captured_at, rowid LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [ShotRecord(**dict(r)) for r in rows]
+
+    def mark_upload(self, shot_id: str, status: str, now: str, error: str | None = None) -> None:
+        if status not in ("UPLOADED", "FAILED", "CONFLICT"):
+            raise ValueError(status)
+        with self._lock:
+            self._conn.execute(
+                "UPDATE shot SET upload_status = ?, upload_attempts = upload_attempts + 1, last_error = ?, "
+                "uploaded_at = CASE WHEN ? = 'UPLOADED' THEN ? ELSE uploaded_at END WHERE id = ?",
+                (status, error, status, now, shot_id),
+            )
+
+    def shots_for_device(self, device_id: str) -> list[ShotRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.* FROM shot s JOIN session e ON e.id = s.session_id WHERE e.device_id = ? "
+                "ORDER BY s.captured_at, s.rowid",
+                (device_id,),
+            ).fetchall()
+        return [ShotRecord(**dict(r)) for r in rows]
+
     def upload_counts(self) -> dict[str, int]:
         with self._lock:
             rows = self._conn.execute("SELECT upload_status, COUNT(*) AS n FROM shot GROUP BY upload_status").fetchall()
