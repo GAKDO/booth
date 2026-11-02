@@ -34,3 +34,6 @@ class Camera(str, Enum):
 
 # capture.face_required.BOOTH: 세트 완료에 꼭 있어야 하는 면. SCR1은 선택(건너뛰면 사유)
 FACE_REQUIRED_BOOTH = (Face.TOP, Face.BOT, Face.SF, Face.SB, Face.SL, Face.SR, Face.KB, Face.SCR0)
+
+# inspection.defect_class: 흠집 4종(긁힘·찍힘·균열·오염). 모델 클래스 이름은 이것과 같아야 한다
+DEFECT_CLASSES = ("scratch", "dent", "crack", "stain")
