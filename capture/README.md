@@ -85,7 +85,23 @@ export TRACE_BOOTH_CAM2=<CAM2 경로>
 trace-booth serve --port 8320
 ```
 
-`MINIO_ENDPOINT`를 넣지 않으면 업로드 없이 로컬에만 남습니다. 업로드까지 볼 때는 `MINIO_ENDPOINT`·`MINIO_ACCESS_KEY`·`MINIO_SECRET_KEY`를 환경 변수로 넣습니다. 값은 trace-secrets에 있고, 채팅·코드·이 문서에 적지 않습니다.
+`MINIO_ENDPOINT`를 넣지 않으면 업로드 없이 로컬에만 남습니다. 업로드까지 볼 때는 `MINIO_ENDPOINT`·`MINIO_ACCESS_KEY`·`MINIO_SECRET_KEY`를 환경 변수로 넣습니다.
+
+- 주소는 S3 API `http://storage.java21.net:8000`입니다. `https://storage.java21.net/`은 웹 관리 화면이라 업로드가 안 됩니다. HTTP라 키와 사진이 암호화되지 않고 오가므로 부스는 학교 내부망에서만 올리고, HTTPS S3 API 주소가 생기면 그 주소로 바꿉니다.
+- 키는 촬영 도구용 서비스 계정(trace-capture) 것을 씁니다. 공용 계정(nhnacademy)은 쓰지 않습니다. 키 값은 채팅·코드·이 문서에 적지 않습니다.
+
+키는 화면에 보이지 않게 직접 입력해 파일 하나에 두고(본인만 읽기), 띄울 때 읽어 들입니다.
+
+```bash
+umask 077; mkdir -p ~/.config
+read -rsp "access key: " AK; echo; read -rsp "secret key: " SK; echo
+printf 'MINIO_ENDPOINT=http://storage.java21.net:8000\nMINIO_ACCESS_KEY=%s\nMINIO_SECRET_KEY=%s\n' "$AK" "$SK" > ~/.config/trace-booth.env
+chmod 600 ~/.config/trace-booth.env   # 이미 있던 파일이어도 본인만 읽기
+unset AK SK
+set -a; . ~/.config/trace-booth.env; set +a   # serve·retry·shots 전에 이 셸에서 한 번
+```
+
+업로드가 실패한 사진(버킷이 없었을 때 등)은 로컬에 남아 있으니 `trace-booth retry`로 다시 올리고, `trace-booth shots --device <기기ID> --verify`로 저장소의 SHA-256까지 맞는지 확인합니다.
 
 ## 3. 조명별 값 정하기 (부스 완성 뒤)
 
