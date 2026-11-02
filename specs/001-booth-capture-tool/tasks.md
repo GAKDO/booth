@@ -73,17 +73,17 @@ description: "BO1 촬영 도구 작업 목록"
 
 ### 테스트
 
-- [ ] T023 [P] [US2] `tests/test_upload_retry.py`: "저장소에 닿지 않을 때 찍으면 촬영은 실패하지 않고 대기열에 남으며 올리지 못한 장수가 보인다"
-- [ ] T024 [P] [US2] `tests/test_upload_retry.py`: "저장소가 다시 닿으면 아무것도 하지 않아도 모두 올라가고 누락이 0건이다"
-- [ ] T025 [P] [US2] `tests/test_upload_retry.py`: "도구를 다시 켜면 이전에 올리지 못한 사진을 계속 올린다"
-- [ ] T026 [P] [US2] `tests/test_upload_retry.py`: "같은 사진을 두 번 올려도 같은 이름·해시 파일 하나만 남는다", 같은 키 다른 해시는 CONFLICT
+- [x] T023 [P] [US2] `tests/test_upload_retry.py`: "저장소에 닿지 않을 때 찍으면 촬영은 실패하지 않고 대기열에 남으며 올리지 못한 장수가 보인다"
+- [x] T024 [P] [US2] `tests/test_upload_retry.py`: "저장소가 다시 닿으면 아무것도 하지 않아도 모두 올라가고 누락이 0건이다"
+- [x] T025 [P] [US2] `tests/test_upload_retry.py`: "도구를 다시 켜면 이전에 올리지 못한 사진을 계속 올린다"
+- [x] T026 [P] [US2] `tests/test_upload_retry.py`: "같은 사진을 두 번 올려도 같은 이름·해시 파일 하나만 남는다", 같은 키 다른 해시는 CONFLICT
 
 ### 구현
 
-- [ ] T027 [US2] `src/trace_booth/uploader.py`: `Uploader` 프로토콜, `RawBucketUploader`(boto3, `head_object`로 중복 확인, 메타데이터 sha256 등), 백그라운드 재시도 루프(지수 백오프, 최대 60초)
-- [ ] T028 [US2] `src/trace_booth/web.py`·`index.html`: 대기열 수 표시 연결, `/api/queue`
-- [ ] T029 [US2] 기기 완료 때 `{deviceId}/manifest.json` 올리기(사진 목록·해시·SCR1 사유)
-- [ ] T030 [US2] `src/trace_booth/__main__.py`: `trace-booth shots --device <ID> --verify`(저장소 해시와 기록 비교), `trace-booth retry`
+- [x] T027 [US2] `src/trace_booth/uploader.py`: `Uploader` 프로토콜, `RawBucketUploader`(boto3, `head_object`로 중복 확인, 메타데이터 sha256 등), 백그라운드 재시도 루프(지수 백오프, 최대 60초)
+- [x] T028 [US2] `src/trace_booth/web.py`·`index.html`: 대기열 수 표시 연결, `/api/queue`
+- [ ] T029 [US2] 기기 완료 때 `{deviceId}/manifest.json` 올리기(사진 목록·해시·SCR1 사유) — 미룸: 한 기기를 여러 번 찍으면 같은 키를 덮어쓰게 되어 키 규칙을 A와 정한 뒤 한다. 지금은 `trace-booth shots --device`로 대신
+- [x] T030 [US2] `src/trace_booth/__main__.py`: `trace-booth shots --device <ID> --verify`(저장소 해시와 기록 비교), `trace-booth retry`
 
 **체크포인트**: 학습 데이터 촬영에 쓸 수 있음 (11/4 그램 촬영 목표)
 
