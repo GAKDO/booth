@@ -18,6 +18,37 @@ export PATH="$HOME/trace-venv/bin:$PATH"   # trace-booth 명령. ~/.bashrc에 �
 trace-booth --version
 ```
 
+### sudo가 없거나 pypi가 막힌 망에서 (11/2 jetson2에서 확인)
+
+학교 와이파이는 pypi.org·files.pythonhosted.org를 막는다(github.com·ports.ubuntu.com은 열림). 이때는 우분투 패키지와 GitHub 소스를 홈 폴더에 풀어 쓴다. sudo가 필요 없다.
+
+```bash
+# v4l2-ctl: 시스템에 없는 패키지만 받아 홈에 푼다
+mkdir -p ~/.local/v4l-debs ~/.local/bin && cd ~/.local/v4l-debs
+apt download v4l-utils libv4l2rds0t64          # libv4l-0t64·libv4lconvert0t64는 보통 이미 있음(dpkg -s로 확인)
+for d in *.deb; do dpkg -x "$d" ~/.local/v4l; done
+cat > ~/.local/bin/v4l2-ctl <<'SH'
+#!/bin/sh
+LD_LIBRARY_PATH="$HOME/.local/v4l/usr/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$HOME/.local/v4l/usr/bin/v4l2-ctl" "$@"
+SH
+chmod +x ~/.local/bin/v4l2-ctl && ~/.local/bin/v4l2-ctl --version
+
+# boto3는 우분투 패키지, nanoid는 GitHub 소스
+mkdir -p ~/.local/py-debs ~/.local/src && cd ~/.local/py-debs
+apt download python3-boto3 python3-botocore python3-jmespath python3-s3transfer
+for d in *.deb; do dpkg -x "$d" ~/.local/pydeb; done
+git clone https://github.com/puyuan/py-nanoid.git ~/.local/src/py-nanoid
+
+python3 -m venv --system-site-packages ~/trace-venv
+SP=$(~/trace-venv/bin/python -c "import site; print(site.getsitepackages()[0])")
+echo "$HOME/.local/pydeb/usr/lib/python3/dist-packages" > "$SP/trace-debs.pth"
+~/trace-venv/bin/pip install --no-index --no-build-isolation --no-deps ~/.local/src/py-nanoid
+~/trace-venv/bin/pip install --no-index --no-build-isolation --no-deps -e ~/booth   # 시스템 setuptools 68로 빌드
+~/trace-venv/bin/trace-booth --version
+```
+
+도구는 `v4l2-ctl`을 PATH에서 찾으므로 `export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"`를 `~/.bashrc`에 넣는다.
+
 카메라 장치(`/dev/video*`)를 열려면 계정이 `video` 그룹에 있어야 한다(`id`로 확인). 없으면 관리자에게 `sudo usermod -aG video <계정>`을 부탁하고 다시 로그인한다.
 
 ## 2. 연결 확인 6가지
