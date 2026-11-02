@@ -66,7 +66,7 @@ def _build() -> tuple[Step, ...]:
 
     shots(Face.TOP, (Light.L1, Light.L2, Light.L3), _TOP_CAMS)
     shots(Face.BOT, (Light.L1, Light.L2, Light.L3), _TOP_CAMS)
-    notice("바 #2를 뒤 자리에서 앞 자리(L4)로 옮기세요")
+    notice("바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮기세요")
     shots(Face.KB, (Light.L1, Light.L2, Light.L4), _TOP_CAMS)
     notice("CAM1을 삼각대에서 풀어 책상에 세우고, 배경판을 노트북 뒤 30cm에 두세요")
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
