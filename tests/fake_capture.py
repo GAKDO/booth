@@ -21,7 +21,7 @@ class FakeCapture:
         # 세대(0=세트 생성, 1부터=다시 받기)마다 URL로 성공할 수 있는 PUT 수. 넘으면 403(만료). 없으면 무제한.
         self.url_budget: list[int] = []
         self.put_ok: dict[tuple[str, int], int] = {}
-        self.detections: dict[str, list[dict]] = {}
+        self.detections: dict[str, list[dict]] = {}  # 세트마다 마지막 요청의 부스 탐지
         self.fail_puts = 0  # 처음 n번 PUT은 연결 실패
         self.reject_token = False  # 다음 API 호출 한 번은 401
         self.completed_keys: dict[str, dict] = {}
@@ -87,12 +87,16 @@ class FakeCapture:
         return self._json(200, {"uploads": self._targets(set_id, s["gen"], left)})
 
     def _detections(self, set_id: str, data: dict) -> Response:
-        """contracts saveBoothDetections: 탐지마다 세트의 (face, light, camera) 한 장을 가리켜야 한다."""
-        keys = {self._key(p) for p in self.sets[set_id]["request"]["photos"]}
+        """contracts saveBoothDetections: 탐지마다 세트의 (face, light, camera) 한 장을 가리킨다.
+        다시 보내면 그 세트의 부스 탐지를 통째로 바꾼다(modelVersion이 달라도). 등급이 매겨진 세트는 409. (A 11/2)"""
+        s = self.sets[set_id]
+        if s.get("graded"):
+            return self._problem(409, "CAPTURE_SET_CLOSED")
+        keys = {self._key(p) for p in s["request"]["photos"]}
         found = data.get("detections", [])
         if not data.get("modelVersion") or any(self._key(d) not in keys for d in found):
             return self._problem(400, "VALIDATION_FAILED")
-        self.detections.setdefault(set_id, []).extend(found)
+        self.detections[set_id] = list(found)
         return self._json(201, {"accepted": len(found)})
 
     def _put(self, url: str, headers: dict[str, str], body: bytes) -> Response:

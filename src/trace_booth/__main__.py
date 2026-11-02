@@ -133,7 +133,8 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
            load: Callable[[str], object] = _imread, client: CaptureClient | None = None) -> int:
     """찍은 세션 하나의 면 사진을 탐지해 로컬에 JSON으로 남긴다(BO2). 원본 사진은 읽기만 한다.
 
-    출고·반납 세트가 이미 올라갔으면 탐지 결과도 그 세트에 올린다. 종료 코드: 30초 초과 2, 올리기 실패 3.
+    출고·반납 세트가 이미 올라갔으면 탐지 결과도 그 세트에 올린다. 다시 돌리면 다시 보내고, 서버가 그 세트의
+    부스 탐지를 마지막 요청으로 통째로 바꾼다(A 11/2). 종료 코드: 30초 초과 2, 올리기 실패 3.
     """
     import json
 
@@ -167,7 +168,13 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
         return code
     try:
         accepted = client.save_detections(record.capture_set_id, info.model_version, result.detections())
-    except (ApiError, OSError) as e:
+    except ApiError as e:
+        if e.code == "CAPTURE_SET_CLOSED":
+            print(f"세트 {record.capture_set_id}는 이미 등급이 매겨져 탐지를 바꿀 수 없어요(로컬 JSON은 남음)")
+        else:
+            print(f"탐지 결과를 올리지 못했어요(로컬 JSON은 남음): {e}")
+        return 3
+    except OSError as e:
         print(f"탐지 결과를 올리지 못했어요(로컬 JSON은 남음): {e}")
         return 3
     print(f"세트 {record.capture_set_id}에 탐지 {accepted}개를 올렸어요")

@@ -153,7 +153,9 @@ class CaptureClient:
         return _targets(self._post("업로드 URL 다시 받기", f"{self._base}/{set_id}/uploads", body, (200,)).json())
 
     def save_detections(self, set_id: str, model_version: str, detections: list[dict]) -> int:
-        """`POST /captures/sets/{setId}/detections`: 부스 탐지 결과(원본 사진 px). 받아들인 개수를 돌려준다."""
+        """`POST /captures/sets/{setId}/detections`: 부스 탐지 결과(원본 사진 px). 받아들인 개수를 돌려준다.
+
+        다시 보내면 서버가 그 세트의 부스 탐지를 이 요청으로 통째로 바꾼다(Idempotency-Key 없음, 11/2 결정)."""
         body = {"modelVersion": model_version, "detections": detections}
         return int(self._post("탐지 결과 저장", f"{self._base}/{set_id}/detections", body, (201,)).json()["accepted"])
 

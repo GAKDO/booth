@@ -193,13 +193,30 @@ def test_detect_명령은_올라간_출고_세트에_탐지를_원본_px와_카�
     assert sent[0]["class"] == "scratch" and sent[0]["polygon"][0] == [100.0, 100.0]
 
 
-def test_detect_명령은_탐지를_올리지_못해도_로컬_JSON을_남기고_종료_코드_3을_준다(service, tmp_path, monkeypatch):
-    from fake_capture import FakeCapture
+def test_detect를_다시_돌리면_다시_보내고_서버의_부스_탐지는_마지막_결과로_바뀐다(service, tmp_path, monkeypatch):
+    from trace_booth.__main__ import detect
+
+    s, server, client, set_id = _submitted(service, tmp_path, monkeypatch)
+    one = np.zeros((1080, 1920), dtype=np.uint8)
+    one[100:120, 100:130] = 255
+    two = np.zeros((1080, 1920), dtype=np.uint8)
+    two[300:320, 300:330] = 255
+    engine = str(_engine(tmp_path))
+    run = lambda image: detect(s.public_id, engine,
+                               make_detector=lambda _: SquareDetector(), load=lambda _: image, client=client)
+
+    assert run(one) == 0 and server.detections[set_id][0]["polygon"][0] == [100.0, 100.0]
+    assert run(two) == 0
+    sent = server.detections[set_id]
+    assert len(sent) == 28 and all(d["polygon"][0] == [300.0, 300.0] for d in sent)  # 쌓이지 않고 두 번째 결과로 바뀜
+
+
+def test_등급이_매겨진_세트면_탐지를_올리지_못해도_로컬_JSON을_남기고_종료_코드_3을_준다(service, tmp_path, monkeypatch):
 
     from trace_booth.__main__ import detect
 
     s, server, client, set_id = _submitted(service, tmp_path, monkeypatch)
-    server._detections = lambda *_: FakeCapture._problem(409, "CAPTURE_SET_CLOSED")
+    server.sets[set_id]["graded"] = True
     image = np.zeros((1080, 1920), dtype=np.uint8)
 
     code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(),
