@@ -94,8 +94,9 @@ trace-booth serve --port 8320
 
 ```bash
 umask 077; mkdir -p ~/.config
-read -rp "access key: " AK; read -rsp "secret key: " SK; echo
+read -rsp "access key: " AK; echo; read -rsp "secret key: " SK; echo
 printf 'MINIO_ENDPOINT=http://storage.java21.net:8000\nMINIO_ACCESS_KEY=%s\nMINIO_SECRET_KEY=%s\n' "$AK" "$SK" > ~/.config/trace-booth.env
+chmod 600 ~/.config/trace-booth.env   # 이미 있던 파일이어도 본인만 읽기
 unset AK SK
 set -a; . ~/.config/trace-booth.env; set +a   # serve·retry·shots 전에 이 셸에서 한 번
 ```
