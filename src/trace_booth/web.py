@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,15 +13,18 @@ from pathlib import Path
 
 from .camera import CameraError
 from .camera_presets import PresetError
-from .session import CaptureError, CaptureService, Incomplete
-from .store import ShotRecord
+from .session import CaptureError, CaptureService, Incomplete, InvalidInput
+from .store import CheckoutRecord, ShotRecord
+
+Submitter = Callable[[int], CheckoutRecord]
 
 
 class App:
     """부스 하나에 촬영 세션 하나. 현재 세션 ID만 들고 있다."""
 
-    def __init__(self, service: CaptureService) -> None:
+    def __init__(self, service: CaptureService, submitter: Submitter | None = None) -> None:
         self.service = service
+        self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
         self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
 
@@ -47,6 +51,17 @@ def _state(app: App) -> dict:
         "status": v.session.status, "step": step, "remainingSteps": v.remaining_steps,
         "missing": v.missing, "scr1SkipReason": v.session.scr1_skip_reason,
         "queue": app.service.store.upload_counts(), "presetsConfigured": app.service.presets.configured,
+        "checkout": _checkout_json(app.service.store.get_checkout(v.session.id)),
+        "checkoutEnabled": app.submitter is not None,
+    }
+
+
+def _checkout_json(c: CheckoutRecord | None) -> dict | None:
+    if c is None:
+        return None
+    return {
+        "rentalId": c.rental_id, "checkpointId": c.checkpoint_id, "captureSetId": c.capture_set_id,
+        "status": c.status, "attempts": c.attempts, "lastError": c.last_error,
     }
 
 
@@ -89,8 +104,15 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, _thumbnail(Path(shot.local_path)), "image/jpeg")
             if method == "POST" and path == "/api/sessions":
                 body = self._body()
+                mode = str(body.get("mode", "TRAINING"))
+                if mode != "TRAINING" and app.submitter is None:
+                    raise InvalidInput("서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 출고·반납 모드를 쓸 수 없어요")
+                rental, checkpoint = body.get("rentalId"), body.get("checkpointId")
                 with app.lock:
-                    app.current = svc.start(str(body.get("deviceId", "")), str(body.get("mode", "TRAINING"))).id
+                    app.current = svc.start(
+                        str(body.get("deviceId", "")), mode,
+                        str(rental) if rental else None, str(checkpoint) if checkpoint else None,
+                    ).id
                 return self._json(201, _state(app))
             if not path.startswith("/api/sessions/current"):
                 return self._problem(404, "없는 경로")
@@ -115,7 +137,14 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._json(200, _state(app))
             if action == "/complete":
                 done = svc.complete(app.current)
-                return self._json(200, {"session": asdict(done)})
+                if done.mode != "TRAINING" and app.submitter is not None:
+                    app.submitter(done.id)
+                return self._json(200, {"session": asdict(done), "state": _state(app)})
+            if action == "/submit":
+                if app.submitter is None:
+                    raise InvalidInput("서버 연결 설정이 없어요")
+                app.submitter(app.current)
+                return self._json(200, _state(app))
             return self._problem(404, "없는 경로")
 
         def _body(self) -> dict:

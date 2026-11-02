@@ -33,6 +33,21 @@
 
 전이: `IN_PROGRESS`에서 필수 단계가 모두 찍히고(SCR1은 찍었거나 사유가 있음) 운영 담당이 완료를 누르면 `COMPLETE`. 같은 기기로 새 세션을 열면 이전 `IN_PROGRESS` 세션을 이어 간다.
 
+## 출고·반납 checkout
+
+출고·반납(OUT·RET) 세션 하나에 한 행. 렌탈·시점은 다른 서버(rental-server)의 publicId 문자열로만 둔다(FK 없음, 헌법 1.1.0).
+
+| 칸 | 형식 | 설명 |
+| --- | --- | --- |
+| session_id | INTEGER PK | session.id |
+| rental_id | TEXT | 관리자 화면이 고른 렌탈 publicId(21자) |
+| checkpoint_id | TEXT | 시점 publicId(21자) |
+| capture_set_id | TEXT NULL | capture-server가 준 세트 publicId |
+| status | TEXT | PENDING → SUBMITTED, 실패하면 FAILED(다시 올리기 가능) |
+| attempts | INTEGER | 올리기 시도 횟수 |
+| last_error | TEXT NULL | 마지막 실패 사유(사전 서명 URL은 넣지 않음) |
+| updated_at | TEXT NULL | 마지막 시도 시각 |
+
 ## 사진 shot
 
 | 컬럼 | 타입 | 규칙 |

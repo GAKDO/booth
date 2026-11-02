@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 from collections.abc import Callable
@@ -21,6 +22,7 @@ from .store import SessionRecord, ShotRecord, Store
 
 MIN_FREE_BYTES = 200 * 1024 * 1024
 MODES = ("TRAINING", "OUT", "RET")
+PUBLIC_ID_RE = re.compile(r"^[A-Za-z0-9_-]{21}$")  # 다른 서버의 publicId(NanoID 21자)
 
 
 class CaptureError(Exception):
@@ -85,17 +87,29 @@ class CaptureService:
         self._min_free = min_free_bytes
         self._lock = threading.Lock()
 
-    def start(self, device_id: str, mode: str = "TRAINING") -> SessionRecord:
+    def start(
+        self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None
+    ) -> SessionRecord:
+        """세션을 열거나 이어 간다. 출고·반납(OUT·RET)은 관리자 화면이 고른 렌탈·시점 publicId가 필요하다."""
         if not is_valid_device_id(device_id):
             raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01)")
         if mode not in MODES:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")
         if mode != "TRAINING":
-            raise InvalidInput("출고·반납 모드는 아직 없음(C1·CA1 이후)")
+            for name, value in (("렌탈", rental_id), ("시점", checkpoint_id)):
+                if not value or not PUBLIC_ID_RE.match(value):
+                    raise InvalidInput(f"{name} ID는 관리자 화면에 나온 21자 그대로 넣어 주세요")
         with self._lock:
-            return self.store.find_open_session(device_id, mode) or self.store.create_session(
-                device_id, mode, self._now()
-            )
+            s = self.store.find_open_session(device_id, mode)
+            if s is not None and mode != "TRAINING":
+                c = self.store.get_checkout(s.id)
+                if c is None or (c.rental_id, c.checkpoint_id) != (rental_id, checkpoint_id):
+                    raise CaptureError("이 기기에 다른 렌탈·시점의 촬영이 진행 중이에요")
+            if s is None:
+                s = self.store.create_session(device_id, mode, self._now())
+                if mode != "TRAINING":
+                    self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
+            return s
 
     def view(self, session_id: int) -> SessionView:
         s = self.store.get_session(session_id)

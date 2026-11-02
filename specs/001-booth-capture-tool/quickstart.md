@@ -26,6 +26,9 @@ export TRACE_BOOTH_PRESETS=~/trace-booth-presets.json   # 조명별 노출·WB·
 export MINIO_ENDPOINT=https://storage.java21.net   # gitops infra.env와 같은 이름
 export MINIO_ACCESS_KEY=...  MINIO_SECRET_KEY=...       # 값은 trace-secrets, 채팅·코드에 쓰지 않음
 export TRACE_RAW_BUCKET=trace-raw                     # 기본값
+# 출고·반납 모드(CA1 배포 뒤). 없으면 학습 데이터 모드만 켜진다
+export TRACE_API_URL=https://<gateway 주소>
+export TRACE_BOOTH_CLIENT_ID=...  TRACE_BOOTH_CLIENT_SECRET=...   # 값은 trace-secrets, 채팅·코드에 쓰지 않음
 trace-booth serve --port 8320
 ```
 
@@ -36,4 +39,11 @@ trace-booth serve --port 8320
 3. 중간에 Jetson 랜선을 뽑고 몇 단계 찍기 → 화면의 "올리지 못함" 수가 늘어남 → 다시 꽂으면 0으로 돌아옴
 4. 완료 → MinIO `trace-raw/REG01/`에 28장(+SLATE, SCR1) 있는지, 해시가 같은지 `trace-booth shots --device REG01 --verify`로 확인
 
-조명별 설정 측정 절차는 `capture/README.md`로 따로 쓴다(아직 없음).
+조명별 설정 측정 절차는 `capture/README.md`.
+
+### 출고·반납 모드 (CA1 배포 뒤)
+
+1. 운영 화면에서 모드 "출고"를 고르고 기기 ID, 관리자 화면의 렌탈 ID·시점 ID(21자)를 넣고 시작
+2. 목록대로 찍고 완료 → "완료. 완료 책상으로 보내세요"가 뜨면 capture-server 세트로 올라간 것
+3. 랜선을 뽑은 채 완료 → "서버에 올리지 못했어요" → 다시 꽂고 "다시 올리기" → 완료
+4. trace-raw에는 이 사진이 올라가지 않았는지 확인
