@@ -66,6 +66,14 @@ def test_타일_경계에_걸친_흠집도_원본에서는_하나로_잡힌다()
     assert (x0, y0, x1, y1) == (500.0, 300.0, 539.0, 319.0)
 
 
+def test_타일_끝에_조금만_걸려_잘린_조각은_따로_세지_않는다():
+    image = np.zeros((1080, 1920), dtype=np.uint8)
+    image[500:520, 630:660] = 255  # 첫째 타일(0~639)에는 10px만, 둘째 타일(512~)에는 전부
+    found = detect_photo(image, SquareDetector(), INFO)
+    assert len(found) == 1
+    assert found[0].box == (630.0, 500.0, 659.0, 519.0)
+
+
 def test_세트를_탐지하면_결과마다_면_조명_카메라와_modelVersion이_있고_SLATE는_탐지하지_않는다(service):
     session = service.start("MB01")
     run_to_end(service, session.id)
@@ -94,3 +102,43 @@ def test_모델_클래스가_codes와_다르거나_modelVersion이_없으면_시
         ModelInfo.load(path)
     path.write_text(json.dumps({"modelVersion": "v1", "classes": ["stain", "crack", "dent", "scratch"]}))
     assert ModelInfo.load(path).classes == ("stain", "crack", "dent", "scratch")
+
+
+def _engine(tmp_path, classes=("scratch", "dent", "crack", "stain")):
+    engine = tmp_path / "models" / "best.engine"
+    engine.parent.mkdir()
+    engine.write_bytes(b"fake")
+    (engine.parent / "model.json").write_text(json.dumps({"modelVersion": "v001", "classes": list(classes)}))
+    return engine
+
+
+def test_detect_명령은_세션_사진을_탐지해_로컬_JSON으로_남기고_원본은_그대로_둔다(service, tmp_path, monkeypatch):
+    from trace_booth.__main__ import detect
+
+    monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path))  # service 픽스처의 booth.db와 같은 곳
+    s = service.start("MB01")
+    run_to_end(service, s.id, skip_scr1="화면이 켜지지 않음")
+    before = {p.local_path: p.sha256 for p in service.store.shots(s.id)}
+    image = np.zeros((1080, 1920), dtype=np.uint8)
+    image[100:120, 100:130] = 255
+
+    code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(), load=lambda _: image)
+
+    assert code == 0
+    out = json.loads(next((tmp_path / "MB01" / "detections").glob(f"{s.public_id}_v001.json")).read_text())
+    assert out["modelVersion"] == "v001" and out["coordinates"] == "photo_px"
+    assert len(out["photos"]) == 28 and out["count"] == 28
+    assert out["photos"][0]["detections"][0]["class"] == "scratch"
+    import hashlib
+    from pathlib import Path
+
+    assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest() == h for p, h in before.items())
+
+
+def test_detect_명령은_모델_클래스가_다르면_시작하지_않는다(service, tmp_path, monkeypatch):
+    from trace_booth.__main__ import detect
+
+    monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path))  # service 픽스처의 booth.db와 같은 곳
+    s = service.start("MB01")
+    with pytest.raises(SystemExit, match="탐지를 시작할 수 없어요"):
+        detect(s.public_id, str(_engine(tmp_path, ("scratch",))), make_detector=lambda _: SquareDetector())

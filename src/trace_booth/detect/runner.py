@@ -34,6 +34,19 @@ class SetResult:
     def count(self) -> int:
         return sum(len(p.found) for p in self.photos)
 
+    def to_json(self) -> dict[str, Any]:
+        """로컬 기록용. 폴리곤은 원본 사진 px(계약의 표준 좌표가 아님: 올리기는 A의 답 뒤 T009)."""
+        return {
+            "modelVersion": self.model_version, "seconds": self.seconds, "count": self.count,
+            "coordinates": "photo_px",
+            "photos": [
+                {"face": p.face, "light": p.light, "camera": p.camera, "filename": p.filename,
+                 "detections": [{"class": f.defect_class, "polygon": [list(pt) for pt in f.polygon],
+                                 "confidence": f.confidence} for f in p.found]}
+                for p in self.photos
+            ],
+        }
+
 
 def detect_photo(image: Any, detector: Detector, info: ModelInfo, size: int = 640,
                  overlap: float = 0.2) -> list[Found]:

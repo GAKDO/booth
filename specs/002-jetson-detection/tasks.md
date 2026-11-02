@@ -9,5 +9,7 @@
 - [x] T005 `detect/runner.py`: 세트 면 사진 탐지(SLATE 제외), 시간 기록
 - [x] T006 [P] `tests/test_detect.py`: 스토리 1 수용 시나리오
 - [x] T007 `pyproject.toml`: 선택 의존성 `detect`, dev에 numpy
-- [ ] T008 Jetson: 엔진 빌드, 한 세트 30초 실측(11/6)
+- [x] T010 `trace-booth detect --session <publicId> [--engine]`: 세션 면 사진 탐지 → `{데이터}/{기기}/detections/{세션}_{modelVersion}.json`(원본 px), 30초 넘으면 경고·종료 코드 2
+- [x] T011 `detect/merge.py`: 타일 끝에 조금 걸린 조각도 같은 흠집으로(작은 상자 기준 겹침)
+- [ ] T008 Jetson: 엔진 빌드, 한 세트 30초 실측(11/6) — 절차는 quickstart.md
 - [ ] T009 결과 올리기 `POST /captures/sets/{setId}/detections`(계약 확인 뒤)
