@@ -13,6 +13,7 @@ ruff check . && pytest -q   # 가짜 탐지기로 타일·중복 제거·세트 
 2. Jetson에서 엔진을 만든다(엔진은 만든 기기에서만 돈다).
 
    ```bash
+   # pypi가 열린 망이 필요하다(detect extra가 numpy·ultralytics를 받는다). 학교 와이파이에서는 휴대폰 핫스팟 등으로
    ~/trace-venv/bin/pip install -e ~/booth"[detect]"   # capture/README.md 1장의 가상환경
    yolo export model=best.pt format=engine half=True imgsz=640 device=0
    mkdir -p ~/trace-models && mv best.engine ~/trace-models/

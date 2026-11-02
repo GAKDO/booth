@@ -25,7 +25,8 @@ trace-booth --version
 먼저 임시 폴더에 venv를 실제로 만들어 본다. `python3-venv`(ensurepip)가 없으면 여기서 실패하므로 관리자에게 `sudo apt install python3-venv`를 한 번 부탁한다(jetson2에는 이미 있었다).
 
 ```bash
-t=$(mktemp -d); python3 -m venv --system-site-packages "$t/v" && echo venv OK; rm -rf "$t"
+t=$(mktemp -d); python3 -m venv --system-site-packages "$t/v"; rc=$?; rm -rf "$t"
+[ "$rc" -eq 0 ] && echo "venv OK" || echo "venv 실패: 관리자에게 python3-venv 설치 부탁"
 ```
 
 ```bash
@@ -61,7 +62,7 @@ echo "$HOME/.local/pydeb/usr/lib/python3/dist-packages" > "$SP/trace-debs.pth"
 
 ```bash
 export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"
-grep -qF 'trace-venv/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"' >> ~/.bashrc
+grep -qF '$HOME/.local/bin:$HOME/trace-venv/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$HOME/trace-venv/bin:$PATH"' >> ~/.bashrc
 ```
 
 카메라 장치(`/dev/video*`)를 열려면 계정이 `video` 그룹에 있어야 한다(`id`로 확인). 없으면 관리자에게 `sudo usermod -aG video <계정>`을 부탁하고 다시 로그인한다.
