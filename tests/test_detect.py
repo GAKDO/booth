@@ -211,16 +211,18 @@ def test_detect_명령은_탐지를_올리지_못해도_로컬_JSON을_남기고
 
 
 def test_detect_명령은_올린_세트가_없으면_서버를_부르지_않고_로컬에만_남긴다(service, tmp_path, monkeypatch):
-    from fake_capture import FakeCapture
+    from fake_capture import BASE, SECRET, FakeCapture
 
     from trace_booth.__main__ import detect
+    from trace_booth.capture_client import BoothAuth, CaptureClient
 
     monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path))
     server = FakeCapture()
+    client = CaptureClient(BASE, BoothAuth(BASE, "booth-out", SECRET, http=server), http=server)
     s = service.start("MB01")
     run_to_end(service, s.id, skip_scr1="화면이 켜지지 않음")
 
     code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(),
-                  load=lambda _: np.zeros((1080, 1920), dtype=np.uint8))
+                  load=lambda _: np.zeros((1080, 1920), dtype=np.uint8), client=client)
 
     assert code == 0 and server.calls == []
