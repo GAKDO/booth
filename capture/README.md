@@ -38,8 +38,8 @@ chmod +x ~/.local/bin/v4l2-ctl && ~/.local/bin/v4l2-ctl --version
 # boto3는 우분투 패키지, nanoid는 GitHub 소스
 mkdir -p ~/.local/py-debs ~/.local/src && cd ~/.local/py-debs
 apt download python3-boto3 python3-botocore python3-jmespath python3-s3transfer
-# botocore가 쓰는 python3-dateutil·python3-urllib3·python3-six는 보통 이미 있다. 없으면 같은 줄에 더해 받는다:
-#   python3 -c "import dateutil, urllib3, six"
+# botocore가 쓰는 python3-dateutil·python3-requests·python3-six·python3-urllib3는 보통 이미 있다. 없으면 같은 줄에 더해 받는다:
+#   python3 -c "import dateutil, requests, six, urllib3"
 for d in *.deb; do dpkg -x "$d" ~/.local/pydeb; done
 git clone https://github.com/puyuan/py-nanoid.git ~/.local/src/py-nanoid
 
