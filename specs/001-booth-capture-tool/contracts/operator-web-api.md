@@ -12,7 +12,7 @@
 | POST | `/api/sessions/current/next` | NOTICE 단계 확인 후 다음으로 | 200 |
 | POST | `/api/sessions/current/skip-scr1` | `{reason}`으로 SCR1 건너뛰기 | 200 · 400 사유 없음 |
 | POST | `/api/sessions/current/complete` | 완료 검사 후 종료 | 200 · 409 `{missing[]}` |
-| GET | `/api/shots/{id}/thumbnail` | 미리보기 JPEG(긴 변 480px) | 200 |
+| GET | `/api/shots/{publicId}/thumbnail` | 미리보기 JPEG(긴 변 480px). 사진 `id`는 publicId(NanoID 21자) | 200 |
 | GET | `/api/queue` | `{pending, failed, conflict}` 수 | 200 |
 
 현재 단계 응답 예:

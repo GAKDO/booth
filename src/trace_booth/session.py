@@ -97,12 +97,12 @@ class CaptureService:
                 device_id, mode, self._now()
             )
 
-    def view(self, session_id: str) -> SessionView:
+    def view(self, session_id: int) -> SessionView:
         s = self.store.get_session(session_id)
         step = self.steps[s.current_step] if s.current_step < len(self.steps) else None
         return SessionView(s, step, len(self.steps) - s.current_step, self.missing(session_id))
 
-    def shoot(self, session_id: str) -> list[ShotRecord]:
+    def shoot(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
             s = self.store.get_session(session_id)
             step = self._current(s)
@@ -112,7 +112,7 @@ class CaptureService:
             self.store.update_session(s.id, current_step=s.current_step + 1)
             return shots
 
-    def retake(self, session_id: str) -> list[ShotRecord]:
+    def retake(self, session_id: int) -> list[ShotRecord]:
         """가장 최근에 찍은 단계를 새 번호로 다시 찍는다. 현재 단계는 그대로."""
         with self._lock:
             s = self.store.get_session(session_id)
@@ -121,14 +121,14 @@ class CaptureService:
                 raise CaptureError("다시 찍을 사진이 없어요")
             return self._capture(s, self.steps[taken[-1].step_index])
 
-    def acknowledge(self, session_id: str) -> None:
+    def acknowledge(self, session_id: int) -> None:
         with self._lock:
             s = self.store.get_session(session_id)
             if self._current(s).kind is not StepKind.NOTICE:
                 raise CaptureError("안내 단계가 아니에요. 촬영 버튼을 누르세요")
             self.store.update_session(s.id, current_step=s.current_step + 1)
 
-    def skip_optional(self, session_id: str, reason: str) -> None:
+    def skip_optional(self, session_id: int, reason: str) -> None:
         if not reason.strip():
             raise InvalidInput("건너뛰는 사유를 적어 주세요")
         with self._lock:
@@ -137,7 +137,7 @@ class CaptureService:
                 raise CaptureError("건너뛸 수 있는 단계가 아니에요")
             self.store.update_session(s.id, scr1_skip_reason=reason.strip(), current_step=s.current_step + 1)
 
-    def missing(self, session_id: str) -> list[str]:
+    def missing(self, session_id: int) -> list[str]:
         s = self.store.get_session(session_id)
         have = {(sh.step_index, sh.camera) for sh in self.store.shots(session_id)}
         out = []
@@ -152,7 +152,7 @@ class CaptureService:
                 out.append(f"{step.face.value}_{step.light.value}_{cam.value}")
         return out
 
-    def complete(self, session_id: str) -> SessionRecord:
+    def complete(self, session_id: int) -> SessionRecord:
         with self._lock:
             missing = self.missing(session_id)
             if missing:
