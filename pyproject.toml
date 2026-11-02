@@ -20,6 +20,9 @@ trace-booth = "trace_booth.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+trace_booth = ["static/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

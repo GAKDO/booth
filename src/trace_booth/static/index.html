@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRACE 부스 촬영</title>
+<style>
+  :root { --bg:#111; --fg:#f2f2f2; --muted:#999; --accent:#2f80ed; --warn:#e2b93b; --bad:#eb5757; --ok:#27ae60; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  input, button { font-size:20px; padding:12px 16px; border-radius:8px; border:1px solid #444; background:#222; color:var(--fg); }
+  button.primary { background:var(--accent); border-color:var(--accent); font-weight:700; }
+  button:disabled { opacity:.4; }
+  #instruction { font-size:30px; font-weight:700; line-height:1.35; margin:20px 0 8px; }
+  #meta, #queue { color:var(--muted); font-size:16px; }
+  #queue.warn { color:var(--warn); }
+  #error { color:var(--bad); font-size:18px; min-height:24px; margin:8px 0; }
+  #shoot { font-size:28px; padding:20px 40px; }
+  .thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .thumbs figure { margin:0; flex:1 1 280px; }
+  .thumbs img { width:100%; border-radius:6px; background:#000; }
+  .thumbs figcaption { font-size:13px; color:var(--muted); word-break:break-all; }
+  .done { color:var(--ok); font-size:26px; font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <input id="device" placeholder="기기 ID (예: MB01)" autocapitalize="characters" size="12">
+    <button id="start">시작</button>
+    <span id="queue"></span>
+  </div>
+  <div id="instruction">기기 ID를 넣고 시작하세요</div>
+  <div id="meta"></div>
+  <div id="error"></div>
+  <div class="row">
+    <button id="shoot" class="primary" disabled>촬영</button>
+    <button id="next" disabled>다음</button>
+    <button id="retake" disabled>다시 찍기</button>
+    <button id="skip" disabled>SCR1 건너뛰기</button>
+    <button id="complete" disabled>완료</button>
+  </div>
+  <div class="thumbs" id="thumbs"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+
+async function call(method, path, body) {
+  $("error").textContent = "";
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (!res.ok) {
+    const extra = data.missing ? ` (${data.missing.join(", ")})` : data.camera ? ` (${data.camera})` : "";
+    $("error").textContent = (data.detail || "오류") + extra;
+    throw new Error(data.detail);
+  }
+  return data;
+}
+
+function render() {
+  const s = state, step = s && s.step;
+  const busy = !s || s.status !== "IN_PROGRESS";
+  $("shoot").disabled = busy || !step || step.kind === "NOTICE";
+  $("next").disabled = busy || !step || step.kind !== "NOTICE";
+  $("skip").disabled = busy || !step || !step.optional;
+  $("retake").disabled = busy;
+  $("complete").disabled = busy;
+  if (!s) return;
+  if (s.status === "COMPLETE") {
+    $("instruction").innerHTML = '<span class="done">완료. 완료 책상으로 보내세요</span>';
+  } else {
+    $("instruction").textContent = step ? step.instruction : "목록 끝. 완료를 누르세요";
+  }
+  const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
+  $("meta").textContent = `${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`
+    + (s.presetsConfigured ? "" : " · ⚠ 카메라 고정 설정 없음");
+  const q = s.queue, waiting = q.pending + q.failed;
+  $("queue").textContent = waiting ? `올리지 못함 ${waiting}장` : "";
+  $("queue").className = waiting ? "warn" : "";
+}
+
+function showShots(shots) {
+  $("thumbs").innerHTML = shots.map((x) =>
+    `<figure><img src="/api/shots/${x.id}/thumbnail?t=${Date.now()}" alt="${x.filename}">` +
+    `<figcaption>${x.filename}</figcaption></figure>`).join("");
+}
+
+$("start").onclick = async () => {
+  state = await call("POST", "/api/sessions", { deviceId: $("device").value.trim().toUpperCase() });
+  $("thumbs").innerHTML = ""; render();
+};
+$("shoot").onclick = async () => {
+  $("shoot").disabled = true;
+  try { const r = await call("POST", "/api/sessions/current/shoot"); state = r.state; showShots(r.shots); }
+  finally { render(); }
+};
+$("retake").onclick = async () => {
+  const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); render();
+};
+$("next").onclick = async () => { state = await call("POST", "/api/sessions/current/next"); render(); };
+$("skip").onclick = async () => {
+  const reason = prompt("SCR1을 건너뛰는 사유");
+  if (reason) { state = await call("POST", "/api/sessions/current/skip-scr1", { reason }); render(); }
+};
+$("complete").onclick = async () => {
+  await call("POST", "/api/sessions/current/complete");
+  state = await call("GET", "/api/sessions/current"); render();
+};
+setInterval(async () => {
+  if (!state) return;
+  try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }
+}, 3000);
+</script>
+</body>
+</html>
