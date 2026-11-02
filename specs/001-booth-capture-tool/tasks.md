@@ -19,21 +19,21 @@ description: "BO1 촬영 도구 작업 목록"
 
 ## Phase 1: 준비
 
-- [ ] T001 `pyproject.toml`에 의존성 추가: `opencv-python-headless`, `boto3`, `requests`(런타임), `pytest`, `ruff`(dev). Python 3.10 호환 유지
-- [ ] T002 [P] `src/trace_booth/codes.py`: codes.yaml 0.2.0의 `Face`·`Light`·`Camera` 값과 `CODES_VERSION = "0.2.0"`
-- [ ] T003 [P] `tests/fakes.py`: 정해진 JPEG 바이트를 내는 `FakeCamera`(실패 켜기 가능), 실패를 켜고 끌 수 있는 `FakeUploader`
+- [x] T001 `pyproject.toml`: `opencv-python-headless`는 선택 의존성 `camera`(Jetson은 시스템 OpenCV), 정적 파일 포함. `boto3`·`requests`는 PR 2·3에서 추가. Python 3.10 호환 유지
+- [x] T002 [P] `src/trace_booth/codes.py`: codes.yaml 0.3.0의 `Face`·`Light`·`Camera` 값, `FACE_REQUIRED_BOOTH`, `CODES_VERSION = "0.3.0"`
+- [x] T003 [P] `tests/fakes.py`: 정해진 JPEG 바이트를 내는 `FakeCamera`(실패 켜기 가능), 실패를 켜고 끌 수 있는 `FakeUploader`
 
 ---
 
 ## Phase 2: 기반 (모든 스토리 전에)
 
-- [ ] T004 [P] `src/trace_booth/naming.py`: 기기 ID 검사 `^[A-Z]{2,4}[0-9]{2}$`, 파일명 만들기·읽기, SLATE 이름 (contracts/storage-layout.md)
-- [ ] T005 [P] `tests/test_naming.py`: 파일명 규칙 위반 0건, 잘못된 기기 ID 거절, 정규식 왕복
-- [ ] T006 [P] `src/trace_booth/shotlist.py`: 기본 촬영 목록(SLATE → 패스 1 → NOTICE → 패스 2 → SCR1 선택), 필수 8면, 안내 문구
-- [ ] T007 [P] `tests/test_shotlist.py`: 필수 사진 28장, 스침광 단계 안내에 "만 켜세요", 패스 2는 L1·L2만·CAM1만, SCR1은 OFF·선택
-- [ ] T008 `src/trace_booth/store.py`: SQLite 스키마(session, shot), 열기·마이그레이션, 행 추가·조회 (data-model.md). 행 삭제 함수 없음
-- [ ] T009 `src/trace_booth/camera.py`: `Camera` 프로토콜, `OpenCvCamera`(장치 열기 → 프레임 버리기 → 한 장 → 닫기), `apply_settings()`로 `v4l2-ctl` 호출을 함수 하나에 감쌈
-- [ ] T010 [P] `src/trace_booth/camera_presets.py`: 조명별 노출·WB·초점 JSON 읽기, 없는 조명은 오류
+- [x] T004 [P] `src/trace_booth/naming.py`: 기기 ID 검사 `^[A-Z]{2,4}[0-9]{2}$`, 파일명 만들기·읽기, SLATE 이름 (contracts/storage-layout.md)
+- [x] T005 [P] `tests/test_naming.py`: 파일명 규칙 위반 0건, 잘못된 기기 ID 거절, 정규식 왕복
+- [x] T006 [P] `src/trace_booth/shotlist.py`: 기본 촬영 목록(SLATE → 패스 1 → NOTICE → 패스 2 → SCR1 선택), 필수 8면, 안내 문구
+- [x] T007 [P] `tests/test_shotlist.py`: 필수 사진 28장, 스침광 단계 안내에 "만 켜세요", 패스 2는 L1·L2만·CAM1만, SCR1은 OFF·선택
+- [x] T008 `src/trace_booth/store.py`: SQLite 스키마(session, shot), 열기·마이그레이션, 행 추가·조회 (data-model.md). 행 삭제 함수 없음
+- [x] T009 `src/trace_booth/camera.py`: `Camera` 프로토콜, `OpenCvCamera`(장치 열기 → 프레임 버리기 → 한 장 → 닫기), `apply_settings()`로 `v4l2-ctl` 호출을 함수 하나에 감쌈
+- [x] T010 [P] `src/trace_booth/camera_presets.py`: 조명별 노출·WB·초점 JSON 읽기, 없는 조명은 오류
 
 **체크포인트**: 이름·목록·기록·카메라 추상화가 준비됨
 
@@ -46,21 +46,21 @@ description: "BO1 촬영 도구 작업 목록"
 
 ### 테스트
 
-- [ ] T011 [P] [US1] `tests/test_session.py`: "기기 ID MB01로 시작하면 첫 단계에 자세·켤 조명·남은 단계 수가 보인다"
-- [ ] T012 [P] [US1] `tests/test_session.py`: "TOP·L2 단계에서 버튼을 한 번 누르면 CAM1·CAM2 사진이 한 장씩 저장되고 이름이 규칙을 따른다"
-- [ ] T013 [P] [US1] `tests/test_session.py`: "목록을 끝까지 찍으면 완료가 뜨고 빠진 면이 0개이며 장수가 목록과 같다"
-- [ ] T014 [P] [US1] `tests/test_session.py`: "찍은 사진을 다시 읽어 계산한 SHA-256이 기록과 같다"
-- [ ] T015 [P] [US1] `tests/test_session.py`: "패스 2 SL 단계는 L1 한 장, L2 한 장을 차례로 안내하고 CAM1만 찍는다"
-- [ ] T016 [P] [US1] `tests/test_session.py`: "SCR1 건너뛰기에 사유를 넣으면 SCR1 없이도 완료되고 사유가 남는다"
-- [ ] T017 [P] [US1] `tests/test_session.py` 경계: 카메라 한 대 실패 시 단계가 넘어가지 않고 실패 카메라를 알림, 재촬영은 새 번호로 남고 이전 파일 유지, 다시 켜면 마지막 단계 다음부터
+- [x] T011 [P] [US1] `tests/test_session.py`: "기기 ID MB01로 시작하면 첫 단계에 자세·켤 조명·남은 단계 수가 보인다"
+- [x] T012 [P] [US1] `tests/test_session.py`: "TOP·L2 단계에서 버튼을 한 번 누르면 CAM1·CAM2 사진이 한 장씩 저장되고 이름이 규칙을 따른다"
+- [x] T013 [P] [US1] `tests/test_session.py`: "목록을 끝까지 찍으면 완료가 뜨고 빠진 면이 0개이며 장수가 목록과 같다"
+- [x] T014 [P] [US1] `tests/test_session.py`: "찍은 사진을 다시 읽어 계산한 SHA-256이 기록과 같다"
+- [x] T015 [P] [US1] `tests/test_session.py`: "패스 2 SL 단계는 L1 한 장, L2 한 장을 차례로 안내하고 CAM1만 찍는다"
+- [x] T016 [P] [US1] `tests/test_session.py`: "SCR1 건너뛰기에 사유를 넣으면 SCR1 없이도 완료되고 사유가 남는다"
+- [x] T017 [P] [US1] `tests/test_session.py` 경계: 카메라 한 대 실패 시 단계가 넘어가지 않고 실패 카메라를 알림, 재촬영은 새 번호로 남고 이전 파일 유지, 다시 켜면 마지막 단계 다음부터
 
 ### 구현
 
-- [ ] T018 [US1] `src/trace_booth/session.py`: 세션 시작·이어 가기, 찍기(카메라 차례로, 파일 쓰고 fsync 뒤 기록), 재촬영, NOTICE 넘기기, SCR1 건너뛰기, 완료 검사
-- [ ] T019 [US1] `src/trace_booth/web.py`: 로컬 API(contracts/operator-web-api.md), Problem Details 오류, 미리보기 JPEG
-- [ ] T020 [P] [US1] `src/trace_booth/static/index.html`: 단계 안내(크게), 촬영·다시 찍기·다음·SCR1 건너뛰기 버튼, 미리보기 두 장, 대기열 수. 태블릿 가로·세로 모두
-- [ ] T021 [P] [US1] `tests/test_web.py`: 시작 → 찍기 → 완료 흐름, 잘못된 기기 ID 400, 빠진 면 409
-- [ ] T022 [US1] `src/trace_booth/__main__.py`: `trace-booth serve`(환경 변수: 데이터 폴더, CAM1·CAM2 경로, 프리셋, 포트)
+- [x] T018 [US1] `src/trace_booth/session.py`: 세션 시작·이어 가기, 찍기(카메라 차례로, 파일 쓰고 fsync 뒤 기록), 재촬영, NOTICE 넘기기, SCR1 건너뛰기, 완료 검사
+- [x] T019 [US1] `src/trace_booth/web.py`: 로컬 API(contracts/operator-web-api.md), Problem Details 오류, 미리보기 JPEG
+- [x] T020 [P] [US1] `src/trace_booth/static/index.html`: 단계 안내(크게), 촬영·다시 찍기·다음·SCR1 건너뛰기 버튼, 미리보기 두 장, 대기열 수. 태블릿 가로·세로 모두
+- [x] T021 [P] [US1] `tests/test_web.py`: 시작 → 찍기 → 완료 흐름, 잘못된 기기 ID 400, 빠진 면 409
+- [x] T022 [US1] `src/trace_booth/__main__.py`: `trace-booth serve`(환경 변수: 데이터 폴더, CAM1·CAM2 경로, 프리셋, 포트)
 
 **체크포인트**: 네트워크 없이도 한 대를 끝까지 찍고 로컬에 다 남음
 
@@ -91,7 +91,7 @@ description: "BO1 촬영 도구 작업 목록"
 
 ## Phase 5: 스토리 3 - 출고·반납 모드 (P2) ⏸ C1·CA1 이후
 
-**막힘**: plan.md "계약 확인 필요" 2건(업로드 URL의 카메라, SCR1과 409)이 C1에 반영되어야 시작
+**전제**: plan.md "계약 확인 필요" 2건은 11/2 결정됨. C1 OpenAPI 반영과 CA1을 기다림. `complete`에 `skippedFaces` 보내기 포함
 
 - [ ] T031 [P] [US3] 테스트: "출고 모드에서 찍으면 서버가 준 URL로 올라가고 학습용 저장소에는 올라가지 않는다"
 - [ ] T032 [P] [US3] 테스트: "사전 서명 URL이 만료되면 새 URL을 받아 올리고 누락이 0건이다"

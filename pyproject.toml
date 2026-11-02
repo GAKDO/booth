@@ -11,6 +11,8 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# Jetson은 JetPack의 시스템 OpenCV를 쓰므로 런타임 필수 의존성으로 두지 않는다
+camera = ["opencv-python-headless>=4.8"]
 
 [project.scripts]
 trace-booth = "trace_booth.__main__:main"
