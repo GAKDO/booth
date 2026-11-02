@@ -3,7 +3,7 @@
 ## 개발 PC (카메라 없이)
 
 ```bash
-python -m pip install -e ".[dev]"          # Jetson: pip install -e ".[upload]" (OpenCV는 시스템 것)
+python -m pip install -e ".[dev]"          # Jetson: capture/README.md 1장(venv --system-site-packages, OpenCV는 시스템 것)
 ruff check . && pytest -q
 ```
 

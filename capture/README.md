@@ -7,11 +7,18 @@
 ## 1. 설치
 
 ```bash
-sudo apt install -y v4l-utils          # v4l2-ctl
-git clone https://github.com/GAKDO/booth.git && cd booth
-python3 -m pip install -e ".[upload]"  # OpenCV는 JetPack에 들어 있는 것을 쓴다
-python3 -c "import cv2; print(cv2.__version__)"
+sudo apt install -y v4l-utils          # v4l2-ctl. sudo 권한이 있는 관리자 계정으로
+git clone https://github.com/GAKDO/booth.git ~/booth
+# 우분투 24.04 계열은 시스템 파이썬에 pip 설치를 막는다(externally-managed-environment). 가상환경을 쓴다.
+# --system-site-packages: JetPack에 들어 있는 OpenCV를 그대로 쓴다
+python3 -m venv --system-site-packages ~/trace-venv
+~/trace-venv/bin/pip install -e ~/booth"[upload]"
+~/trace-venv/bin/python -c "import cv2; print(cv2.__version__)"
+export PATH="$HOME/trace-venv/bin:$PATH"   # trace-booth 명령. ~/.bashrc에 넣어 두면 편하다
+trace-booth --version
 ```
+
+카메라 장치(`/dev/video*`)를 열려면 계정이 `video` 그룹에 있어야 한다(`id`로 확인). 없으면 관리자에게 `sudo usermod -aG video <계정>`을 부탁하고 다시 로그인한다.
 
 ## 2. 연결 확인 6가지
 
