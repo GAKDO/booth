@@ -18,7 +18,7 @@
 - Q: 타일 경계에서 같은 흠집이 두 번 잡히면? → A: 원본 좌표로 되돌린 뒤 같은 클래스끼리 상자 IoU 0.5 이상이면 신뢰도가 높은 것만 남긴다
 - Q: 클래스 이름은? → A: 모델의 클래스 이름이 codes.yaml `inspection.defect_class`(scratch·dent·crack·stain)와 다르면 시작하지 않는다
 - Q: modelVersion은? → A: 엔진 파일 옆 `model.json`의 `modelVersion`(예: `yolo11s-seg-v001-trt-fp16`). 없으면 시작하지 않는다
-- Q: 결과 좌표·카메라 구분은? → **A에게 확인 중(11/2)**. 계약 Detection에는 camera가 없고 polygon이 표준 좌표(펼친 면)인데, Jetson은 원본 사진 px로 탐지한다. 답이 오기 전까지 결과는 사진별(면·조명·카메라) 원본 px로 모아 두고, 올리는 부분은 계약이 정해진 뒤 만든다
+- Q: 결과 좌표·카메라 구분은? → **A 결정(11/2, contracts codes 0.6.0)**: Detection에 `camera`가 필수로 붙고 polygon은 그 사진의 원본 px다. 표준 좌표(펼친 면)로 바꾸는 일은 inspect-worker 정렬 뒤 capture-server가 한다. 부스는 펼치지 않는다
 
 ## 사용자 시나리오와 테스트 *(필수)*
 
@@ -46,7 +46,7 @@
 
 **수용 시나리오**:
 
-1. **주어진 상황** 출고·반납 세트, **동작** 탐지가 끝나면, **결과** `POST /api/v1/captures/sets/{setId}/detections`로 올라간다(형식은 계약 확정 뒤).
+1. **주어진 상황** 출고·반납 세트, **동작** 탐지가 끝나면, **결과** `POST /api/v1/captures/sets/{setId}/detections`로 올라간다(탐지마다 face·light·camera, 원본 px 폴리곤).
 
 ### 경계 상황
 

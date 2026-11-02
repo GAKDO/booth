@@ -1,8 +1,8 @@
-"""contracts codes.yaml 0.5.0의 촬영 코드 값(부스가 쓰는 값은 0.3.0 이후 그대로). 이 파일 밖에 문자열로 흩뿌리지 않는다."""
+"""contracts codes.yaml 0.6.0의 촬영 코드 값(부스가 쓰는 값은 0.3.0 이후 그대로). 이 파일 밖에 문자열로 흩뿌리지 않는다."""
 
 from enum import Enum
 
-CODES_VERSION = "0.5.0"
+CODES_VERSION = "0.6.0"
 
 
 class Face(str, Enum):

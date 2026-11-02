@@ -62,15 +62,41 @@ def test_다시_찍은_사진이_있으면_마지막_장만_올린다(service):
     assert all(p.path.name.endswith("_02.jpg") for p in photos)
 
 
-def test_사전_서명_URL이_만료되면_새_세트로_다시_올려_누락이_0건이다(shots, client, server):
-    server.expire_urls_once = True
+def test_사전_서명_URL이_만료되면_같은_세트에서_남은_사진만_URL을_다시_받아_누락이_0건이다(shots, client, server):
+    server.url_budget = [10]  # 처음 받은 URL은 10장 올린 뒤 만료
 
     result = _submit(shots, client, server)
 
-    assert result.new_sets == 1
-    assert len(server.sets) == 2
+    assert result.reissued == 1
+    assert len(server.sets) == 1
     assert server.sets[result.capture_set_id]["status"] == "UPLOADED"
     assert sum(k.startswith(result.capture_set_id) for k in server.objects) == 28
+    assert server.put_ok == {(result.capture_set_id, 0): 10, (result.capture_set_id, 1): 18}
+
+
+def test_URL을_다시_받아도_계속_만료되면_실패를_알리고_세트를_완료하지_않는다(shots, client, server):
+    server.url_budget = [5, 0, 0]
+
+    with pytest.raises(UploadFailed, match="2번 다시 받아도"):
+        _submit(shots, client, server)
+    assert len(server.sets) == 1
+    assert all(s["status"] == "UPLOADING" for s in server.sets.values())
+
+
+def test_URL을_다시_받을_때_서버가_이미_받은_사진은_다시_올리지_않는다(shots, client, server):
+    server.url_budget = [3]
+    original = server._reissue
+
+    def already_have_one_more(set_id, data):
+        # 만료 직전에 올라간 4번째 사진을 서버는 이미 받았다고 본다
+        server.objects[f"{set_id}/3"] = select_photos(shots)[3].path.read_bytes()
+        return original(set_id, data)
+
+    server._reissue = already_have_one_more
+    result = _submit(shots, client, server)
+
+    assert result.status == "UPLOADED"
+    assert server.put_ok[(result.capture_set_id, 1)] == 24
 
 
 def test_올리는_중_연결이_잠깐_끊기면_다시_시도해_완료된다(shots, client, server):

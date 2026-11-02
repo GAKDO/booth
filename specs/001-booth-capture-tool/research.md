@@ -42,5 +42,5 @@
 
 ## 8. 출고·반납 모드 (스토리 3)
 
-- **결정**: contracts C1(11/3) 고정 뒤 계획을 보완한다. BOOTH client 자격 → JWT → `POST /captures/sets`(사진별 sha256) → URL로 PUT → `complete`. URL이 만료되면 세트 URL을 다시 받는다.
+- **결정**: contracts C1(11/3) 고정 뒤 계획을 보완한다. BOOTH client 자격 → JWT → `POST /captures/sets`(사진별 sha256) → URL로 PUT → `complete`. URL이 만료되면 세트는 그대로 두고 `POST /captures/sets/{setId}/uploads`로 아직 안 올라간 사진의 URL만 다시 받는다(11/2 결정).
 - **막힌 점**: plan.md "계약 확인 필요" 2건.
