@@ -1,0 +1,153 @@
+"""로컬 촬영 기록(SQLite). 행을 지우는 함수는 두지 않는다(헌법 III)."""
+
+from __future__ import annotations
+
+import os
+import secrets
+import sqlite3
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS session (
+  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, mode TEXT NOT NULL,
+  current_step INTEGER NOT NULL DEFAULT 0, scr1_skip_reason TEXT,
+  status TEXT NOT NULL DEFAULT 'IN_PROGRESS', started_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS shot (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES session(id), step_index INTEGER NOT NULL,
+  kind TEXT NOT NULL, face TEXT, light TEXT, camera TEXT NOT NULL, seq INTEGER NOT NULL,
+  filename TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL, sha256 TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+  camera_settings TEXT NOT NULL, captured_at TEXT NOT NULL,
+  upload_status TEXT NOT NULL DEFAULT 'PENDING', upload_attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT, uploaded_at TEXT
+);
+"""
+
+
+def uuid7() -> str:
+    """UUIDv7 (Python 3.10에는 uuid.uuid7이 없다)."""
+    value = (int(time.time() * 1000) & ((1 << 48) - 1)) << 80
+    value |= secrets.randbits(80)
+    value = (value & ~(0xF << 76)) | (0x7 << 76)
+    value = (value & ~(0x3 << 62)) | (0x2 << 62)
+    return str(uuid.UUID(int=value))
+
+
+@dataclass
+class SessionRecord:
+    id: str
+    device_id: str
+    mode: str
+    current_step: int
+    scr1_skip_reason: str | None
+    status: str
+    started_at: str
+    completed_at: str | None
+
+
+@dataclass
+class ShotRecord:
+    session_id: str
+    step_index: int
+    kind: str
+    face: str | None
+    light: str | None
+    camera: str
+    seq: int
+    filename: str
+    local_path: str
+    sha256: str
+    size_bytes: int
+    camera_settings: str
+    captured_at: str
+    id: str = field(default_factory=uuid7)
+    upload_status: str = "PENDING"
+    upload_attempts: int = 0
+    last_error: str | None = None
+    uploaded_at: str | None = None
+
+
+class Store:
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(os.fspath(path), check_same_thread=False, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+
+    def create_session(self, device_id: str, mode: str, now: str) -> SessionRecord:
+        rec = SessionRecord(uuid7(), device_id, mode, 0, None, "IN_PROGRESS", now, None)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO session (id, device_id, mode, started_at) VALUES (?, ?, ?, ?)",
+                (rec.id, device_id, mode, now),
+            )
+        return rec
+
+    def find_open_session(self, device_id: str, mode: str) -> SessionRecord | None:
+        row = self._one(
+            "SELECT * FROM session WHERE device_id = ? AND mode = ? AND status = 'IN_PROGRESS' "
+            "ORDER BY started_at DESC LIMIT 1",
+            (device_id, mode),
+        )
+        return SessionRecord(**dict(row)) if row else None
+
+    def get_session(self, session_id: str) -> SessionRecord:
+        row = self._one("SELECT * FROM session WHERE id = ?", (session_id,))
+        if row is None:
+            raise KeyError(session_id)
+        return SessionRecord(**dict(row))
+
+    def update_session(self, session_id: str, **values: object) -> None:
+        allowed = {"current_step", "scr1_skip_reason", "status", "completed_at"}
+        if not values or set(values) - allowed:
+            raise ValueError(f"고칠 수 없는 칸: {set(values) - allowed}")
+        cols = ", ".join(f"{k} = ?" for k in values)
+        with self._lock:
+            self._conn.execute(f"UPDATE session SET {cols} WHERE id = ?", (*values.values(), session_id))
+
+    def next_seq(self, device_id: str, kind: str, face: str | None, light: str | None, camera: str) -> int:
+        row = self._one(
+            "SELECT COALESCE(MAX(s.seq), 0) AS m FROM shot s JOIN session e ON e.id = s.session_id "
+            "WHERE e.device_id = ? AND s.kind = ? AND s.face IS ? AND s.light IS ? AND s.camera = ?",
+            (device_id, kind, face, light, camera),
+        )
+        return int(row["m"]) + 1
+
+    def add_shot(self, shot: ShotRecord) -> None:
+        cols = list(shot.__dataclass_fields__)
+        with self._lock:
+            self._conn.execute(
+                f"INSERT INTO shot ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+                tuple(getattr(shot, c) for c in cols),
+            )
+
+    def shots(self, session_id: str) -> list[ShotRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM shot WHERE session_id = ? ORDER BY captured_at, rowid", (session_id,)
+            ).fetchall()
+        return [ShotRecord(**dict(r)) for r in rows]
+
+    def get_shot(self, shot_id: str) -> ShotRecord | None:
+        row = self._one("SELECT * FROM shot WHERE id = ?", (shot_id,))
+        return ShotRecord(**dict(row)) if row else None
+
+    def upload_counts(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute("SELECT upload_status, COUNT(*) AS n FROM shot GROUP BY upload_status").fetchall()
+        counts = {"pending": 0, "failed": 0, "conflict": 0}
+        for r in rows:
+            key = r["upload_status"].lower()
+            if key in counts:
+                counts[key] = r["n"]
+        return counts
+
+    def _one(self, sql: str, params: tuple) -> sqlite3.Row | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()

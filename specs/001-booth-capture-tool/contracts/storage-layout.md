@@ -5,7 +5,7 @@ ML3(Label Studio)·ML1(데이터셋 빌더)이 읽는 쪽이라 A와 맞춰야 �
 - 버킷: `trace-raw` (버전 관리 켜짐, 촬영 키는 삭제 권한 없음)
 - 키: `{deviceId}/{filename}`
 - 파일명: `{deviceId}_{face}_{light}_{camera}_{seq:02d}.jpg` — 예: `MB01_TOP_L2_CAM1_01.jpg`, `MB01_SCR1_OFF_CAM1_01.jpg`
-  - face·light·camera는 contracts `codes.yaml` 0.2.0 값
+  - face·light·camera는 contracts `codes.yaml` 0.3.0 값
   - seq는 재촬영할 때 올라감. 같은 키를 덮어쓰지 않음
 - SLATE: `{deviceId}/slate/{deviceId}_SLATE_CAM1_{seq:02d}.jpg` (면 코드가 아니므로 학습 대상 폴더와 분리)
 - 객체 메타데이터: `sha256`, `face`, `light`, `camera`, `capturedAt`, `toolVersion`, `cameraSettings`(JSON 문자열)

@@ -34,7 +34,7 @@
 
 | 원칙 | 점검 | 결과 |
 | --- | --- | --- |
-| I. 계약이 먼저 | 면·조명·카메라 값은 `codes.yaml` 0.2.0만 쓰고 `codes.py` 한 곳에 모은다. 출고·반납 API는 C1 고정 뒤 그대로 따른다. 아래 "계약 확인 필요" 2건은 코드를 고치지 않고 A에게 알린다. | 통과(확인 대기 2건) |
+| I. 계약이 먼저 | 면·조명·카메라 값은 `codes.yaml` 0.3.0만 쓰고 `codes.py` 한 곳에 모은다. 출고·반납 API는 C1 고정 뒤 그대로 따른다. 아래 "계약 확인 필요" 2건은 코드를 고치지 않고 A에게 알린다. | 통과(2건 11/2 해결) |
 | II. 서비스 경계 | 사진은 서버를 거치지 않고 MinIO에 직접(trace-raw 직접, 출고·반납은 사전 서명 URL). 부스 탐지는 BO2 범위. | 통과 |
 | III. 기록은 고칠 수 없다 | 모든 사진 SHA-256, 덮어쓰기·삭제 없음, 재촬영은 새 번호. 건너뛴 SCR1은 사유로 남김. | 통과 |
 | IV. 테스트 | 명세의 수용 시나리오 문장을 테스트 이름으로. `ruff check . && pytest -q`. | 통과 |
@@ -42,6 +42,8 @@
 | VI. 단순하게 | 웹 프레임워크·큐 서버 없이 표준 라이브러리. 조명 자동 전환·턴테이블 없음. | 통과 |
 
 ### 계약 확인 필요 (11/3 고정 전에 A에게)
+
+> **11/2 해결:** A 답변. ① `uploads[]`에 `camera`를 넣고 요청 `photos`와 같은 순서로 돌려준다(DB 사진 키는 세트·면·조명·카메라). ② 완료 검사는 출처별 필수 면(`codes.yaml` 0.3.0 `capture.face_required.BOOTH` 8면), SCR1을 건너뛰면 `complete` 본문 `skippedFaces`에 `{"SCR1": "사유"}`. C1 OpenAPI에는 11/3 고정 전에 반영 예정.
 
 1. **업로드 URL에 카메라·번호가 없음.** REST API v0의 `POST /captures/sets` 응답 `uploads[]`는 `face`·`light`만 있어 부스처럼 같은 면·조명을 CAM1·CAM2 두 장으로 찍으면 어느 URL이 어느 사진인지 정할 수 없다. 응답에 `camera`(또는 요청 순서와 같은 인덱스)가 필요하다.
 2. **SCR1 선택 면과 `complete`의 409.** `POST /captures/sets/{id}/complete`는 빠진 면이 있으면 409인데, 부스의 필수 면은 8면(TOP·BOT·SF·SB·SL·SR·KB·SCR0)이고 SCR1은 선택이다. 부스 세트에서 SCR1이 없어도 409가 나지 않아야 한다.
@@ -68,7 +70,7 @@ specs/001-booth-capture-tool/
 ```text
 src/trace_booth/
 ├── __main__.py        # trace-booth serve | shots | retry
-├── codes.py           # codes.yaml 0.2.0 값 (Face, Light, Camera)
+├── codes.py           # codes.yaml 0.3.0 값 (Face, Light, Camera, 부스 필수 면)
 ├── shotlist.py        # 기본 촬영 목록(단계·안내 문구), 필수 8면
 ├── naming.py          # 기기 ID 검사, 파일명 만들기·읽기
 ├── camera.py          # Camera 프로토콜, OpenCvCamera, v4l2-ctl 래퍼
