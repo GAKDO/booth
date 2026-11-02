@@ -3,7 +3,7 @@
 ## 개발 PC (카메라 없이)
 
 ```bash
-python -m pip install -e ".[dev]"          # Jetson: pip install -e ".[upload]" (OpenCV는 시스템 것)
+python -m pip install -e ".[dev]"          # Jetson: capture/README.md 1장(venv --system-site-packages, OpenCV는 시스템 것)
 ruff check . && pytest -q
 ```
 
@@ -16,12 +16,12 @@ ruff check . && pytest -q
 
 ## Jetson (부스)
 
-준비: C920 2대를 꽂고 `ls /dev/v4l/by-id/`로 경로를 확인한다.
+준비: 카메라 2대를 꽂고 `capture/README.md` 연결 확인 ②에 따라 경로를 정한다. by-id 이름이 서로 다르면 by-id를, C920 두 대처럼 이름이 겹치면 by-path(USB 포트)를 쓴다.
 
 ```bash
 export TRACE_BOOTH_DATA_DIR=~/trace-booth-data
-export TRACE_BOOTH_CAM1=/dev/v4l/by-id/<앞 카메라>
-export TRACE_BOOTH_CAM2=/dev/v4l/by-id/<뒤 카메라>
+export TRACE_BOOTH_CAM1=<앞 카메라 경로>
+export TRACE_BOOTH_CAM2=<뒤 카메라 경로>
 export TRACE_BOOTH_PRESETS=~/trace-booth-presets.json   # 조명별 노출·WB·초점(부스 설정 날 실측)
 export MINIO_ENDPOINT=https://storage.java21.net   # gitops infra.env와 같은 이름
 export MINIO_ACCESS_KEY=...  MINIO_SECRET_KEY=...       # 값은 trace-secrets, 채팅·코드에 쓰지 않음
