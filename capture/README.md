@@ -25,9 +25,9 @@ trace-booth --version
 먼저 `python3 -m venv --help`가 되는지 본다. `python3-venv`(ensurepip)가 없으면 venv를 만들 수 없으므로 관리자에게 `sudo apt install python3-venv`를 한 번 부탁한다(jetson2에는 이미 있었다).
 
 ```bash
-# v4l2-ctl: 시스템에 없는 패키지만 받아 홈에 푼다
+# v4l2-ctl과 필요한 런타임 라이브러리를 홈에 푼다
 mkdir -p ~/.local/v4l-debs ~/.local/bin && cd ~/.local/v4l-debs
-apt download v4l-utils libv4l2rds0t64          # libv4l-0t64·libv4lconvert0t64는 보통 이미 있음(dpkg -s로 확인)
+apt download v4l-utils libv4l2rds0t64 libv4l-0t64 libv4lconvert0t64   # 런타임 라이브러리까지 함께 받는다
 for d in *.deb; do dpkg -x "$d" ~/.local/v4l; done
 cat > ~/.local/bin/v4l2-ctl <<'SH'
 #!/bin/sh
