@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .camera import OpenCvCamera
 from .camera_presets import Presets
-from .capture_client import BoothAuth, CaptureClient
+from .capture_client import ApiError, BoothAuth, CaptureClient
 from .checkout import submit_session
 from .codes import Camera
 from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
@@ -44,13 +44,20 @@ def _object_store() -> S3ObjectStore | None:
     )
 
 
-def _submitter(store: Store) -> Submitter | None:
-    """출고·반납 모드용. TRACE_API_URL(gateway)과 부스 자격(값은 trace-secrets)이 없으면 None."""
+def _client() -> CaptureClient | None:
+    """capture-server 호출용. TRACE_API_URL(gateway)과 부스 자격(값은 trace-secrets)이 없으면 None."""
     url = os.environ.get("TRACE_API_URL")
     if not url:
         return None
     auth = BoothAuth(url, _env("TRACE_BOOTH_CLIENT_ID"), _env("TRACE_BOOTH_CLIENT_SECRET"))
-    client = CaptureClient(url, auth)
+    return CaptureClient(url, auth)
+
+
+def _submitter(store: Store) -> Submitter | None:
+    """출고·반납 모드용. 서버 설정이 없으면 None."""
+    client = _client()
+    if client is None:
+        return None
     return lambda session_id: submit_session(store, session_id, client, _now)
 
 
@@ -123,8 +130,12 @@ def _imread(path: str) -> object:
 
 
 def detect(session_public_id: str, engine: str | None, make_detector: Callable[[Path], Detector] | None = None,
-           load: Callable[[str], object] = _imread) -> int:
-    """찍은 세션 하나의 면 사진을 탐지해 로컬에 JSON으로 남긴다(BO2). 원본 사진은 읽기만 한다."""
+           load: Callable[[str], object] = _imread, client: CaptureClient | None = None) -> int:
+    """찍은 세션 하나의 면 사진을 탐지해 로컬에 JSON으로 남긴다(BO2). 원본 사진은 읽기만 한다.
+
+    출고·반납 세트가 이미 올라갔으면 탐지 결과도 그 세트에 올린다. 다시 돌리면 다시 보내고, 서버가 그 세트의
+    부스 탐지를 마지막 요청으로 통째로 바꾼다(A 11/2). 종료 코드: 30초 초과 2, 올리기 실패 3.
+    """
     import json
 
     data_dir = _data_dir()
@@ -143,10 +154,31 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"사진 {len(result.photos)}장, 흠집 {result.count}개, {result.seconds}초 → {out}")
+    code = 0
     if result.seconds > NFR_DETECT_SECONDS:
         print(f"경고: 한 세트 {NFR_DETECT_SECONDS}초를 넘었어요")
-        return 2
-    return 0
+        code = 2
+    record = store.get_checkout(session.id)
+    if record is None or record.status != "SUBMITTED" or record.capture_set_id is None:
+        print("올린 출고·반납 세트가 없어 탐지 결과는 로컬에만 남겨요")
+        return code
+    client = client or _client()
+    if client is None:
+        print("TRACE_API_URL이 없어 탐지 결과는 로컬에만 남겨요")
+        return code
+    try:
+        accepted = client.save_detections(record.capture_set_id, info.model_version, result.detections())
+    except ApiError as e:
+        if e.code == "CAPTURE_SET_CLOSED":
+            print(f"세트 {record.capture_set_id}는 이미 등급이 매겨져 탐지를 바꿀 수 없어요(로컬 JSON은 남음)")
+        else:
+            print(f"탐지 결과를 올리지 못했어요(로컬 JSON은 남음): {e}")
+        return 3
+    except OSError as e:
+        print(f"탐지 결과를 올리지 못했어요(로컬 JSON은 남음): {e}")
+        return 3
+    print(f"세트 {record.capture_set_id}에 탐지 {accepted}개를 올렸어요")
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:

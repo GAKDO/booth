@@ -94,9 +94,9 @@ description: "BO1 촬영 도구 작업 목록"
 **전제**: plan.md "계약 확인 필요" 2건은 11/2 결정됨. C1 OpenAPI 반영과 CA1을 기다림. `complete`에 `skippedFaces` 보내기 포함
 
 - [x] T031 [P] [US3] 테스트: "출고 모드에서 찍으면 서버가 준 URL로 올라가고 학습용 저장소에는 올라가지 않는다" (`tests/test_checkout_mode.py`)
-- [x] T032 [P] [US3] 테스트: "사전 서명 URL이 만료되면 새 세트로 다시 올려 누락이 0건이다" (`tests/test_checkout.py`, 가짜 서버 `tests/fake_capture.py`)
+- [x] T032 [P] [US3] 테스트: "사전 서명 URL이 만료되면 같은 세트에서 남은 사진만 URL을 다시 받아 누락이 0건이다" (`tests/test_checkout.py`, 가짜 서버 `tests/fake_capture.py`)
 - [x] T033 [US3] `src/trace_booth/capture_client.py`: BOOTH 자격 → JWT(메모리, 만료 1분 전·401 때 다시), `POST /captures/sets`, `complete`(skippedFaces, Idempotency-Key) (C1 OpenAPI 기준)
-- [x] T034 [US3] `src/trace_booth/checkout.py`: (면, 조명, 카메라)마다 마지막 장 고르기, 사전 서명 URL PUT(표준 라이브러리 urllib, 연결 실패 3번까지), 만료(403)면 세트를 새로 만듦 — 계약에 URL 다시 받는 API가 없음(A에게 확인)
+- [x] T034 [US3] `src/trace_booth/checkout.py`: (면, 조명, 카메라)마다 마지막 장 고르기, 사전 서명 URL PUT(표준 라이브러리 urllib, 연결 실패 3번까지), 만료(403)면 같은 세트에서 남은 사진의 URL만 다시 받음(`POST /captures/sets/{setId}/uploads`, 11/2 결정, 최대 2번)
 - [x] T035 [US3] 운영 화면에 모드·렌탈·시점 입력, 출고·반납 세션 열기(`checkout` 표), 출고·반납 사진은 trace-raw 대기열에서 빼기, 완료 때 `checkout.submit_session`, 실패하면 "다시 올리기". 실제 서버 연결 확인은 CA1 배포 뒤
 
 ---

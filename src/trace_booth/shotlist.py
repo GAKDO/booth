@@ -33,7 +33,7 @@ REQUIRED_FACES = FACE_REQUIRED_BOOTH
 
 _POSE = {
     Face.TOP: "TOP: 닫아서 상판이 위",
-    Face.BOT: "BOT: 뒤집어 바닥이 위",
+    Face.BOT: "BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기)",
     Face.KB: "KB: 펼쳐서 100° 가이드에 맞춤",
     Face.SF: "SF 면이 CAM1 쪽을 향하게",
     Face.SB: "SB 면이 CAM1 쪽을 향하게",

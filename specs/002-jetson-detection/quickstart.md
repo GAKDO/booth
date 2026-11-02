@@ -35,4 +35,4 @@ ruff check . && pytest -q   # 가짜 탐지기로 타일·중복 제거·세트 
 
 5. 걸린 시간이 30초 안인지 본다(넘으면 경고와 종료 코드 2). 첫 실행은 엔진을 올리느라 느리므로 두 번째 값을 적는다.
 
-결과 JSON의 폴리곤은 원본 사진 px(`"coordinates": "photo_px"`)이다. capture-server로 올리기(T009)는 detections 계약 질문에 A가 답한 뒤 붙인다.
+결과 JSON의 폴리곤은 원본 사진 px(`"coordinates": "photo_px"`)이다. 출고·반납 세트가 이미 올라간 세션이면(`TRACE_API_URL`과 부스 자격이 있을 때) 같은 결과를 `POST /captures/sets/{setId}/detections`로 그 세트에 올린다. 탐지마다 `camera`가 붙고 폴리곤은 원본 px 그대로다(펼치기는 서버·worker). 올리지 못하면 로컬 JSON은 남고 종료 코드 3, 올린 세트가 없으면 로컬에만 남긴다. 다시 돌리면 다시 보내고, 서버는 그 세트의 부스 탐지를 마지막 요청으로 통째로 바꾼다(중복 없음). 등급이 매겨진 세트면 409 `CAPTURE_SET_CLOSED`로 거절되고 종료 코드 3이다(A 11/2).

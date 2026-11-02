@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..store import ShotRecord
+from ..store import ShotRecord, latest_shots
 from .engine import Detector, ModelInfo
 from .merge import Found, dedupe
 from .tiling import tiles, to_image
@@ -35,7 +35,7 @@ class SetResult:
         return sum(len(p.found) for p in self.photos)
 
     def to_json(self) -> dict[str, Any]:
-        """로컬 기록용. 폴리곤은 원본 사진 px(계약의 표준 좌표가 아님: 올리기는 A의 답 뒤 T009)."""
+        """로컬 기록용. 폴리곤은 원본 사진 px(표준 좌표로 바꾸는 일은 서버가 한다)."""
         return {
             "modelVersion": self.model_version, "seconds": self.seconds, "count": self.count,
             "coordinates": "photo_px",
@@ -46,6 +46,15 @@ class SetResult:
                 for p in self.photos
             ],
         }
+
+
+    def detections(self) -> list[dict[str, Any]]:
+        """`POST /captures/sets/{setId}/detections`의 detections. 사진마다 (face, light, camera)와 원본 px 폴리곤."""
+        return [
+            {"face": p.face, "light": p.light, "camera": p.camera, "class": f.defect_class,
+             "polygon": [list(pt) for pt in f.polygon], "confidence": f.confidence}
+            for p in self.photos for f in p.found
+        ]
 
 
 def detect_photo(image: Any, detector: Detector, info: ModelInfo, size: int = 640,
@@ -61,13 +70,11 @@ def detect_photo(image: Any, detector: Detector, info: ModelInfo, size: int = 64
 
 def detect_set(shots: list[ShotRecord], detector: Detector, info: ModelInfo, load: ImageLoader,
                clock: Callable[[], float] = time.perf_counter) -> SetResult:
-    """면 사진만(SLATE 제외) 탐지한다. 원본 파일은 읽기만 한다."""
+    """면 사진만(SLATE 제외), 다시 찍은 면은 마지막 장만 탐지한다(올리는 세트와 같은 사진). 원본 파일은 읽기만 한다."""
     start = clock()
     result = SetResult(info.model_version)
-    for shot in shots:
-        if shot.kind != "SHOT" or shot.face is None or shot.light is None:
-            continue
+    for shot in latest_shots(shots):
         found = detect_photo(load(shot.local_path), detector, info)
-        result.photos.append(PhotoResult(shot.face, shot.light, shot.camera, shot.filename, found))
+        result.photos.append(PhotoResult(shot.face or "", shot.light or "", shot.camera, shot.filename, found))
     result.seconds = round(clock() - start, 3)
     return result

@@ -10,10 +10,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .capture_client import ApiError, CaptureClient, HttpCall, PhotoSpec, http_call, put_photo
-from .store import CheckoutRecord, ShotRecord, Store
+from .capture_client import ApiError, CaptureClient, HttpCall, PhotoSpec, UploadTarget, http_call, put_photo
+from .store import CheckoutRecord, ShotRecord, Store, latest_shots
 
 PUT_TRIES = 3
+MAX_REISSUE = 2  # URL 다시 받기 최대 횟수
 
 
 class UploadFailed(Exception):
@@ -29,29 +30,22 @@ class SubmitResult:
     capture_set_id: str
     photos: int
     status: str  # complete 응답의 status(UPLOADED 등)
-    new_sets: int  # URL 만료로 세트를 다시 만든 횟수
+    reissued: int  # URL 만료로 남은 사진의 URL을 다시 받은 횟수
 
 
 def select_photos(shots: list[ShotRecord]) -> list[PhotoSpec]:
-    """SLATE를 빼고 (면, 조명, 카메라)마다 번호가 가장 큰(마지막에 다시 찍은) 사진 하나. 찍은 차례대로."""
-    latest: dict[tuple[str, str, str], ShotRecord] = {}
-    for s in shots:
-        if s.kind != "SHOT" or s.face is None or s.light is None:
-            continue
-        key = (s.face, s.light, s.camera)
-        if key not in latest or s.seq > latest[key].seq:
-            latest[key] = s
-    chosen = sorted(latest.values(), key=lambda s: (s.captured_at, s.id or 0))
-    return [PhotoSpec(s.face or "", s.light or "", s.camera, s.sha256, s.captured_at, Path(s.local_path)) for s in chosen]
+    """SLATE를 빼고 (면, 조명, 카메라)마다 마지막에 찍은 사진 하나. 찍은 차례대로."""
+    return [PhotoSpec(s.face or "", s.light or "", s.camera, s.sha256, s.captured_at, Path(s.local_path))
+            for s in latest_shots(shots)]
 
 
-def _put_all(
-    client_http: HttpCall, uploads: list, photos: list[PhotoSpec], sleep: Callable[[float], None]
-) -> None:
-    for target, photo in zip(uploads, photos):
+def _put_all(http: HttpCall, pending: list[tuple[UploadTarget, PhotoSpec]], sleep: Callable[[float], None]) -> None:
+    """올린 사진은 pending에서 뺀다. URL이 만료되면 남은 것을 둔 채 _UrlExpired."""
+    while pending:
+        target, photo = pending[0]
         for attempt in range(1, PUT_TRIES + 1):
             try:
-                status = put_photo(target, photo, client_http)
+                status = put_photo(target, photo, http)
             except OSError as e:
                 status, error = 0, type(e).__name__
             else:
@@ -63,6 +57,13 @@ def _put_all(
             if attempt == PUT_TRIES:
                 raise UploadFailed(f"{photo.face}·{photo.light}·{photo.camera} 올리기 실패: {error}")
             sleep(2.0 * attempt)
+        pending.pop(0)
+
+
+def _reissue(client: CaptureClient, set_id: str, pending: list[tuple[UploadTarget, PhotoSpec]]) -> None:
+    """남은 사진의 URL을 다시 받아 pending을 바꾼다. 서버가 이미 받았다고 빼 준 사진은 pending에서도 뺀다."""
+    targets = {(t.face, t.light, t.camera): t for t in client.reissue_uploads(set_id, [p for _, p in pending])}
+    pending[:] = [(targets[k], p) for _, p in pending if (k := (p.face, p.light, p.camera)) in targets]
 
 
 def submit(
@@ -77,22 +78,24 @@ def submit(
     photos = select_photos(shots)
     if not photos:
         raise UploadFailed("올릴 사진이 없음")
-    new_sets = 0
+    set_id, uploads = client.create_set(rental_id, checkpoint_id, photos)
+    pending = list(zip(uploads, photos))
+    reissued = 0
     while True:
-        set_id, uploads = client.create_set(rental_id, checkpoint_id, photos)
         try:
-            _put_all(http, uploads, photos, sleep)
+            _put_all(http, pending, sleep)
             break
         except _UrlExpired:
-            # 계약에 URL을 다시 받는 API가 없어 세트를 새로 만든다(이전 세트는 완료하지 않음).
-            if new_sets >= 1:
-                raise UploadFailed("사전 서명 URL이 두 번 만료됨") from None
-            new_sets += 1
+            # 세트는 그대로 두고 남은 사진의 URL만 다시 받는다(contracts 11/2 결정, POST .../uploads).
+            if reissued >= MAX_REISSUE:
+                raise UploadFailed(f"사전 서명 URL을 {MAX_REISSUE}번 다시 받아도 만료됨") from None
+            reissued += 1
+            _reissue(client, set_id, pending)
     try:
         done = client.complete(set_id, skipped_faces, f"booth-{set_id}-complete")
     except ApiError as e:
         raise UploadFailed(f"완료 실패: {e}") from e
-    return SubmitResult(set_id, len(photos), str(done.get("status", "")), new_sets)
+    return SubmitResult(set_id, len(photos), str(done.get("status", "")), reissued)
 
 
 def submit_session(

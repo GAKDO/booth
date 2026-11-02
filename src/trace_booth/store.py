@@ -74,6 +74,21 @@ class ShotRecord:
     uploaded_at: str | None = None
 
 
+def latest_shots(shots: list[ShotRecord]) -> list[ShotRecord]:
+    """면 사진만(SLATE 제외) (면, 조명, 카메라)마다 번호가 가장 큰(마지막에 다시 찍은) 한 장. 찍은 차례대로.
+
+    출고·반납 세트에 올리는 사진과 탐지하는 사진이 같아야 하므로 둘 다 이 함수로 고른다.
+    """
+    latest: dict[tuple[str, str, str], ShotRecord] = {}
+    for s in shots:
+        if s.kind != "SHOT" or s.face is None or s.light is None:
+            continue
+        key = (s.face, s.light, s.camera)
+        if key not in latest or s.seq > latest[key].seq:
+            latest[key] = s
+    return sorted(latest.values(), key=lambda s: (s.captured_at, s.id or 0))
+
+
 @dataclass
 class CheckoutRecord:
     """출고·반납 세션이 올릴 렌탈·시점(관리자 화면이 고른 publicId)과 올리기 결과."""

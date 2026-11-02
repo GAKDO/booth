@@ -1,4 +1,4 @@
-"""출고·반납 모드의 서버 호출: 부스 JWT, 촬영 세트 생성, 사전 서명 URL PUT, 완료 (contracts C1).
+"""출고·반납 모드의 서버 호출: 부스 JWT, 촬영 세트 생성, 사전 서명 URL PUT·다시 받기, 완료, 탐지 결과 (contracts C1).
 
 HTTP는 `HttpCall` 함수 하나로 감싸 테스트에서 가짜 서버로 바꿔 끼운다. 사전 서명 URL과 비밀은 로그·오류 문구에 남기지 않는다.
 """
@@ -139,10 +139,7 @@ class CaptureClient:
         body = {"rentalId": rental_id, "checkpointId": checkpoint_id, "source": "BOOTH",
                 "photos": [p.to_json() for p in photos]}
         data = self._post("촬영 세트 생성", self._base, body, (201,)).json()
-        uploads = [
-            UploadTarget(u["face"], u["light"], u["camera"], u["url"], dict(u.get("headers") or {}), u["expiresAt"])
-            for u in data["uploads"]
-        ]
+        uploads = _targets(data)
         if len(uploads) != len(photos):
             raise ApiError("촬영 세트 생성: 업로드 URL 수가 사진 수와 다름", 201, None)
         for p, u in zip(photos, uploads):
@@ -150,10 +147,29 @@ class CaptureClient:
                 raise ApiError("촬영 세트 생성: 업로드 URL 순서가 사진과 다름", 201, None)
         return str(data["captureSetId"]), uploads
 
+    def reissue_uploads(self, set_id: str, photos: list[PhotoSpec]) -> list[UploadTarget]:
+        """`POST /captures/sets/{setId}/uploads`: 아직 안 올라간 사진의 URL만 다시 받는다(이미 올라간 사진은 빠져 온다)."""
+        body = {"photos": [{"face": p.face, "light": p.light, "camera": p.camera} for p in photos]}
+        return _targets(self._post("업로드 URL 다시 받기", f"{self._base}/{set_id}/uploads", body, (200,)).json())
+
+    def save_detections(self, set_id: str, model_version: str, detections: list[dict]) -> int:
+        """`POST /captures/sets/{setId}/detections`: 부스 탐지 결과(원본 사진 px). 받아들인 개수를 돌려준다.
+
+        다시 보내면 서버가 그 세트의 부스 탐지를 이 요청으로 통째로 바꾼다(Idempotency-Key 없음, 11/2 결정)."""
+        body = {"modelVersion": model_version, "detections": detections}
+        return int(self._post("탐지 결과 저장", f"{self._base}/{set_id}/detections", body, (201,)).json()["accepted"])
+
     def complete(self, set_id: str, skipped: dict[str, str], idempotency_key: str) -> dict:
         body = {"skippedFaces": skipped} if skipped else {}
         return self._post("촬영 완료", f"{self._base}/{set_id}/complete", body, (202,),
                           {"Idempotency-Key": idempotency_key}).json()
+
+
+def _targets(data: dict) -> list[UploadTarget]:
+    return [
+        UploadTarget(u["face"], u["light"], u["camera"], u["url"], dict(u.get("headers") or {}), u["expiresAt"])
+        for u in data["uploads"]
+    ]
 
 
 def put_photo(target: UploadTarget, photo: PhotoSpec, http: HttpCall = http_call) -> int:

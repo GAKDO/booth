@@ -142,3 +142,104 @@ def test_detect_명령은_모델_클래스가_다르면_시작하지_않는다(s
     s = service.start("MB01")
     with pytest.raises(SystemExit, match="탐지를 시작할 수 없어요"):
         detect(s.public_id, str(_engine(tmp_path, ("scratch",))), make_detector=lambda _: SquareDetector())
+
+
+def test_다시_찍은_사진이_있으면_마지막_장만_탐지한다(service):
+    s = service.start("MB02")
+    service.shoot(s.id)  # SLATE
+    service.shoot(s.id)  # TOP·L1 CAM1·CAM2
+    service.retake(s.id)  # TOP·L1을 새 번호로
+    image = np.zeros((1080, 1920), dtype=np.uint8)
+
+    result = detect_set(service.store.shots(s.id), SquareDetector(), INFO, load=lambda _p: image)
+
+    assert [(p.face, p.light, p.camera) for p in result.photos] == [("TOP", "L1", "CAM1"), ("TOP", "L1", "CAM2")]
+
+
+def _submitted(service, tmp_path, monkeypatch):
+    """출고 세트를 가짜 서버에 올려 둔 세션과 그 서버·클라이언트."""
+    from fake_capture import BASE, SECRET, FakeCapture
+
+    from trace_booth.capture_client import BoothAuth, CaptureClient
+    from trace_booth.checkout import submit_session
+
+    monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("TRACE_API_URL", raising=False)
+    server = FakeCapture()
+    client = CaptureClient(BASE, BoothAuth(BASE, "booth-out", SECRET, http=server), http=server)
+    s = service.start("MB01", "OUT", "Ws0HLv6QRbDILPWOcz5I2", "IPv6mcQOlTkKj6mOecAQt")
+    run_to_end(service, s.id, skip_scr1="화면이 켜지지 않음")
+    service.complete(s.id)
+    record = submit_session(service.store, s.id, client, lambda: "2026-11-02T10:00:00+09:00", http=server,
+                            sleep=lambda _: None)
+    assert record.status == "SUBMITTED"
+    return s, server, client, record.capture_set_id
+
+
+def test_detect_명령은_올라간_출고_세트에_탐지를_원본_px와_카메라로_올린다(service, tmp_path, monkeypatch):
+    from trace_booth.__main__ import detect
+
+    s, server, client, set_id = _submitted(service, tmp_path, monkeypatch)
+    image = np.zeros((1080, 1920), dtype=np.uint8)
+    image[100:120, 100:130] = 255
+
+    code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(),
+                  load=lambda _: image, client=client)
+
+    assert code == 0
+    sent = server.detections[set_id]
+    photos = {(p["face"], p["light"], p["camera"]) for p in server.sets[set_id]["request"]["photos"]}
+    assert len(sent) == 28 and {(d["face"], d["light"], d["camera"]) for d in sent} == photos
+    assert sent[0]["class"] == "scratch" and sent[0]["polygon"][0] == [100.0, 100.0]
+
+
+def test_detect를_다시_돌리면_다시_보내고_서버의_부스_탐지는_마지막_결과로_바뀐다(service, tmp_path, monkeypatch):
+    from trace_booth.__main__ import detect
+
+    s, server, client, set_id = _submitted(service, tmp_path, monkeypatch)
+    one = np.zeros((1080, 1920), dtype=np.uint8)
+    one[100:120, 100:130] = 255
+    two = np.zeros((1080, 1920), dtype=np.uint8)
+    two[300:320, 300:330] = 255
+    engine = str(_engine(tmp_path))
+    run = lambda image: detect(s.public_id, engine,
+                               make_detector=lambda _: SquareDetector(), load=lambda _: image, client=client)
+
+    assert run(one) == 0 and server.detections[set_id][0]["polygon"][0] == [100.0, 100.0]
+    assert run(two) == 0
+    sent = server.detections[set_id]
+    assert len(sent) == 28 and all(d["polygon"][0] == [300.0, 300.0] for d in sent)  # 쌓이지 않고 두 번째 결과로 바뀜
+
+
+def test_등급이_매겨진_세트면_탐지를_올리지_못해도_로컬_JSON을_남기고_종료_코드_3을_준다(service, tmp_path, monkeypatch):
+
+    from trace_booth.__main__ import detect
+
+    s, server, client, set_id = _submitted(service, tmp_path, monkeypatch)
+    server.sets[set_id]["graded"] = True
+    image = np.zeros((1080, 1920), dtype=np.uint8)
+
+    code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(),
+                  load=lambda _: image, client=client)
+
+    assert code == 3
+    assert list((tmp_path / "MB01" / "detections").glob(f"{s.public_id}_v001.json"))
+    assert set_id not in server.detections
+
+
+def test_detect_명령은_올린_세트가_없으면_서버를_부르지_않고_로컬에만_남긴다(service, tmp_path, monkeypatch):
+    from fake_capture import BASE, SECRET, FakeCapture
+
+    from trace_booth.__main__ import detect
+    from trace_booth.capture_client import BoothAuth, CaptureClient
+
+    monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path))
+    server = FakeCapture()
+    client = CaptureClient(BASE, BoothAuth(BASE, "booth-out", SECRET, http=server), http=server)
+    s = service.start("MB01")
+    run_to_end(service, s.id, skip_scr1="화면이 켜지지 않음")
+
+    code = detect(s.public_id, str(_engine(tmp_path)), make_detector=lambda _: SquareDetector(),
+                  load=lambda _: np.zeros((1080, 1920), dtype=np.uint8), client=client)
+
+    assert code == 0 and server.calls == []
