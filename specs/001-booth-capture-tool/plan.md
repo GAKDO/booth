@@ -44,7 +44,7 @@
 ### 계약 확인 필요 (11/3 고정 전에 A에게)
 
 1. **업로드 URL에 카메라·번호가 없음.** REST API v0의 `POST /captures/sets` 응답 `uploads[]`는 `face`·`light`만 있어 부스처럼 같은 면·조명을 CAM1·CAM2 두 장으로 찍으면 어느 URL이 어느 사진인지 정할 수 없다. 응답에 `camera`(또는 요청 순서와 같은 인덱스)가 필요하다.
-2. **SCR1 선택 면과 `complete`의 409.** `POST /captures/sets/{id}/complete`는 빠진 면이 있으면 409인데, 부스의 필수 면은 8면(TOP·BOT·SF·SB·SL·SR·KB·SCR0)이고 SCR1은 선택이다. 부스 세트에서 SCR1이 없어도 409가 나지 않아야 한다. 또 KB는 폰에 없는 면이라 소스(BOOTH·PHONE)마다 필수 면이 다르다.
+2. **SCR1 선택 면과 `complete`의 409.** `POST /captures/sets/{id}/complete`는 빠진 면이 있으면 409인데, 부스의 필수 면은 8면(TOP·BOT·SF·SB·SL·SR·KB·SCR0)이고 SCR1은 선택이다. 부스 세트에서 SCR1이 없어도 409가 나지 않아야 한다.
 
 ## 프로젝트 구조
 
