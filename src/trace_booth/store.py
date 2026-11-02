@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import os
-import secrets
 import sqlite3
 import threading
-import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nanoid import generate
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS session (
-  id TEXT PRIMARY KEY, device_id TEXT NOT NULL, mode TEXT NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, device_id TEXT NOT NULL, mode TEXT NOT NULL,
   current_step INTEGER NOT NULL DEFAULT 0, scr1_skip_reason TEXT,
   status TEXT NOT NULL DEFAULT 'IN_PROGRESS', started_at TEXT NOT NULL, completed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS shot (
-  id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES session(id), step_index INTEGER NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE,
+  session_id INTEGER NOT NULL REFERENCES session(id), step_index INTEGER NOT NULL,
   kind TEXT NOT NULL, face TEXT, light TEXT, camera TEXT NOT NULL, seq INTEGER NOT NULL,
   filename TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL, sha256 TEXT NOT NULL, size_bytes INTEGER NOT NULL,
   camera_settings TEXT NOT NULL, captured_at TEXT NOT NULL,
@@ -28,18 +28,15 @@ CREATE TABLE IF NOT EXISTS shot (
 """
 
 
-def uuid7() -> str:
-    """UUIDv7 (Python 3.10에는 uuid.uuid7이 없다)."""
-    value = (int(time.time() * 1000) & ((1 << 48) - 1)) << 80
-    value |= secrets.randbits(80)
-    value = (value & ~(0xF << 76)) | (0x7 << 76)
-    value = (value & ~(0x3 << 62)) | (0x2 << 62)
-    return str(uuid.UUID(int=value))
+def new_public_id() -> str:
+    """밖에 보이는 ID: NanoID 21자(헌법 1.1.0). 내부 기본 키 id(정수)는 화면·API에 내보내지 않는다."""
+    return generate()
 
 
 @dataclass
 class SessionRecord:
-    id: str
+    id: int
+    public_id: str
     device_id: str
     mode: str
     current_step: int
@@ -51,7 +48,7 @@ class SessionRecord:
 
 @dataclass
 class ShotRecord:
-    session_id: str
+    session_id: int
     step_index: int
     kind: str
     face: str | None
@@ -64,7 +61,8 @@ class ShotRecord:
     size_bytes: int
     camera_settings: str
     captured_at: str
-    id: str = field(default_factory=uuid7)
+    public_id: str = field(default_factory=new_public_id)
+    id: int | None = None  # 넣을 때 SQLite가 매긴다
     upload_status: str = "PENDING"
     upload_attempts: int = 0
     last_error: str | None = None
@@ -81,13 +79,13 @@ class Store:
             self._conn.executescript(_SCHEMA)
 
     def create_session(self, device_id: str, mode: str, now: str) -> SessionRecord:
-        rec = SessionRecord(uuid7(), device_id, mode, 0, None, "IN_PROGRESS", now, None)
+        public_id = new_public_id()
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO session (id, device_id, mode, started_at) VALUES (?, ?, ?, ?)",
-                (rec.id, device_id, mode, now),
+            cur = self._conn.execute(
+                "INSERT INTO session (public_id, device_id, mode, started_at) VALUES (?, ?, ?, ?)",
+                (public_id, device_id, mode, now),
             )
-        return rec
+        return SessionRecord(int(cur.lastrowid or 0), public_id, device_id, mode, 0, None, "IN_PROGRESS", now, None)
 
     def find_open_session(self, device_id: str, mode: str) -> SessionRecord | None:
         row = self._one(
@@ -97,13 +95,13 @@ class Store:
         )
         return SessionRecord(**dict(row)) if row else None
 
-    def get_session(self, session_id: str) -> SessionRecord:
+    def get_session(self, session_id: int) -> SessionRecord:
         row = self._one("SELECT * FROM session WHERE id = ?", (session_id,))
         if row is None:
             raise KeyError(session_id)
         return SessionRecord(**dict(row))
 
-    def update_session(self, session_id: str, **values: object) -> None:
+    def update_session(self, session_id: int, **values: object) -> None:
         allowed = {"current_step", "scr1_skip_reason", "status", "completed_at"}
         if not values or set(values) - allowed:
             raise ValueError(f"고칠 수 없는 칸: {set(values) - allowed}")
@@ -120,22 +118,23 @@ class Store:
         return int(row["m"]) + 1
 
     def add_shot(self, shot: ShotRecord) -> None:
-        cols = list(shot.__dataclass_fields__)
+        cols = [c for c in shot.__dataclass_fields__ if c != "id"]
         with self._lock:
-            self._conn.execute(
+            cur = self._conn.execute(
                 f"INSERT INTO shot ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
                 tuple(getattr(shot, c) for c in cols),
             )
+        shot.id = int(cur.lastrowid or 0)
 
-    def shots(self, session_id: str) -> list[ShotRecord]:
+    def shots(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM shot WHERE session_id = ? ORDER BY captured_at, rowid", (session_id,)
             ).fetchall()
         return [ShotRecord(**dict(r)) for r in rows]
 
-    def get_shot(self, shot_id: str) -> ShotRecord | None:
-        row = self._one("SELECT * FROM shot WHERE id = ?", (shot_id,))
+    def get_shot(self, public_id: str) -> ShotRecord | None:
+        row = self._one("SELECT * FROM shot WHERE public_id = ?", (public_id,))
         return ShotRecord(**dict(row)) if row else None
 
     def pending_uploads(self, limit: int = 20) -> list[ShotRecord]:
@@ -146,7 +145,7 @@ class Store:
             ).fetchall()
         return [ShotRecord(**dict(r)) for r in rows]
 
-    def mark_upload(self, shot_id: str, status: str, now: str, error: str | None = None) -> None:
+    def mark_upload(self, shot_id: int, status: str, now: str, error: str | None = None) -> None:
         if status not in ("UPLOADED", "FAILED", "CONFLICT"):
             raise ValueError(status)
         with self._lock:

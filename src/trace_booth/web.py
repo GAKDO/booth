@@ -21,13 +21,13 @@ class App:
 
     def __init__(self, service: CaptureService) -> None:
         self.service = service
-        self.current: str | None = None
+        self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
 
 
 def _shot_json(s: ShotRecord) -> dict:
     return {
-        "id": s.id, "filename": s.filename, "face": s.face, "light": s.light, "camera": s.camera,
+        "id": s.public_id, "filename": s.filename, "face": s.face, "light": s.light, "camera": s.camera,
         "seq": s.seq, "sha256": s.sha256, "uploadStatus": s.upload_status,
     }
 
@@ -43,7 +43,7 @@ def _state(app: App) -> dict:
             "cameras": [c.value for c in v.step.cameras], "optional": v.step.optional,
         }
     return {
-        "sessionId": v.session.id, "deviceId": v.session.device_id, "mode": v.session.mode,
+        "sessionId": v.session.public_id, "deviceId": v.session.device_id, "mode": v.session.mode,
         "status": v.session.status, "step": step, "remainingSteps": v.remaining_steps,
         "missing": v.missing, "scr1SkipReason": v.session.scr1_skip_reason,
         "queue": app.service.store.upload_counts(), "presetsConfigured": app.service.presets.configured,

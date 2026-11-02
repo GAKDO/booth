@@ -81,3 +81,16 @@ def test_카메라가_실패하면_503과_실패한_카메라를_알린다(base,
     cams[Camera.CAM1].fail = True
     status, _, body = call(base, "POST", "/api/sessions/current/shoot")
     assert status == 503 and json.loads(body)["camera"] == "CAM1"
+
+
+def test_화면과_API에는_NanoID_21자_publicId만_나가고_내부_정수_id는_나가지_않는다(base):
+    import re
+
+    _, _, state = call(base, "POST", "/api/sessions", {"deviceId": "MB01"})
+    _, _, shot = call(base, "POST", "/api/sessions/current/shoot")
+    nanoid = re.compile(r"^[A-Za-z0-9_-]{21}$")
+    assert nanoid.match(json.loads(state)["sessionId"])
+    for s in json.loads(shot)["shots"]:
+        assert nanoid.match(s["id"])
+    status, _, _ = call(base, "GET", "/api/shots/1/thumbnail")  # 내부 id로는 찾을 수 없다
+    assert status == 404

@@ -1,6 +1,6 @@
 # 데이터 모델: BO1 촬영 도구
 
-로컬 SQLite(`booth.db`)와 코드 상수. 시각은 ISO 8601 + 오프셋, ID는 UUIDv7(헌법).
+로컬 SQLite(`booth.db`)와 코드 상수. 시각은 ISO 8601 + 오프셋, ID는 헌법 1.1.0 규칙: 기본 키는 정수 `id`(SQLite 자동 증가)로 화면·API에 내보내지 않고, 밖에 보이는 ID는 `public_id`(NanoID 21자)다.
 
 ## 촬영 단계 Step (코드 상수, shotlist.py)
 
@@ -21,10 +21,11 @@
 
 | 컬럼 | 타입 | 규칙 |
 | --- | --- | --- |
-| id | text | UUIDv7 |
+| id | integer | 기본 키(자동 증가), 밖에 내보내지 않음 |
+| public_id | text | NanoID 21자, 운영 화면 API의 `sessionId` |
 | device_id | text | `^[A-Z]{2,4}[0-9]{2}$` |
 | mode | text | `TRAINING` · `OUT` · `RET` (OUT·RET는 스토리 3) |
-| rental_id, checkpoint_id | text | 출고·반납 모드만 |
+| rental_id, checkpoint_id | text | 출고·반납 모드만. rental-server의 publicId(21자) 그대로, FK 없음 |
 | current_step | int | 다음에 찍을 단계 |
 | scr1_skip_reason | text | SCR1을 건너뛰었을 때만 |
 | status | text | `IN_PROGRESS` → `COMPLETE` |
@@ -36,8 +37,9 @@
 
 | 컬럼 | 타입 | 규칙 |
 | --- | --- | --- |
-| id | text | UUIDv7 |
-| session_id | text | session.id |
+| id | integer | 기본 키(자동 증가), 밖에 내보내지 않음 |
+| public_id | text | NanoID 21자, 운영 화면 API의 사진 `id`·미리보기 주소 |
+| session_id | integer | session.id |
 | step_index | int | |
 | face, light, camera | text | codes.yaml 값(SLATE는 face 없음) |
 | seq | int | 같은 기기·면·조명·카메라에서 1부터, 재촬영 때 +1 |
