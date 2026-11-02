@@ -9,7 +9,7 @@ ruff check . && pytest -q   # 가짜 탐지기로 타일·중복 제거·세트 
 
 ## Jetson (T008, 한 세트 30초 실측)
 
-1. ML 쪽에서 받은 가중치 `best.pt`(YOLO11-seg, 클래스 순서 scratch·dent·crack·stain)를 Jetson에 둔다.
+1. ML 쪽에서 받은 가중치 `best.pt`(YOLO11-seg, 클래스 순서 scratch·dent·crack·stain)를 Jetson에 둔다. MinIO `trace-models`에서 받을 때는 trace-jetson 키(읽기 전용)를 쓰고, 촬영 도구의 `MINIO_*`(trace-capture)와 섞지 않는다(예: `mc alias set models http://storage.java21.net:8000` 뒤 키는 직접 입력).
 2. Jetson에서 엔진을 만든다(엔진은 만든 기기에서만 돈다).
 
    ```bash

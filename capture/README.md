@@ -87,7 +87,7 @@ trace-booth serve --port 8320
 
 `MINIO_ENDPOINT`를 넣지 않으면 업로드 없이 로컬에만 남습니다. 업로드까지 볼 때는 `MINIO_ENDPOINT`·`MINIO_ACCESS_KEY`·`MINIO_SECRET_KEY`를 환경 변수로 넣습니다.
 
-- 주소는 S3 API `http://storage.java21.net:8000`입니다. `https://storage.java21.net/`은 웹 관리 화면이라 업로드가 안 됩니다. HTTP라 키와 사진이 암호화되지 않고 오가므로 부스는 학교 내부망에서만 올리고, HTTPS S3 API 주소가 생기면 그 주소로 바꿉니다.
+- 주소는 S3 API `http://storage.java21.net:8000`입니다. `https://storage.java21.net/`은 웹 관리 화면이라 업로드가 안 됩니다. HTTP지만 S3 요청은 SigV4 서명이라 secret key 자체는 전송되지 않습니다(Access Key ID와 서명만). 다만 사진 내용은 같은 망에서 보일 수 있고 가로챈 요청은 약 15분 안에 다시 보낼 수 있어, 부스는 학교 내부망에서만 올립니다. trace-capture 키는 trace-raw에 올리기·확인만 되고 지우기는 안 되며, trace-raw는 버전 관리가 켜져 있습니다. HTTPS는 학교 관리자만 열 수 있어 MVP는 이대로 갑니다(A 11/2).
 - 키는 촬영 도구용 서비스 계정(trace-capture) 것을 씁니다. 공용 계정(nhnacademy)은 쓰지 않습니다. 키 값은 채팅·코드·이 문서에 적지 않습니다.
 
 키는 화면에 보이지 않게 직접 입력해 파일 하나에 두고(본인만 읽기), 띄울 때 읽어 들입니다.
