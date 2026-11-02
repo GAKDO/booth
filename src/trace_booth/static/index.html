@@ -10,7 +10,7 @@
   body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   main { max-width: 960px; margin: 0 auto; padding: 16px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  input, button { font-size:20px; padding:12px 16px; border-radius:8px; border:1px solid #444; background:#222; color:var(--fg); }
+  input, button, select { font-size:20px; padding:12px 16px; border-radius:8px; border:1px solid #444; background:#222; color:var(--fg); }
   button.primary { background:var(--accent); border-color:var(--accent); font-weight:700; }
   button:disabled { opacity:.4; }
   #instruction { font-size:30px; font-weight:700; line-height:1.35; margin:20px 0 8px; }
@@ -28,7 +28,14 @@
 <body>
 <main>
   <div class="row">
+    <select id="mode">
+      <option value="TRAINING">학습 데이터</option>
+      <option value="OUT">출고</option>
+      <option value="RET">반납</option>
+    </select>
     <input id="device" placeholder="기기 ID (예: MB01)" autocapitalize="characters" size="12">
+    <input id="rental" class="checkout" placeholder="렌탈 ID (21자)" size="23" hidden>
+    <input id="checkpoint" class="checkout" placeholder="시점 ID (21자)" size="23" hidden>
     <button id="start">시작</button>
     <span id="queue"></span>
   </div>
@@ -41,6 +48,7 @@
     <button id="retake" disabled>다시 찍기</button>
     <button id="skip" disabled>SCR1 건너뛰기</button>
     <button id="complete" disabled>완료</button>
+    <button id="submit" hidden>다시 올리기</button>
   </div>
   <div class="thumbs" id="thumbs"></div>
 </main>
@@ -70,13 +78,19 @@ function render() {
   $("retake").disabled = busy;
   $("complete").disabled = busy;
   if (!s) return;
-  if (s.status === "COMPLETE") {
+  const c = s.checkout;
+  $("submit").hidden = !(c && c.status === "FAILED");
+  if (s.status === "COMPLETE" && c && c.status !== "SUBMITTED") {
+    $("instruction").textContent = "서버에 올리지 못했어요. 다시 올리기를 누르세요";
+    $("error").textContent = c.lastError || "";
+  } else if (s.status === "COMPLETE") {
     $("instruction").innerHTML = '<span class="done">완료. 완료 책상으로 보내세요</span>';
   } else {
     $("instruction").textContent = step ? step.instruction : "목록 끝. 완료를 누르세요";
   }
   const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
-  $("meta").textContent = `${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`
+  const mode = { TRAINING: "학습", OUT: "출고", RET: "반납" }[s.mode];
+  $("meta").textContent = `${mode} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`
     + (s.presetsConfigured ? "" : " · ⚠ 카메라 고정 설정 없음");
   const q = s.queue, waiting = q.pending + q.failed;
   $("queue").textContent = waiting ? `올리지 못함 ${waiting}장` : "";
@@ -89,8 +103,15 @@ function showShots(shots) {
     `<figcaption>${x.filename}</figcaption></figure>`).join("");
 }
 
+$("mode").onchange = () => {
+  for (const el of document.querySelectorAll(".checkout")) el.hidden = $("mode").value === "TRAINING";
+};
 $("start").onclick = async () => {
-  state = await call("POST", "/api/sessions", { deviceId: $("device").value.trim().toUpperCase() });
+  const body = { deviceId: $("device").value.trim().toUpperCase(), mode: $("mode").value };
+  if (body.mode !== "TRAINING") {
+    body.rentalId = $("rental").value.trim(); body.checkpointId = $("checkpoint").value.trim();
+  }
+  state = await call("POST", "/api/sessions", body);
   $("thumbs").innerHTML = ""; render();
 };
 $("shoot").onclick = async () => {
@@ -107,8 +128,12 @@ $("skip").onclick = async () => {
   if (reason) { state = await call("POST", "/api/sessions/current/skip-scr1", { reason }); render(); }
 };
 $("complete").onclick = async () => {
-  await call("POST", "/api/sessions/current/complete");
-  state = await call("GET", "/api/sessions/current"); render();
+  $("complete").disabled = true;
+  try { state = (await call("POST", "/api/sessions/current/complete")).state; } finally { render(); }
+};
+$("submit").onclick = async () => {
+  $("submit").disabled = true;
+  try { state = await call("POST", "/api/sessions/current/submit"); } finally { $("submit").disabled = false; render(); }
 };
 setInterval(async () => {
   if (!state) return;

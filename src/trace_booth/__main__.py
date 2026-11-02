@@ -10,11 +10,13 @@ from pathlib import Path
 from . import __version__
 from .camera import OpenCvCamera
 from .camera_presets import Presets
+from .capture_client import BoothAuth, CaptureClient
+from .checkout import submit_session
 from .codes import Camera
-from .session import CaptureService
+from .session import CaptureService, _now
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
-from .web import App, make_server
+from .web import App, Submitter, make_server
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -39,6 +41,16 @@ def _object_store() -> S3ObjectStore | None:
     )
 
 
+def _submitter(store: Store) -> Submitter | None:
+    """출고·반납 모드용. TRACE_API_URL(gateway)과 부스 자격(값은 trace-secrets)이 없으면 None."""
+    url = os.environ.get("TRACE_API_URL")
+    if not url:
+        return None
+    auth = BoothAuth(url, _env("TRACE_BOOTH_CLIENT_ID"), _env("TRACE_BOOTH_CLIENT_SECRET"))
+    client = CaptureClient(url, auth)
+    return lambda session_id: submit_session(store, session_id, client, _now)
+
+
 def serve(host: str, port: int) -> int:
     data_dir = _data_dir()
     presets_path = os.environ.get("TRACE_BOOTH_PRESETS")
@@ -56,7 +68,10 @@ def serve(host: str, port: int) -> int:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")
     else:
         UploadWorker(store, objects).start()
-    server = make_server(App(service), host, port)
+    submitter = _submitter(store)
+    if submitter is None:
+        print("경고: TRACE_API_URL이 없어 출고·반납 모드를 쓸 수 없어요(학습 데이터 모드만)")
+    server = make_server(App(service, submitter), host, port)
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir})")
     try:
         server.serve_forever()

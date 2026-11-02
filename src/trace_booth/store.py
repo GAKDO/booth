@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS shot (
   upload_status TEXT NOT NULL DEFAULT 'PENDING', upload_attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT, uploaded_at TEXT
 );
+CREATE TABLE IF NOT EXISTS checkout (
+  session_id INTEGER PRIMARY KEY REFERENCES session(id), rental_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL,
+  capture_set_id TEXT, status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT, updated_at TEXT
+);
 """
 
 
@@ -67,6 +72,20 @@ class ShotRecord:
     upload_attempts: int = 0
     last_error: str | None = None
     uploaded_at: str | None = None
+
+
+@dataclass
+class CheckoutRecord:
+    """출고·반납 세션이 올릴 렌탈·시점(관리자 화면이 고른 publicId)과 올리기 결과."""
+
+    session_id: int
+    rental_id: str
+    checkpoint_id: str
+    capture_set_id: str | None = None
+    status: str = "PENDING"  # PENDING·SUBMITTED·FAILED
+    attempts: int = 0
+    last_error: str | None = None
+    updated_at: str | None = None
 
 
 class Store:
@@ -140,7 +159,9 @@ class Store:
     def pending_uploads(self, limit: int = 20) -> list[ShotRecord]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM shot WHERE upload_status IN ('PENDING', 'FAILED') ORDER BY captured_at, rowid LIMIT ?",
+                "SELECT s.* FROM shot s JOIN session e ON e.id = s.session_id "
+                "WHERE e.mode = 'TRAINING' AND s.upload_status IN ('PENDING', 'FAILED') "
+                "ORDER BY s.captured_at, s.rowid LIMIT ?",
                 (limit,),
             ).fetchall()
         return [ShotRecord(**dict(r)) for r in rows]
@@ -155,6 +176,29 @@ class Store:
                 (status, error, status, now, shot_id),
             )
 
+    def add_checkout(self, session_id: int, rental_id: str, checkpoint_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO checkout (session_id, rental_id, checkpoint_id) VALUES (?, ?, ?)",
+                (session_id, rental_id, checkpoint_id),
+            )
+
+    def get_checkout(self, session_id: int) -> CheckoutRecord | None:
+        row = self._one("SELECT * FROM checkout WHERE session_id = ?", (session_id,))
+        return CheckoutRecord(**dict(row)) if row else None
+
+    def mark_checkout(
+        self, session_id: int, status: str, now: str, capture_set_id: str | None = None, error: str | None = None
+    ) -> None:
+        if status not in ("SUBMITTED", "FAILED"):
+            raise ValueError(status)
+        with self._lock:
+            self._conn.execute(
+                "UPDATE checkout SET status = ?, attempts = attempts + 1, last_error = ?, updated_at = ?, "
+                "capture_set_id = COALESCE(?, capture_set_id) WHERE session_id = ?",
+                (status, error, now, capture_set_id, session_id),
+            )
+
     def shots_for_device(self, device_id: str) -> list[ShotRecord]:
         with self._lock:
             rows = self._conn.execute(
@@ -166,7 +210,10 @@ class Store:
 
     def upload_counts(self) -> dict[str, int]:
         with self._lock:
-            rows = self._conn.execute("SELECT upload_status, COUNT(*) AS n FROM shot GROUP BY upload_status").fetchall()
+            rows = self._conn.execute(
+                "SELECT s.upload_status, COUNT(*) AS n FROM shot s JOIN session e ON e.id = s.session_id "
+                "WHERE e.mode = 'TRAINING' GROUP BY s.upload_status"
+            ).fetchall()
         counts = {"pending": 0, "failed": 0, "conflict": 0}
         for r in rows:
             key = r["upload_status"].lower()

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .capture_client import ApiError, CaptureClient, HttpCall, PhotoSpec, http_call, put_photo
-from .store import ShotRecord
+from .store import CheckoutRecord, ShotRecord, Store
 
 PUT_TRIES = 3
 
@@ -93,3 +93,28 @@ def submit(
     except ApiError as e:
         raise UploadFailed(f"완료 실패: {e}") from e
     return SubmitResult(set_id, len(photos), str(done.get("status", "")), new_sets)
+
+
+def submit_session(
+    store: Store,
+    session_id: int,
+    client: CaptureClient,
+    now: Callable[[], str],
+    http: HttpCall = http_call,
+    sleep: Callable[[float], None] = time.sleep,
+) -> CheckoutRecord:
+    """끝난 출고·반납 세션을 올리고 결과를 기록한다. 실패해도 사진은 로컬에 남고, 다시 부르면 처음부터 다시 올린다."""
+    session = store.get_session(session_id)
+    record = store.get_checkout(session_id)
+    if record is None or session.status != "COMPLETE":
+        raise UploadFailed("완료된 출고·반납 촬영이 아님")
+    if record.status == "SUBMITTED":
+        return record
+    skipped = {"SCR1": session.scr1_skip_reason} if session.scr1_skip_reason else {}
+    try:
+        result = submit(store.shots(session_id), record.rental_id, record.checkpoint_id, skipped, client, http, sleep)
+    except (UploadFailed, ApiError, OSError) as e:
+        store.mark_checkout(session_id, "FAILED", now(), error=f"{type(e).__name__}: {e}"[:300])
+    else:
+        store.mark_checkout(session_id, "SUBMITTED", now(), capture_set_id=result.capture_set_id)
+    return store.get_checkout(session_id) or record
