@@ -1,4 +1,4 @@
-"""11/3 방향 전환: MVP 촬영 목록은 BOT → 뒤집어 TOP, 면마다 L1·L2·L3, CAM1·CAM2."""
+"""11/3 방향 전환: MVP 촬영 목록은 BOT(L1·L2·L3) → 뒤집어 TOP(L3·L2·L1), CAM1·CAM2."""
 
 from conftest import run_to_end
 
@@ -7,10 +7,10 @@ from trace_booth.shotlist import MVP_SHOTLIST, SHOTLISTS, StepKind, required_pho
 from trace_booth.store import Store
 
 
-def test_MVP_목록은_BOT_다음_TOP을_L1_L2_L3로_두_카메라에서_찍어_12장이다() -> None:
+def test_MVP_목록은_BOT을_L1_L2_L3로_TOP을_L3_L2_L1로_두_카메라에서_찍어_12장이다() -> None:
     shots = [s for s in MVP_SHOTLIST if s.kind is StepKind.SHOT]
     assert [(s.face.value, s.light.value) for s in shots] == [
-        ("BOT", "L1"), ("BOT", "L2"), ("BOT", "L3"), ("TOP", "L1"), ("TOP", "L2"), ("TOP", "L3"),
+        ("BOT", "L1"), ("BOT", "L2"), ("BOT", "L3"), ("TOP", "L3"), ("TOP", "L2"), ("TOP", "L1"),
     ]
     assert all([c.value for c in s.cameras] == ["CAM1", "CAM2"] for s in shots)
     assert required_photo_count(MVP_SHOTLIST) == 12
@@ -29,4 +29,10 @@ def test_MVP_목록으로_끝까지_찍으면_빠진_사진_없이_완료된다(
     names = [s.filename for s in service.store.shots(sid) if s.kind == "SHOT"]
     assert len(names) == 12
     assert names[:2] == ["MB01_BOT_L1_CAM1_01.jpg", "MB01_BOT_L1_CAM2_01.jpg"]
-    assert names[-1] == "MB01_TOP_L3_CAM2_01.jpg"
+    assert names[-1] == "MB01_TOP_L1_CAM2_01.jpg"
+
+
+def test_조명_안내에_장비_이름이_붙는다() -> None:
+    shots = [s for s in MVP_SHOTLIST if s.kind is StepKind.SHOT]
+    assert "VL49" in shots[0].instruction
+    assert "LED 바 #1" in shots[1].instruction and "LED 바 #2" in shots[2].instruction
