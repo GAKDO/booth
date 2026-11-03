@@ -50,12 +50,24 @@ _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
 _SIDE_CAMS = (Camera.CAM1,)
 
 
+# 11/4 조명 장비(민서 11/3 주문): L1 = VIJIM VL49(확산, 앞 기둥 위), L2·L3 = 5V USB LED 바 35cm 6000K 두 개(낮은 스침광).
+# VL49는 배터리가 들어 있어 USB 전원을 끊어도 꺼지지 않으므로 손으로 켜고 끈다.
+LIGHT_GEAR = {
+    Light.L1: "VL49(앞 기둥 위, 확산지 뒤)",
+    Light.L2: "LED 바 #1(왼쪽, 낮게)",
+    Light.L3: "LED 바 #2(뒤쪽, 낮게)",
+    Light.L4: "LED 바 #2(앞 자리로 옮김)",
+}
+
+
 def light_instruction(light: Light) -> str:
     if light is Light.OFF:
         return "조명을 모두 끄세요"
     if light is Light.L1:
-        return "L1만 켜세요(나머지는 끄기)"
-    return f"{light.value}만 켜세요(L1 포함 나머지는 끄기)"
+        text = "L1만 켜세요(나머지는 끄기)"
+    else:
+        text = f"{light.value}만 켜세요(L1 포함 나머지는 끄기)"
+    return f"{text} · {LIGHT_GEAR[light]}"
 
 
 def _build() -> tuple[Step, ...]:
@@ -86,9 +98,12 @@ MVP_LIGHTS = (Light.L1, Light.L2, Light.L3)
 def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS) -> tuple[Step, ...]:
     raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS)]
     for face in (Face.BOT, Face.TOP):
+        order = lights
         if face is Face.TOP:
             raw.append((StepKind.NOTICE, "노트북을 다시 뒤집어 상판이 위로 오게 놓으세요", None, None, ()))
-        for light in lights:
+            # TOP은 거꾸로(L3 → L2 → L1): 뒤집는 동안 켜 둔 바를 그대로 쓰고, 손으로 켜는 VL49(L1)는 한 대에 한 번만 다시 켠다
+            order = tuple(reversed(lights))
+        for light in order:
             raw.append((StepKind.SHOT, f"{_POSE[face]} · {light_instruction(light)}", face, light, _TOP_CAMS))
     return tuple(Step(i, k, text, f, li, cams) for i, (k, text, f, li, cams) in enumerate(raw))
 
