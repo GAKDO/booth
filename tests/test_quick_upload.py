@@ -63,7 +63,7 @@ def test_서버가_안_되면_로컬_큐에_남고_다시_되면_재시도가_�
 
 
 def test_다시_탐지한_결과를_보내기_전에는_지난번_SENT를_보이지_않는다(service, server, upload):
-    done, inspector = _detected(service)
+    done, _inspector = _detected(service)
     upload(done.id)
     service.store.put_quick_result(done.id, "DONE", "2026-11-05T12:00:00+09:00", "CLEAN",
                                    service.store.get_quick_result(done.id).result_json)
