@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,13 +17,20 @@ from .session import CaptureError, CaptureService, Incomplete, InvalidInput
 from .store import CheckoutRecord, ShotRecord
 
 Submitter = Callable[[int], CheckoutRecord]
+LiveFeed = Callable[[], Iterator[bytes]]  # 카메라 하나의 실시간 JPEG 프레임
 
 
 class App:
     """부스 하나에 촬영 세션 하나. 현재 세션 ID만 들고 있다."""
 
-    def __init__(self, service: CaptureService, submitter: Submitter | None = None) -> None:
+    def __init__(
+        self,
+        service: CaptureService,
+        submitter: Submitter | None = None,
+        live: dict[str, LiveFeed] | None = None,
+    ) -> None:
         self.service = service
+        self.live = live or {}  # 카메라 코드(CAM1·CAM2) → 실시간 보기
         self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
         self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
@@ -102,6 +109,11 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if shot is None:
                     return self._problem(404, "사진이 없음")
                 return self._send(200, _thumbnail(Path(shot.local_path)), "image/jpeg")
+            if method == "GET" and path.startswith("/api/live/"):
+                feed = app.live.get(path[len("/api/live/"):])
+                if feed is None:
+                    return self._problem(404, "실시간 보기를 쓸 수 없는 카메라")
+                return self._stream(feed())
             if method == "POST" and path == "/api/sessions":
                 body = self._body()
                 mode = str(body.get("mode", "TRAINING"))
@@ -161,6 +173,27 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             body = {"type": "about:blank", "title": HTTPStatus(status).phrase, "status": status, "detail": detail}
             body.update(extra)
             self._send(status, json.dumps(body, ensure_ascii=False).encode(), "application/problem+json")
+
+        def _stream(self, frames: Iterator[bytes]) -> None:
+            """multipart/x-mixed-replace로 JPEG를 이어 보낸다. 받는 쪽이 끊으면 장치를 닫는다."""
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                for jpg in frames:
+                    self.wfile.write(
+                        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                        + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n"
+                    )
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                close = getattr(frames, "close", None)
+                if close is not None:
+                    close()
+            self.close_connection = True
 
         def _send(self, status: int, body: bytes, content_type: str) -> None:
             self.send_response(status)
