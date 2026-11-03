@@ -96,6 +96,11 @@ class FakeCapture:
         found = data.get("detections", [])
         if not data.get("modelVersion") or any(self._key(d) not in keys for d in found):
             return self._problem(400, "VALIDATION_FAILED")
+        if s["request"].get("profile") == "QUICK":  # 1.1.0: QUICK은 analyzedPhotos에 세트 사진 전부
+            analyzed = {self._key(p) for p in data.get("analyzedPhotos", [])}
+            if analyzed != keys:
+                return self._problem(400, "VALIDATION_FAILED")
+            s["analyzed"] = sorted(analyzed)
         self.detections[set_id] = list(found)
         return self._json(201, {"accepted": len(found)})
 
@@ -119,9 +124,10 @@ class FakeCapture:
         s = self.sets[set_id]
         photos = s["request"]["photos"]
         skipped = data.get("skippedFaces", {})
-        if any(f in {x.value for x in FACE_REQUIRED_BOOTH} for f in skipped):
+        required = {"TOP", "BOT"} if s["request"].get("profile") == "QUICK" else {x.value for x in FACE_REQUIRED_BOOTH}
+        if any(f in required for f in skipped):
             return self._problem(400, "VALIDATION_FAILED")
-        missing = sorted({x.value for x in FACE_REQUIRED_BOOTH} - {p["face"] for p in photos})
+        missing = sorted(required - {p["face"] for p in photos})
         if missing:
             return self._problem(409, "CAPTURE_FACES_MISSING", missingFaces=missing)
         for i, p in enumerate(photos):

@@ -1,0 +1,96 @@
+"""빠른 검사 2부(contracts 1.1.0): QUICK 세트·탐지 올리기와 로컬 재시도 큐."""
+
+from __future__ import annotations
+
+import itertools
+
+import pytest
+from fake_capture import BASE, SECRET, FakeCapture
+from test_detect import SquareDetector
+from test_quick_mode import INFO, _inspector, _shoot_quick
+
+from trace_booth.capture_client import BoothAuth, CaptureClient
+from trace_booth.detect.engine import DetectError
+from trace_booth.quick_upload import QuickRetryWorker, upload_json, upload_quick
+
+
+@pytest.fixture
+def server() -> FakeCapture:
+    return FakeCapture()
+
+
+@pytest.fixture
+def upload(service, server):
+    client = CaptureClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
+    clock = (f"2026-11-05T10:00:{i:02d}+09:00" for i in itertools.count())
+    return lambda sid: upload_quick(service.store, sid, client, lambda: next(clock), http=server,
+                                    sleep=lambda _: None)
+
+
+def _detected(service, source=None):
+    done = _shoot_quick(service)
+    inspector = _inspector(service, source=source)
+    inspector.start(done.id)
+    return done, inspector
+
+
+def test_탐지가_끝나면_QUICK_세트로_12장을_올리고_탐지를_분석한_사진_전부와_함께_보낸다(service, server, upload):
+    done, _ = _detected(service)
+
+    upload(done.id)
+
+    (set_id, s), = server.sets.items()
+    assert s["request"]["profile"] == "QUICK" and s["status"] == "UPLOADED" and len(server.objects) == 12
+    assert len(s["analyzed"]) == 12 and len(server.detections[set_id]) == 1
+    assert server.detections[set_id][0]["face"] == "BOT"
+    assert upload_json(service.store, done.id)["detections"] == "SENT"
+    assert service.store.quick_sessions_to_upload() == []
+
+
+def test_서버가_안_되면_로컬_큐에_남고_다시_되면_재시도가_올린다(service, server, upload):
+    done, _ = _detected(service)
+    server.fail_puts = 100
+    upload(done.id)
+    assert upload_json(service.store, done.id)["set"] == "FAILED"
+    assert service.store.quick_sessions_to_upload() == [done.id]
+
+    server.fail_puts = 0
+    assert QuickRetryWorker(service.store, upload).run_once() == 1
+
+    assert upload_json(service.store, done.id)["detections"] == "SENT"
+    assert service.store.quick_sessions_to_upload() == []
+
+
+def test_탐지에_실패해도_세트는_올리고_다시_탐지하면_탐지만_보낸다(service, server, upload):
+    tries = []
+
+    def flaky():
+        tries.append(1)
+        if len(tries) == 1:
+            raise DetectError("엔진 없음")
+        return SquareDetector(), INFO
+
+    done, inspector = _detected(service, source=flaky)
+    upload(done.id)
+    assert len(server.sets) == 1 and server.detections == {}
+    assert service.store.quick_sessions_to_upload() == []
+
+    inspector.start(done.id)
+    assert service.store.quick_sessions_to_upload() == [done.id]
+    upload(done.id)
+    assert len(server.sets) == 1 and len(server.detections) == 1
+
+
+def test_등급이_매겨진_세트에는_탐지를_더_보내지_않는다(service, server, upload):
+    done, _ = _detected(service)
+    upload(done.id)
+    set_id = next(iter(server.sets))
+    server.sets[set_id]["graded"] = True
+    service.store.put_quick_result(done.id, "DONE", "2026-11-05T11:00:00+09:00", "CLEAN",
+                                   service.store.get_quick_result(done.id).result_json)
+
+    upload(done.id)
+
+    assert upload_json(service.store, done.id)["detections"] == "CLOSED"
+    assert service.store.quick_sessions_to_upload() == []
+    assert len(server.detections[set_id]) == 1

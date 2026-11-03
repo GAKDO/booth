@@ -144,9 +144,14 @@ class CaptureClient:
     def _post(self, what: str, url: str, body: dict, ok: tuple[int, ...], extra: dict[str, str] | None = None) -> Response:
         return authed_call(self._http, self._auth, what, "POST", url, json.dumps(body).encode(), ok, extra)
 
-    def create_set(self, rental_id: str, checkpoint_id: str, photos: list[PhotoSpec]) -> tuple[str, list[UploadTarget]]:
-        body = {"rentalId": rental_id, "checkpointId": checkpoint_id, "source": "BOOTH",
-                "photos": [p.to_json() for p in photos]}
+    def create_set(
+        self, rental_id: str, checkpoint_id: str, photos: list[PhotoSpec], profile: str | None = None,
+    ) -> tuple[str, list[UploadTarget]]:
+        """profile은 contracts 1.1.0 capture.profile(QUICK = 부스 빠른 검사). 빼면 서버가 FULL로 본다."""
+        body: dict = {"rentalId": rental_id, "checkpointId": checkpoint_id, "source": "BOOTH",
+                      "photos": [p.to_json() for p in photos]}
+        if profile is not None:
+            body["profile"] = profile
         data = self._post("촬영 세트 생성", self._base, body, (201,)).json()
         uploads = _targets(data)
         if len(uploads) != len(photos):
@@ -161,11 +166,15 @@ class CaptureClient:
         body = {"photos": [{"face": p.face, "light": p.light, "camera": p.camera} for p in photos]}
         return _targets(self._post("업로드 URL 다시 받기", f"{self._base}/{set_id}/uploads", body, (200,)).json())
 
-    def save_detections(self, set_id: str, model_version: str, detections: list[dict]) -> int:
+    def save_detections(
+        self, set_id: str, model_version: str, detections: list[dict], analyzed_photos: list[dict] | None = None,
+    ) -> int:
         """`POST /captures/sets/{setId}/detections`: 부스 탐지 결과(원본 사진 px). 받아들인 개수를 돌려준다.
 
         다시 보내면 서버가 그 세트의 부스 탐지를 이 요청으로 통째로 바꾼다(Idempotency-Key 없음, 11/2 결정)."""
-        body = {"modelVersion": model_version, "detections": detections}
+        body: dict = {"modelVersion": model_version, "detections": detections}
+        if analyzed_photos is not None:  # QUICK 세트는 필수: 분석한 사진 전부(흠집 없는 사진 포함, contracts 1.1.0)
+            body["analyzedPhotos"] = analyzed_photos
         return int(self._post("탐지 결과 저장", f"{self._base}/{set_id}/detections", body, (201,)).json()["accepted"])
 
     def complete(self, set_id: str, skipped: dict[str, str], idempotency_key: str) -> dict:

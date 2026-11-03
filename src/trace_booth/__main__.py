@@ -19,6 +19,7 @@ from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
 from .detect.runner import detect_set
 from .live import CameraGate, OpenCvLiveSource, live_frames
 from .quick import DetectorSource, QuickInspector, no_engine_source
+from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
 from .session import CaptureService, _now
 from .shotlist import SHOTLISTS
@@ -120,6 +121,13 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_BOOTH_ENGINE이 없어 빠른 검사를 쓸 수 없어요(엔진 없이 시험은 TRACE_BOOTH_DETECTOR=none)")
     else:
         quick = QuickInspector(store, source, _imread, _now)
+        client = _client()
+        if client is None:
+            print("경고: TRACE_API_URL이 없어 빠른 검사 결과를 서버에 올리지 않고 부스에만 남겨요")
+        else:
+            worker = QuickRetryWorker(store, lambda sid: upload_quick(store, sid, client, _now))
+            quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
+            worker.start()
         threading.Thread(target=quick.warm, daemon=True, name="engine-warm").start()
     waiting = _waiting()
     server = make_server(App(service, submitter, live, quick, waiting), host, port)

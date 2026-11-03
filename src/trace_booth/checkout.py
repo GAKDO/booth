@@ -74,11 +74,12 @@ def submit(
     client: CaptureClient,
     http: HttpCall = http_call,
     sleep: Callable[[float], None] = time.sleep,
+    profile: str | None = None,
 ) -> SubmitResult:
     photos = select_photos(shots)
     if not photos:
         raise UploadFailed("올릴 사진이 없음")
-    set_id, uploads = client.create_set(rental_id, checkpoint_id, photos)
+    set_id, uploads = client.create_set(rental_id, checkpoint_id, photos, profile)
     pending = list(zip(uploads, photos))
     reissued = 0
     while True:
@@ -105,6 +106,7 @@ def submit_session(
     now: Callable[[], str],
     http: HttpCall = http_call,
     sleep: Callable[[float], None] = time.sleep,
+    profile: str | None = None,
 ) -> CheckoutRecord:
     """끝난 출고·반납 세션을 올리고 결과를 기록한다. 실패해도 사진은 로컬에 남고, 다시 부르면 처음부터 다시 올린다."""
     session = store.get_session(session_id)
@@ -115,7 +117,8 @@ def submit_session(
         return record
     skipped = {"SCR1": session.scr1_skip_reason} if session.scr1_skip_reason else {}
     try:
-        result = submit(store.shots(session_id), record.rental_id, record.checkpoint_id, skipped, client, http, sleep)
+        result = submit(store.shots(session_id), record.rental_id, record.checkpoint_id, skipped, client, http, sleep,
+                        profile)
     except (UploadFailed, ApiError, OSError) as e:
         store.mark_checkout(session_id, "FAILED", now(), error=f"{type(e).__name__}: {e}"[:300])
     else:

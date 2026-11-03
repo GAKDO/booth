@@ -50,3 +50,10 @@
 
 - rental-server `GET /api/v1/rentals`의 x-trace-access roles가 `[ADMIN, CUSTOMER]`라 부스 토큰(BOOTH)이 읽을 수 있는지 A 확인 필요(계약 변경이면 A가 결정).
 - 11/6 jetson2 실측: 완료 → 판정 시간(목표 15초, 기준 30초). 화면에 "완료→판정 N초"로 보인다.
+
+## 2부 구현 (contracts 1.1.0 뒤)
+
+- `quick_upload.upload_quick`: `checkout.submit_session(profile="QUICK")`로 세트를 올리고(올린 세트는 다시 만들지 않음), 탐지가 DONE이면 `save_detections(..., analyzedPhotos=12장)`. 보낸 탐지 결과의 시각을 `quick_upload`에 남겨 다시 탐지하면 다시 보낸다. 409 `CAPTURE_SET_CLOSED`면 CLOSED로 두고 더 보내지 않는다.
+- `QuickRetryWorker`: 탐지가 끝나면 바로 한 번 올리고, 못 올린 것은 30초마다 다시(`Store.quick_sessions_to_upload`).
+- 결과 API에 `upload{set, captureSetId, detections, lastError}`, 화면에 "서버에 올림/올리는 중/못 올림(자동으로 다시)".
+- 테스트 `tests/test_quick_upload.py`(가짜 서버가 QUICK 완료 규칙과 analyzedPhotos 검사를 따른다).
