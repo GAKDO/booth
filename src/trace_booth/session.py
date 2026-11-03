@@ -133,6 +133,8 @@ class CaptureService:
             taken = self.store.shots(s.id)
             if not taken:
                 raise CaptureError("다시 찍을 사진이 없어요")
+            if taken[-1].step_index >= len(self.steps):
+                raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
             return self._capture(s, self.steps[taken[-1].step_index])
 
     def acknowledge(self, session_id: int) -> None:

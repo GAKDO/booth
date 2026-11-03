@@ -1,4 +1,8 @@
-"""기본 촬영 목록. GAKDO/docs booth/README.md 순서와 11/2 결정(패스 2 L1·L2, SCR1 선택)을 따른다."""
+"""촬영 목록.
+
+- mvp(기본, 11/3 방향 전환): BOT → 뒤집어 TOP, L1만, CAM1·CAM2 = 4장
+- full(보관): GAKDO/docs booth/README.md 순서와 11/2 결정(패스 2 L1·L2, SCR1 선택), 28장
+"""
 
 from __future__ import annotations
 
@@ -76,7 +80,19 @@ def _build() -> tuple[Step, ...]:
     return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
 
 
-DEFAULT_SHOTLIST: tuple[Step, ...] = _build()
+def _build_mvp() -> tuple[Step, ...]:
+    raw: list[tuple] = [
+        (StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS),
+        (StepKind.SHOT, f"{_POSE[Face.BOT]} · {light_instruction(Light.L1)}", Face.BOT, Light.L1, _TOP_CAMS),
+        (StepKind.NOTICE, "노트북을 다시 뒤집어 상판이 위로 오게 놓으세요", None, None, ()),
+        (StepKind.SHOT, f"{_POSE[Face.TOP]} · {light_instruction(Light.L1)}", Face.TOP, Light.L1, _TOP_CAMS),
+    ]
+    return tuple(Step(i, k, text, f, li, cams) for i, (k, text, f, li, cams) in enumerate(raw))
+
+
+DEFAULT_SHOTLIST: tuple[Step, ...] = _build()  # full(보관)
+MVP_SHOTLIST: tuple[Step, ...] = _build_mvp()
+SHOTLISTS: dict[str, tuple[Step, ...]] = {"mvp": MVP_SHOTLIST, "full": DEFAULT_SHOTLIST}
 
 
 def required_photo_count(steps: tuple[Step, ...] = DEFAULT_SHOTLIST) -> int:
