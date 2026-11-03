@@ -18,6 +18,7 @@ from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
 from .detect.runner import detect_set
 from .live import CameraGate, OpenCvLiveSource, live_frames
 from .session import CaptureService, _now
+from .shotlist import SHOTLISTS
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
 from .web import App, LiveFeed, Submitter, make_server
@@ -77,7 +78,10 @@ def serve(host: str, port: int) -> int:
     cameras = {code: OpenCvCamera(code, dev, gate=gate) for code, dev in devices.items()}
     live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
     store = Store(data_dir / "booth.db")
-    service = CaptureService(store, cameras, presets, data_dir)
+    shotlist_name = os.environ.get("TRACE_BOOTH_SHOTLIST", "mvp")
+    if shotlist_name not in SHOTLISTS:
+        raise SystemExit(f"TRACE_BOOTH_SHOTLIST는 {', '.join(SHOTLISTS)} 중 하나여야 해요")
+    service = CaptureService(store, cameras, presets, data_dir, steps=SHOTLISTS[shotlist_name])
     objects = _object_store()
     if objects is None:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")
@@ -87,7 +91,7 @@ def serve(host: str, port: int) -> int:
     if submitter is None:
         print("경고: TRACE_API_URL이 없어 출고·반납 모드를 쓸 수 없어요(학습 데이터 모드만)")
     server = make_server(App(service, submitter, live), host, port)
-    print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir})")
+    print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
