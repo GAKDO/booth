@@ -16,10 +16,11 @@ from .checkout import submit_session
 from .codes import Camera
 from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
 from .detect.runner import detect_set
+from .live import CameraGate, OpenCvLiveSource, live_frames
 from .session import CaptureService, _now
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
-from .web import App, Submitter, make_server
+from .web import App, LiveFeed, Submitter, make_server
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -61,16 +62,20 @@ def _submitter(store: Store) -> Submitter | None:
     return lambda session_id: submit_session(store, session_id, client, _now)
 
 
+def _live_feed(code: Camera, device: str, gate: CameraGate) -> LiveFeed:
+    return lambda: live_frames(lambda: OpenCvLiveSource(code, device), gate)
+
+
 def serve(host: str, port: int) -> int:
     data_dir = _data_dir()
     presets_path = os.environ.get("TRACE_BOOTH_PRESETS")
     presets = Presets.load(Path(presets_path).expanduser()) if presets_path else Presets()
     if not presets.configured:
         print("경고: TRACE_BOOTH_PRESETS가 없어 카메라 고정 설정 없이 찍어요")
-    cameras = {
-        Camera.CAM1: OpenCvCamera(Camera.CAM1, _env("TRACE_BOOTH_CAM1")),
-        Camera.CAM2: OpenCvCamera(Camera.CAM2, _env("TRACE_BOOTH_CAM2")),
-    }
+    gate = CameraGate()  # 촬영과 실시간 보기가 장치를 나눠 쓴다
+    devices = {Camera.CAM1: _env("TRACE_BOOTH_CAM1"), Camera.CAM2: _env("TRACE_BOOTH_CAM2")}
+    cameras = {code: OpenCvCamera(code, dev, gate=gate) for code, dev in devices.items()}
+    live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
     store = Store(data_dir / "booth.db")
     service = CaptureService(store, cameras, presets, data_dir)
     objects = _object_store()
@@ -81,7 +86,7 @@ def serve(host: str, port: int) -> int:
     submitter = _submitter(store)
     if submitter is None:
         print("경고: TRACE_API_URL이 없어 출고·반납 모드를 쓸 수 없어요(학습 데이터 모드만)")
-    server = make_server(App(service, submitter), host, port)
+    server = make_server(App(service, submitter, live), host, port)
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir})")
     try:
         server.serve_forever()

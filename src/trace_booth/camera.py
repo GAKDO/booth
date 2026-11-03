@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
-from typing import Protocol
+from contextlib import nullcontext
+from typing import TYPE_CHECKING, Protocol
 
 from .codes import Camera
+
+if TYPE_CHECKING:
+    from .live import CameraGate
 
 
 class CameraError(Exception):
@@ -42,6 +46,7 @@ class OpenCvCamera:
         height: int = 1080,
         warmup_frames: int = 10,
         set_controls: Callable[[str, dict[str, int]], None] = run_v4l2_ctl,
+        gate: CameraGate | None = None,
     ) -> None:
         self.code = code
         self.device = device
@@ -49,8 +54,13 @@ class OpenCvCamera:
         self.height = height
         self.warmup_frames = warmup_frames
         self._set_controls = set_controls
+        self._gate = gate  # 실시간 보기와 장치를 나눠 쓸 때. 찍는 동안 실시간 보기를 멈춘다
 
     def capture(self, settings: dict[str, int]) -> bytes:
+        with self._gate.exclusive() if self._gate is not None else nullcontext():
+            return self._capture(settings)
+
+    def _capture(self, settings: dict[str, int]) -> bytes:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
 
         cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)

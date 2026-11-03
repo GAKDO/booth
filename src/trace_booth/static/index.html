@@ -23,6 +23,10 @@
   .thumbs img { width:100%; border-radius:6px; background:#000; }
   .thumbs figcaption { font-size:13px; color:var(--muted); word-break:break-all; }
   .done { color:var(--ok); font-size:26px; font-weight:700; }
+  #live { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  #live figure { margin:0; flex:1 1 280px; }
+  #live img { width:100%; aspect-ratio:16/9; border-radius:6px; background:#000; }
+  #live figcaption { font-size:14px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -49,6 +53,11 @@
     <button id="skip" disabled>SCR1 건너뛰기</button>
     <button id="complete" disabled>완료</button>
     <button id="submit" hidden>다시 올리기</button>
+    <button id="liveToggle">실시간 보기</button>
+  </div>
+  <div id="live" hidden>
+    <figure><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 찍는 동안 잠깐 멈춤</figcaption></figure>
+    <figure><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 찍는 동안 잠깐 멈춤</figcaption></figure>
   </div>
   <div class="thumbs" id="thumbs"></div>
 </main>
@@ -103,6 +112,12 @@ function showShots(shots) {
     `<figcaption>${x.filename}</figcaption></figure>`).join("");
 }
 
+$("liveToggle").onclick = () => {
+  const on = $("live").hidden;
+  $("live").hidden = !on;
+  $("liveToggle").textContent = on ? "실시간 끄기" : "실시간 보기";
+  for (const cam of ["CAM1", "CAM2"]) $("live" + cam).src = on ? `/api/live/${cam}?t=${Date.now()}` : "";
+};
 $("mode").onchange = () => {
   for (const el of document.querySelectorAll(".checkout")) el.hidden = $("mode").value === "TRAINING";
 };
