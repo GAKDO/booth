@@ -123,8 +123,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     return self._problem(503, "서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 기기 목록을 못 불러와요")
                 try:
                     items = app.waiting()
-                except (ApiError, OSError) as e:
-                    return self._problem(502, f"기기 목록을 못 불러왔어요: {e}")
+                except (ApiError, OSError, ValueError, KeyError, TypeError) as e:  # 서버 응답 문제는 502
+                    return self._problem(502, f"기기 목록을 못 불러왔어요: {type(e).__name__}: {e}")
                 return self._json(200, {"items": [w.to_json() for w in items]})
             if method == "GET" and path.startswith("/api/live/"):
                 feed = app.live.get(path[len("/api/live/"):])

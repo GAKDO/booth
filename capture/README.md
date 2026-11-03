@@ -167,7 +167,10 @@ trace-booth serve --port 8320
 운영 화면 맨 위 선택이 **빠른 검사**(기본)면 "검사 기다리는 기기" 목록이 나옵니다. 관리자 화면에서 시점을 시작한 렌탈만 보입니다. 기기를 누르고 안내대로 BOT(뒤집어서) 3장씩 → 다시 뒤집어 TOP 3장씩 찍고 **완료**를 누르면, 몇 초 뒤 "문제 있음/없음"과 흠집 폴리곤이 그려진 사진이 나옵니다. 다음 기기는 **다음 기기**.
 
 ```bash
-set -a; . ~/.config/trace-booth.env; set +a   # TRACE_API_URL·TRACE_BOOTH_CLIENT_ID·SECRET(값은 이 파일에만)
+# ~/.config/trace-booth.env(권한 600)에 MINIO_* 말고 아래 세 줄도 더 둡니다. 값은 A에게 받아 이 파일에만 적어요.
+#   TRACE_API_URL=…   TRACE_BOOTH_CLIENT_ID=…   TRACE_BOOTH_CLIENT_SECRET=…
+set -a; . ~/.config/trace-booth.env; set +a
+# 엔진 만들기·의존성(tensorrt, Jetson 시스템 패키지)은 specs/002-jetson-detection/quickstart.md
 export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine   # 같은 폴더에 model.json
 # 엔진이 오기 전 흐름만 시험: TRACE_BOOTH_ENGINE 대신 export TRACE_BOOTH_DETECTOR=none (늘 "문제 없음" + 시험 표시)
 trace-booth serve
