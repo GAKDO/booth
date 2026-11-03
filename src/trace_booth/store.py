@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS checkout (
   capture_set_id TEXT, status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT, updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS quick_result (
+  session_id INTEGER PRIMARY KEY REFERENCES session(id), status TEXT NOT NULL, verdict TEXT,
+  result_json TEXT, error TEXT, started_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 """
 
 
@@ -101,6 +105,19 @@ class CheckoutRecord:
     attempts: int = 0
     last_error: str | None = None
     updated_at: str | None = None
+
+
+@dataclass
+class QuickResultRecord:
+    """빠른 검사 세션의 부스 탐지 결과. 판정(verdict)은 부스 화면용이고, 등급은 서버가 매긴다."""
+
+    session_id: int
+    status: str  # DETECTING·DONE·FAILED
+    verdict: str | None  # DEFECT(문제 있음)·CLEAN(문제 없음), 탐지를 못 했으면 None
+    result_json: str | None  # detect.runner.SetResult.to_json()
+    error: str | None
+    started_at: str
+    updated_at: str
 
 
 class Store:
@@ -217,6 +234,27 @@ class Store:
                 "capture_set_id = COALESCE(?, capture_set_id) WHERE session_id = ?",
                 (status, error, now, capture_set_id, session_id),
             )
+
+    def put_quick_result(
+        self, session_id: int, status: str, now: str, verdict: str | None = None,
+        result_json: str | None = None, error: str | None = None,
+    ) -> None:
+        """탐지를 시작하면 DETECTING으로 넣고, 끝나면 같은 행을 DONE·FAILED로 바꾼다(다시 돌리면 다시 DETECTING)."""
+        if status not in ("DETECTING", "DONE", "FAILED"):
+            raise ValueError(status)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO quick_result (session_id, status, verdict, result_json, error, started_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET status = excluded.status, "
+                "verdict = excluded.verdict, result_json = excluded.result_json, error = excluded.error, "
+                "updated_at = excluded.updated_at, "
+                "started_at = CASE WHEN excluded.status = 'DETECTING' THEN excluded.started_at ELSE started_at END",
+                (session_id, status, verdict, result_json, error, now, now),
+            )
+
+    def get_quick_result(self, session_id: int) -> QuickResultRecord | None:
+        row = self._one("SELECT * FROM quick_result WHERE session_id = ?", (session_id,))
+        return QuickResultRecord(**dict(row)) if row else None
 
     def shots_for_device(self, device_id: str) -> list[ShotRecord]:
         with self._lock:

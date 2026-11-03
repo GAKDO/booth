@@ -17,11 +17,12 @@ from .camera import CameraDevice
 from .camera_presets import Presets
 from .codes import Camera, Light
 from .naming import is_valid_device_id, shot_filename, slate_filename
-from .shotlist import DEFAULT_SHOTLIST, Step, StepKind
+from .shotlist import DEFAULT_SHOTLIST, QUICK_SHOTLIST, Step, StepKind
 from .store import SessionRecord, ShotRecord, Store
 
 MIN_FREE_BYTES = 200 * 1024 * 1024
-MODES = ("TRAINING", "OUT", "RET")
+MODES = ("TRAINING", "OUT", "RET", "QUICK")  # QUICK = 부스 빠른 검사(위·아래 2면, 11/3 MVP)
+BOOTH_CODE_RE = re.compile(r"^[A-Z]{2,4}[0-9]{2}$")
 PUBLIC_ID_RE = re.compile(r"^[A-Za-z0-9_-]{21}$")  # 다른 서버의 publicId(NanoID 21자)
 
 
@@ -76,13 +77,15 @@ class CaptureService:
         steps: tuple[Step, ...] = DEFAULT_SHOTLIST,
         now: Callable[[], str] = _now,
         min_free_bytes: int = MIN_FREE_BYTES,
+        mode_steps: dict[str, tuple[Step, ...]] | None = None,
     ) -> None:
         self.store = store
         self.cameras = cameras
         self.presets = presets
         self.data_dir = data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
-        self.steps = steps
+        self.steps = steps  # 학습·출고·반납 목록
+        self.mode_steps = {"QUICK": QUICK_SHOTLIST} if mode_steps is None else mode_steps  # 모드마다 다른 목록
         self._now = now
         self._min_free = min_free_bytes
         self._lock = threading.Lock()
@@ -90,9 +93,10 @@ class CaptureService:
     def start(
         self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None
     ) -> SessionRecord:
-        """세션을 열거나 이어 간다. 출고·반납(OUT·RET)은 관리자 화면이 고른 렌탈·시점 publicId가 필요하다."""
-        if not is_valid_device_id(device_id):
-            raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01)")
+        """세션을 열거나 이어 간다. 출고·반납(OUT·RET)·빠른 검사(QUICK)는 렌탈·시점 publicId가 필요하다."""
+        if not is_valid_device_id(device_id) or (mode == "TRAINING" and not BOOTH_CODE_RE.match(device_id)):
+            # 학습 데이터는 ID 카드의 부스 코드만(trace-raw 키가 파일명 앞 `_`까지를 기기 ID로 씀)
+            raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01, 빠른 검사는 목록의 기기)")
         if mode not in MODES:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")
         if mode != "TRAINING":
@@ -111,10 +115,14 @@ class CaptureService:
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
             return s
 
+    def steps_for(self, s: SessionRecord) -> tuple[Step, ...]:
+        return self.mode_steps.get(s.mode, self.steps)
+
     def view(self, session_id: int) -> SessionView:
         s = self.store.get_session(session_id)
-        step = self.steps[s.current_step] if s.current_step < len(self.steps) else None
-        return SessionView(s, step, len(self.steps) - s.current_step, self.missing(session_id))
+        steps = self.steps_for(s)
+        step = steps[s.current_step] if s.current_step < len(steps) else None
+        return SessionView(s, step, len(steps) - s.current_step, self.missing(session_id))
 
     def shoot(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
@@ -133,9 +141,10 @@ class CaptureService:
             taken = self.store.shots(s.id)
             if not taken:
                 raise CaptureError("다시 찍을 사진이 없어요")
-            if taken[-1].step_index >= len(self.steps):
+            steps = self.steps_for(s)
+            if taken[-1].step_index >= len(steps):
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
-            return self._capture(s, self.steps[taken[-1].step_index])
+            return self._capture(s, steps[taken[-1].step_index])
 
     def acknowledge(self, session_id: int) -> None:
         with self._lock:
@@ -157,7 +166,7 @@ class CaptureService:
         s = self.store.get_session(session_id)
         have = {(sh.step_index, sh.camera) for sh in self.store.shots(session_id)}
         out = []
-        for step in self.steps:
+        for step in self.steps_for(s):
             if step.kind is not StepKind.SHOT:
                 continue
             for cam in step.cameras:
@@ -177,9 +186,10 @@ class CaptureService:
             return self.store.get_session(session_id)
 
     def _current(self, s: SessionRecord) -> Step:
-        if s.status != "IN_PROGRESS" or s.current_step >= len(self.steps):
+        steps = self.steps_for(s)
+        if s.status != "IN_PROGRESS" or s.current_step >= len(steps):
             raise CaptureError("촬영 목록이 끝났어요. 완료를 누르세요")
-        return self.steps[s.current_step]
+        return steps[s.current_step]
 
     def _capture(self, s: SessionRecord, step: Step) -> list[ShotRecord]:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
