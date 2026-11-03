@@ -194,3 +194,15 @@ def test_시험용_모델로_탐지하면_올린_세트가_있어도_서버에_�
     assert detect(s.public_id, str(engine), make_detector=lambda _: OneScratch(), load=lambda _: image,
                   client=client) == 0
     assert set_id not in server.detections
+
+
+def test_다른_엔진이_있는_폴더에는_만들지_않고_같은_엔진은_다시_만든다(tmp_path):
+    onnx = tmp_path / "best.onnx"
+    onnx.write_bytes(b"onnx")
+    out = tmp_path / "out"
+    build_engine(onnx, out, test=True, trtexec="true", run=_fake_trtexec([]))
+    build_engine(onnx, out, test=True, trtexec="true", run=_fake_trtexec([]))  # 같은 엔진 다시
+    other = tmp_path / "yolo11n-seg.onnx"
+    other.write_bytes(b"onnx")
+    with pytest.raises(DetectError, match="폴더를 따로"):
+        build_engine(other, out, test=True, trtexec="true", run=_fake_trtexec([]))

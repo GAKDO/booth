@@ -41,6 +41,9 @@ def build_engine(onnx: Path, out_dir: Path, model_json: Path | None = None, test
         ModelInfo.load(source)  # modelVersion·클래스가 맞지 않으면 여기서 멈춘다
     out_dir.mkdir(parents=True, exist_ok=True)
     engine = out_dir / f"{onnx.stem}.engine"
+    others = [p.name for p in out_dir.glob("*.engine") if p != engine]
+    if others:  # model.json은 폴더에 하나라 다른 엔진과 섞이면 클래스·modelVersion이 엇갈린다
+        raise DetectError(f"{out_dir}에 다른 엔진 {others}가 있음. 모델마다 폴더를 따로 쓴다")
     tool = trtexec or os.environ.get("TRTEXEC", DEFAULT_TRTEXEC)
     if shutil.which(tool) is None:
         raise DetectError(f"trtexec를 찾지 못함: {tool} (TRTEXEC 환경 변수로 경로 지정)")
