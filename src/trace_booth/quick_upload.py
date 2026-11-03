@@ -61,12 +61,13 @@ def upload_json(store: Store, session_id: int) -> dict:
     c = store.get_checkout(session_id)
     u = store.get_quick_upload(session_id)
     r = store.get_quick_result(session_id)
-    if u is None and r is not None and r.result_json and json.loads(r.result_json).get("testOnly"):
-        return {"set": c.status if c else None, "captureSetId": c.capture_set_id if c else None,
-                "detections": "TEST_ONLY", "lastError": c.last_error if c else None}
+    test_only = r is not None and bool(r.result_json) and bool(json.loads(r.result_json or "{}").get("testOnly"))
+    # 다시 탐지한 결과를 아직 안 보냈으면 지난번 SENT를 보이지 않는다
+    stale = u is not None and u.status == "SENT" and (r is None or u.sent_result_at != r.updated_at)
+    detections = ("TEST_ONLY" if test_only else "PENDING") if u is None or stale else u.status
     return {
         "set": c.status if c else None, "captureSetId": c.capture_set_id if c else None,
-        "detections": u.status if u else "PENDING",
+        "detections": detections,
         "lastError": (u.last_error if u and u.status != "SENT" else None) or (c.last_error if c else None),
     }
 

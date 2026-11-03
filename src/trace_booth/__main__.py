@@ -119,18 +119,21 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_API_URL이 없어 출고·반납 모드를 쓸 수 없어요(학습 데이터 모드만)")
     source = _detector_source()
     quick = None
+    client = _client()
     if source is None:
         print("경고: TRACE_BOOTH_ENGINE이 없어 빠른 검사를 쓸 수 없어요(엔진 없이 시험은 TRACE_BOOTH_DETECTOR=none)")
     else:
         quick = QuickInspector(store, source, _imread, _now)
-        client = _client()
-        if client is None:
-            print("경고: TRACE_API_URL이 없어 빠른 검사 결과를 서버에 올리지 않고 부스에만 남겨요")
-        else:
-            worker = QuickRetryWorker(store, lambda sid: upload_quick(store, sid, client, _now))
-            quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
-            worker.start()
         threading.Thread(target=quick.warm, daemon=True, name="engine-warm").start()
+    if client is None:
+        if quick is not None:
+            print("경고: TRACE_API_URL이 없어 빠른 검사 결과를 서버에 올리지 않고 부스에만 남겨요")
+    else:
+        # 엔진이 없어도 지난번에 못 올린 빠른 검사는 다시 올린다
+        worker = QuickRetryWorker(store, lambda sid: upload_quick(store, sid, client, _now))
+        if quick is not None:
+            quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
+        worker.start()
     waiting = _waiting()
     server = make_server(App(service, submitter, live, quick, waiting), host, port)
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")

@@ -298,10 +298,16 @@ class Store:
                 "WHERE e.mode = 'QUICK' AND e.status = 'COMPLETE' AND (c.status != 'SUBMITTED' OR "
                 "(r.status = 'DONE' AND COALESCE(u.status, '') != 'CLOSED' AND u.sent_result_at IS NOT r.updated_at "
                 "AND r.result_json NOT LIKE '%\"testOnly\": true%')) "
-                "ORDER BY e.id LIMIT ?",
+                # 오래 안 건드린 것부터: 계속 실패하는 앞 세션이 뒤 세션의 차례를 막지 않게
+                "ORDER BY MAX(COALESCE(c.updated_at, ''), COALESCE(u.updated_at, '')), e.id LIMIT ?",
                 (limit,),
             ).fetchall()
         return [int(r["id"]) for r in rows]
+
+    def set_checkout_set_id(self, session_id: int, capture_set_id: str) -> None:
+        """서버가 세트를 만들어 주면 바로 남긴다(다시 시도할 때 새 세트를 만들지 않게)."""
+        with self._lock:
+            self._conn.execute("UPDATE checkout SET capture_set_id = ? WHERE session_id = ?", (capture_set_id, session_id))
 
     def shots_for_device(self, device_id: str) -> list[ShotRecord]:
         with self._lock:
