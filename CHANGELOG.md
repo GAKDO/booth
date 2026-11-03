@@ -7,4 +7,5 @@ main에 버전이 적힌 CHANGELOG가 올라가면 release.yml이 태그와 GitH
 ## [Unreleased]
 
 ### 추가
+- BO2 Jetson 탐지: torch 없이 TensorRT 엔진 추론(`TensorRTDetector`, 마스크 → 폴리곤), `build-engine`(ONNX → FP16), `bench`(탐지 시간), 빠른 검사용 `detect_photos`·`Timeline`
 - 블로그(AIGJ-01-002-blog/devlog) CI/CD를 옮겨 초기 구성
