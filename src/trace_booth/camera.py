@@ -33,28 +33,66 @@ _AUTO_TOGGLES = {
     "auto_exposure": (1, 3),
     "white_balance_automatic": (0, 1),
 }
+_TOLERANCE = 1  # 카메라가 gain 90을 89로 읽어 주는 일이 있다
 
 
-def control_steps(controls: dict[str, int]) -> list[dict[str, int]]:
-    """v4l2-ctl에 차례로 넣을 묶음들.
+class ControlMismatch(subprocess.SubprocessError):
+    """값을 넣었는데 카메라가 다른 값을 읽어 준다."""
+
+
+def control_order(controls: dict[str, int]) -> tuple[dict[str, int], list[tuple[str, int]]]:
+    """(먼저 켤 자동 컨트롤, 하나씩 넣을 값 순서).
 
     C920은 영상을 켜면 실제로는 자동 노출로 돌아가는데 드라이버는 여전히 수동이라고 읽힌다.
-    이때 노출 값을 넣으면 Permission denied로 거절된다. 자동을 한 번 켰다가 수동으로 바꾸면
-    값이 먹는다(11/3 jetson2 실측). 그래서 수동으로 둘 컨트롤은 먼저 자동으로 켜고,
-    다음 묶음에서 자동 컨트롤을 앞에 두고 값을 넣는다.
+    이때 노출 값을 넣으면 거절되고, 여러 값을 한 번에 넣으면 gain을 빼먹거나 묶음 전체를
+    거절하기도 한다(11/3 jetson2 실측). 그래서 수동으로 둘 컨트롤은 먼저 자동으로 켜고,
+    자동 컨트롤부터 값을 하나씩 넣는다.
     """
-    if not controls:
-        return []
     pre = {k: auto for k, (manual, auto) in _AUTO_TOGGLES.items() if controls.get(k) == manual}
-    ordered = {k: controls[k] for k in _AUTO_TOGGLES if k in controls}
-    ordered.update({k: v for k, v in controls.items() if k not in ordered})
-    return [pre, ordered] if pre else [ordered]
+    order = [(k, controls[k]) for k in _AUTO_TOGGLES if k in controls]
+    order += [(k, v) for k, v in controls.items() if k not in _AUTO_TOGGLES]
+    return pre, order
 
 
-def run_v4l2_ctl(device: str, controls: dict[str, int]) -> None:
-    for step in control_steps(controls):
-        arg = ",".join(f"{k}={v}" for k, v in step.items())
-        subprocess.run(["v4l2-ctl", "-d", device, "-c", arg], check=True, capture_output=True, timeout=10)
+def parse_controls(text: str) -> dict[str, int]:
+    """`v4l2-ctl -C` 출력("auto_exposure: 1 (Manual Mode)")을 {이름: 값}으로."""
+    out: dict[str, int] = {}
+    for line in text.splitlines():
+        name, sep, rest = line.partition(":")
+        parts = rest.split()
+        if sep and parts and parts[0].lstrip("-").isdigit():
+            out[name.strip()] = int(parts[0])
+    return out
+
+
+Runner = Callable[..., "subprocess.CompletedProcess[str]"]
+
+
+def run_v4l2_ctl(device: str, controls: dict[str, int], run: Runner = subprocess.run) -> None:
+    """값을 하나씩 넣고 읽어서 확인한다. 한 번 더 넣어도 다르면 ControlMismatch."""
+    if not controls:
+        return
+    pre, order = control_order(controls)
+
+    def put(name: str, value: int, check: bool) -> None:
+        run(["v4l2-ctl", "-d", device, "-c", f"{name}={value}"],
+            check=check, capture_output=True, text=True, timeout=10)
+
+    def wrong() -> dict[str, int]:
+        r = run(["v4l2-ctl", "-d", device, "-C", ",".join(controls)],
+                check=True, capture_output=True, text=True, timeout=10)
+        got = parse_controls(r.stdout)
+        return {k: got.get(k, -1) for k, v in controls.items() if abs(got.get(k, -10_000) - v) > _TOLERANCE}
+
+    for attempt in range(2):
+        for name, value in pre.items():
+            put(name, value, check=False)  # 이미 자동이면 거절될 수 있다. 다음 단계에서 확인한다
+        for name, value in order:
+            put(name, value, check=attempt == 1)
+        bad = wrong()
+        if not bad:
+            return
+    raise ControlMismatch(f"카메라 값이 들어가지 않음: {bad} (원하는 값 {controls})")
 
 
 class OpenCvCamera:
