@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,11 +20,13 @@ from .detect.engine import DetectError, Detector, ModelInfo, open_detector
 from .detect.runner import Photo, detect_photos, detect_set
 from .detect.timing import LIMIT_SECONDS, TARGET_SECONDS, grade
 from .live import CameraGate, OpenCvLiveSource, live_frames
+from .quick import DetectorSource, QuickInspector, no_engine_source
+from .rentals import RentalClient
 from .session import CaptureService, _now
 from .shotlist import SHOTLISTS
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
-from .web import App, LiveFeed, Submitter, make_server
+from .web import App, LiveFeed, Submitter, WaitingList, make_server
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -55,6 +58,27 @@ def _client() -> CaptureClient | None:
         return None
     auth = BoothAuth(url, _env("TRACE_BOOTH_CLIENT_ID"), _env("TRACE_BOOTH_CLIENT_SECRET"))
     return CaptureClient(url, auth)
+
+
+def _waiting() -> WaitingList | None:
+    """빠른 검사의 기기 목록(rental-server). 서버 설정이 없으면 None."""
+    url = os.environ.get("TRACE_API_URL")
+    if not url:
+        return None
+    auth = BoothAuth(url, _env("TRACE_BOOTH_CLIENT_ID"), _env("TRACE_BOOTH_CLIENT_SECRET"))
+    return RentalClient(url, auth).waiting
+
+
+def _detector_source() -> DetectorSource | None:
+    """빠른 검사 탐지기. TRACE_BOOTH_ENGINE(엔진 옆 model.json)이 있으면 TensorRT, TRACE_BOOTH_DETECTOR=none이면
+    엔진 없이 흐름만 시험(늘 흠집 0, 화면에 시험 표시), 둘 다 없으면 None(빠른 검사를 막음)."""
+    engine = os.environ.get("TRACE_BOOTH_ENGINE")
+    if engine:
+        path = Path(engine).expanduser()
+        return lambda: (UltralyticsDetector(path), ModelInfo.load(path.parent / "model.json"))
+    if os.environ.get("TRACE_BOOTH_DETECTOR") == "none":
+        return no_engine_source
+    return None
 
 
 def _submitter(store: Store) -> Submitter | None:
@@ -92,7 +116,15 @@ def serve(host: str, port: int) -> int:
     submitter = _submitter(store)
     if submitter is None:
         print("경고: TRACE_API_URL이 없어 출고·반납 모드를 쓸 수 없어요(학습 데이터 모드만)")
-    server = make_server(App(service, submitter, live), host, port)
+    source = _detector_source()
+    quick = None
+    if source is None:
+        print("경고: TRACE_BOOTH_ENGINE이 없어 빠른 검사를 쓸 수 없어요(엔진 없이 시험은 TRACE_BOOTH_DETECTOR=none)")
+    else:
+        quick = QuickInspector(store, source, _imread, _now)
+        threading.Thread(target=quick.warm, daemon=True, name="engine-warm").start()
+    waiting = _waiting()
+    server = make_server(App(service, submitter, live, quick, waiting), host, port)
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
     try:
         server.serve_forever()

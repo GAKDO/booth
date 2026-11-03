@@ -1,6 +1,7 @@
 """촬영 목록.
 
 - mvp(기본, 11/3 방향 전환): BOT → 뒤집어 TOP, 면마다 L1·L2·L3, CAM1·CAM2 = 12장
+- quick(빠른 검사 모드): mvp에서 ID 카드만 뺀 것
 - full(보관): GAKDO/docs booth/README.md 순서와 11/2 결정(패스 2 L1·L2, SCR1 선택), 28장
 """
 
@@ -95,8 +96,8 @@ def _build() -> tuple[Step, ...]:
 MVP_LIGHTS = (Light.L1, Light.L2, Light.L3)
 
 
-def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS) -> tuple[Step, ...]:
-    raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS)]
+def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tuple[Step, ...]:
+    raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS)] if slate else []
     for face in (Face.BOT, Face.TOP):
         order = lights
         if face is Face.TOP:
@@ -110,6 +111,8 @@ def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS) -> tuple[Step, ...]:
 
 DEFAULT_SHOTLIST: tuple[Step, ...] = _build()  # full(보관)
 MVP_SHOTLIST: tuple[Step, ...] = _build_mvp()
+# 빠른 검사: 기기는 태블릿 목록에서 골랐으므로 ID 카드(SLATE) 없이 BOT → 뒤집어 TOP, 12장
+QUICK_SHOTLIST: tuple[Step, ...] = _build_mvp(slate=False)
 SHOTLISTS: dict[str, tuple[Step, ...]] = {"mvp": MVP_SHOTLIST, "full": DEFAULT_SHOTLIST}
 
 

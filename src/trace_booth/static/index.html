@@ -7,6 +7,7 @@
 <style>
   :root { --bg:#111; --fg:#f2f2f2; --muted:#999; --accent:#2f80ed; --warn:#e2b93b; --bad:#eb5757; --ok:#27ae60; }
   * { box-sizing: border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   main { max-width: 960px; margin: 0 auto; padding: 16px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
@@ -28,23 +29,37 @@
   #live img { width:100%; aspect-ratio:16/9; border-radius:6px; background:#000; cursor:zoom-in; }
   #live img:fullscreen { object-fit:contain; cursor:zoom-out; }
   #live figcaption { font-size:14px; color:var(--muted); }
+  #waiting .list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  #waiting .list button { text-align:left; font-size:22px; }
+  #waiting .list small { color:var(--muted); font-size:15px; }
+  #verdict { font-size:44px; font-weight:800; margin:16px 0 4px; }
+  #verdict.bad { color:var(--bad); } #verdict.ok { color:var(--ok); } #verdict.wait { color:var(--warn); }
+  #verdictMeta { color:var(--muted); font-size:16px; }
+  .overlay { position:relative; }
+  .overlay svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .overlay polygon { fill:rgba(235,87,87,.25); stroke:#eb5757; stroke-width:4; vector-effect:non-scaling-stroke; }
 </style>
 </head>
 <body>
 <main>
   <div class="row">
     <select id="mode">
+      <option value="QUICK">빠른 검사</option>
       <option value="TRAINING">학습 데이터</option>
       <option value="OUT">출고</option>
       <option value="RET">반납</option>
     </select>
-    <input id="device" placeholder="기기 ID (예: MB01)" autocapitalize="characters" size="12">
+    <input id="device" class="manual" placeholder="기기 ID (예: MB01)" autocapitalize="characters" size="12" hidden>
     <input id="rental" class="checkout" placeholder="렌탈 ID (21자)" size="23" hidden>
     <input id="checkpoint" class="checkout" placeholder="시점 ID (21자)" size="23" hidden>
-    <button id="start">시작</button>
+    <button id="start" class="manual" hidden>시작</button>
     <span id="queue"></span>
   </div>
-  <div id="instruction">기기 ID를 넣고 시작하세요</div>
+  <div id="waiting">
+    <div class="row"><strong>검사 기다리는 기기</strong><button id="reload">새로고침</button></div>
+    <div class="list" id="waitingList"></div>
+  </div>
+  <div id="instruction">검사할 기기를 목록에서 누르세요</div>
   <div id="meta"></div>
   <div id="error"></div>
   <div class="row">
@@ -60,11 +75,19 @@
     <figure><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
     <figure><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
   </div>
+  <div id="result" hidden>
+    <div id="verdict"></div>
+    <div id="verdictMeta"></div>
+    <div class="row"><button id="redetect" hidden>다시 탐지</button><button id="nextDevice">다음 기기</button></div>
+    <div class="thumbs" id="resultPhotos"></div>
+  </div>
   <div class="thumbs" id="thumbs"></div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let state = null;
+let state = null, result = null, completedAt = 0, waitMs = null;
+const quickMode = () => $("mode").value === "QUICK";
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 async function call(method, path, body) {
   $("error").textContent = "";
@@ -88,6 +111,7 @@ function render() {
   $("retake").disabled = busy;
   $("complete").disabled = busy;
   if (!s) return;
+  if (s.mode === "QUICK") return renderQuick(s, step);
   const c = s.checkout;
   $("submit").hidden = !(c && c.status === "FAILED");
   if (s.status === "COMPLETE" && c && c.status !== "SUBMITTED") {
@@ -99,12 +123,99 @@ function render() {
     $("instruction").textContent = step ? step.instruction : "목록 끝. 완료를 누르세요";
   }
   const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
-  const mode = { TRAINING: "학습", OUT: "출고", RET: "반납" }[s.mode];
+  const mode = { TRAINING: "학습", OUT: "출고", RET: "반납", QUICK: "빠른 검사" }[s.mode];
   $("meta").textContent = `${mode} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`
     + (s.presetsConfigured ? "" : " · ⚠ 카메라 고정 설정 없음");
   const q = s.queue, waiting = q.pending + q.failed;
   $("queue").textContent = waiting ? `올리지 못함 ${waiting}장` : "";
   $("queue").className = waiting ? "warn" : "";
+}
+
+function renderQuick(s, step) {
+  const shooting = s.status === "IN_PROGRESS";
+  $("waiting").hidden = true;
+  $("result").hidden = shooting;
+  $("instruction").textContent = shooting ? (step ? step.instruction : "목록 끝. 완료를 누르세요") : "";
+  $("meta").textContent = shooting
+    ? `빠른 검사 · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + step.cameras.join("·") : ""}`
+      + ` · 빠진 사진 ${s.missing.length}` + (s.presetsConfigured ? "" : " · ⚠ 카메라 고정 설정 없음")
+    : "";
+  $("skip").hidden = true;
+}
+
+function renderResult() {
+  const r = result;
+  if (!r) return;
+  const v = $("verdict");
+  if (r.status === "DONE") {
+    v.textContent = r.verdict === "DEFECT" ? "문제 있음" : "문제 없음";
+    v.className = r.verdict === "DEFECT" ? "bad" : "ok";
+  } else if (r.status === "FAILED") {
+    v.textContent = "판정 못 함"; v.className = "bad";
+  } else {
+    v.textContent = "판정 중…"; v.className = "wait";
+  }
+  const faces = Object.entries(r.faces).map(([f, n]) => `${f} ${n}곳`).join(" · ");
+  const time = waitMs != null ? ` · 완료→판정 ${(waitMs / 1000).toFixed(1)}초` : "";
+  $("verdictMeta").textContent = r.status === "FAILED" ? (r.error || "")
+    : r.status === "DONE" ? `${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
+      + (r.testOnly ? " · ⚠ 엔진 없는 시험(판정 아님)" : "")
+    : label;
+  $("redetect").hidden = r.status !== "FAILED";
+  const photos = [...r.photos].sort((a, b) => b.detections.length - a.detections.length);
+  $("resultPhotos").innerHTML = photos.map((p) => {
+    const polys = p.detections.map((d) =>
+      `<polygon points="${d.polygon.map((pt) => pt.join(",")).join(" ")}"><title>${esc(d.class)} ${d.confidence}</title></polygon>`).join("");
+    return `<figure><div class="overlay"><img src="/api/shots/${p.shotId}/thumbnail" alt="${p.face} ${p.light} ${p.camera}">` +
+      `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polys}</svg></div>` +
+      `<figcaption>${p.face} · ${p.light} · ${p.camera} · 흠집 ${p.detections.length}</figcaption></figure>`;
+  }).join("");
+}
+
+async function pollResult() {
+  if (!state || state.mode !== "QUICK" || state.status !== "COMPLETE") return;
+  try {
+    result = await (await fetch("/api/sessions/current/result")).json();
+    if ((result.status === "DONE" || result.status === "FAILED") && waitMs == null && completedAt) waitMs = Date.now() - completedAt;
+    renderResult();
+    if (result.status === "DONE" || result.status === "FAILED") return;
+  } catch (e) { /* 다음에 다시 */ }
+  setTimeout(pollResult, 700);
+}
+
+let label = "";
+async function loadWaiting() {
+  $("waitingList").textContent = "불러오는 중…";
+  try {
+    const res = await fetch("/api/rentals/waiting");
+    const data = await res.json();
+    if (!res.ok) { $("waitingList").textContent = data.detail || "목록을 못 불러왔어요"; return; }
+    if (!data.items.length) { $("waitingList").textContent = "기다리는 기기가 없어요(관리자 화면에서 시점을 시작하세요)"; return; }
+    const kind = { OUT: "출고", RCV: "수령", RET: "반납" };
+    $("waitingList").innerHTML = "";
+    for (const w of data.items) {
+      const b = document.createElement("button");
+      b.innerHTML = `${esc(w.modelCode)} · ${esc(w.serial)} <small>${kind[w.checkpointType] || esc(w.checkpointType)} · 렌탈 ${esc(w.rentalId.slice(0, 6))}…</small>`;
+      b.onclick = () => startQuick(w);
+      $("waitingList").appendChild(b);
+    }
+  } catch (e) { $("waitingList").textContent = "목록을 못 불러왔어요"; }
+}
+
+async function startQuick(w) {
+  label = `${w.modelCode} · ${w.serial}`;
+  state = await call("POST", "/api/sessions",
+    { mode: "QUICK", deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
+  result = null; waitMs = null; completedAt = 0;
+  $("thumbs").innerHTML = ""; $("resultPhotos").innerHTML = ""; render();
+}
+
+function resetQuick() {
+  state = null; result = null;
+  $("result").hidden = true; $("thumbs").innerHTML = ""; $("meta").textContent = "";
+  $("instruction").textContent = "검사할 기기를 목록에서 누르세요";
+  for (const id of ["shoot", "next", "retake", "complete"]) $(id).disabled = true;
+  $("waiting").hidden = false; loadWaiting();
 }
 
 function showShots(shots) {
@@ -124,8 +235,21 @@ for (const cam of ["CAM1", "CAM2"]) {
     if (document.fullscreenElement) document.exitFullscreen(); else e.target.requestFullscreen();
   };
 }
-$("mode").onchange = () => {
-  for (const el of document.querySelectorAll(".checkout")) el.hidden = $("mode").value === "TRAINING";
+function applyMode() {
+  const m = $("mode").value;
+  for (const el of document.querySelectorAll(".checkout")) el.hidden = m === "TRAINING" || m === "QUICK";
+  for (const el of document.querySelectorAll(".manual")) el.hidden = m === "QUICK";
+  $("skip").hidden = m === "QUICK";
+  if (m === "QUICK") { resetQuick(); return; }
+  $("waiting").hidden = true; $("result").hidden = true;
+  $("instruction").textContent = "기기 ID를 넣고 시작하세요";
+}
+$("mode").onchange = () => { state = null; applyMode(); };
+$("reload").onclick = loadWaiting;
+$("nextDevice").onclick = resetQuick;
+$("redetect").onclick = async () => {
+  completedAt = Date.now(); waitMs = null;
+  result = await call("POST", "/api/sessions/current/detect"); renderResult(); pollResult();
 };
 $("start").onclick = async () => {
   const body = { deviceId: $("device").value.trim().toUpperCase(), mode: $("mode").value };
@@ -150,12 +274,27 @@ $("skip").onclick = async () => {
 };
 $("complete").onclick = async () => {
   $("complete").disabled = true;
+  completedAt = Date.now(); waitMs = null;
   try { state = (await call("POST", "/api/sessions/current/complete")).state; } finally { render(); }
+  if (state.mode === "QUICK") { $("thumbs").innerHTML = ""; pollResult(); }
 };
 $("submit").onclick = async () => {
   $("submit").disabled = true;
   try { state = await call("POST", "/api/sessions/current/submit"); } finally { $("submit").disabled = false; render(); }
 };
+async function restore() {
+  // 새로고침해도 하던 빠른 검사(촬영 중이거나 판정 결과)를 이어 보인다
+  try {
+    const res = await fetch("/api/sessions/current");
+    if (!res.ok) return applyMode();
+    const s = await res.json();
+    if (s.mode !== "QUICK") return applyMode();
+    $("mode").value = "QUICK"; applyMode();
+    state = s; label = s.deviceId; render();
+    if (s.status === "COMPLETE") pollResult();
+  } catch (e) { applyMode(); }
+}
+restore();
 setInterval(async () => {
   if (!state) return;
   try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }

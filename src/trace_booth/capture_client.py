@@ -118,6 +118,23 @@ class BoothAuth:
         self._token = None
 
 
+def authed_call(
+    http: HttpCall, auth: BoothAuth, what: str, method: str, url: str, data: bytes | None, ok: tuple[int, ...],
+    extra: dict[str, str] | None = None,
+) -> Response:
+    """부스 JWT를 붙여 부른다. 401이면 토큰이 서버에서 먼저 만료됐을 수 있으므로 한 번만 새로 받아 다시 부른다."""
+    for attempt in (1, 2):
+        headers = {"Authorization": f"Bearer {auth.token()}", **(extra or {})}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        resp = http(method, url, headers, data)
+        if resp.status == 401 and attempt == 1:
+            auth.forget()
+            continue
+        return _check(what, resp, ok)
+    raise AssertionError("도달하지 않음")
+
+
 class CaptureClient:
     def __init__(self, base_url: str, auth: BoothAuth, http: HttpCall = http_call) -> None:
         self._base = base_url.rstrip("/") + "/api/v1/captures/sets"
@@ -125,15 +142,7 @@ class CaptureClient:
         self._http = http
 
     def _post(self, what: str, url: str, body: dict, ok: tuple[int, ...], extra: dict[str, str] | None = None) -> Response:
-        data = json.dumps(body).encode()
-        for attempt in (1, 2):
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._auth.token()}", **(extra or {})}
-            resp = self._http("POST", url, headers, data)
-            if resp.status == 401 and attempt == 1:
-                self._auth.forget()  # 토큰이 서버에서 먼저 만료됐을 수 있음: 한 번만 새로 받아 다시
-                continue
-            return _check(what, resp, ok)
-        raise AssertionError("도달하지 않음")
+        return authed_call(self._http, self._auth, what, "POST", url, json.dumps(body).encode(), ok, extra)
 
     def create_set(self, rental_id: str, checkpoint_id: str, photos: list[PhotoSpec]) -> tuple[str, list[UploadTarget]]:
         body = {"rentalId": rental_id, "checkpointId": checkpoint_id, "source": "BOOTH",
