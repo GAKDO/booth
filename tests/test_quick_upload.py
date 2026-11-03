@@ -94,3 +94,14 @@ def test_등급이_매겨진_세트에는_탐지를_더_보내지_않는다(serv
     assert upload_json(service.store, done.id)["detections"] == "CLOSED"
     assert service.store.quick_sessions_to_upload() == []
     assert len(server.detections[set_id]) == 1
+
+
+def test_엔진_없는_시험_결과는_세트만_올리고_탐지는_보내지_않는다(service, server, upload):
+    from trace_booth.quick import no_engine_source
+
+    done, _ = _detected(service, source=no_engine_source)
+    upload(done.id)
+
+    assert len(server.sets) == 1 and server.detections == {}
+    assert upload_json(service.store, done.id)["detections"] == "TEST_ONLY"
+    assert service.store.quick_sessions_to_upload() == []

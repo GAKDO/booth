@@ -37,6 +37,8 @@ def upload_quick(
     if sent is not None and (sent.status == "CLOSED" or sent.sent_result_at == result.updated_at):
         return
     data = json.loads(result.result_json)
+    if data.get("testOnly"):
+        return  # 시험용 결과는 서버 등급에 쓰이지 않게 보내지 않는다(세트 사진은 올라감)
     detections = [
         {"face": p["face"], "light": p["light"], "camera": p["camera"], "class": d["class"],
          "polygon": d["polygon"], "confidence": d["confidence"]}
@@ -55,9 +57,13 @@ def upload_quick(
 
 
 def upload_json(store: Store, session_id: int) -> dict:
-    """결과 API의 upload: 세트(PENDING·SUBMITTED·FAILED)와 탐지(PENDING·SENT·FAILED·CLOSED)."""
+    """결과 API의 upload: 세트(PENDING·SUBMITTED·FAILED)와 탐지(PENDING·SENT·FAILED·CLOSED·TEST_ONLY)."""
     c = store.get_checkout(session_id)
     u = store.get_quick_upload(session_id)
+    r = store.get_quick_result(session_id)
+    if u is None and r is not None and r.result_json and json.loads(r.result_json).get("testOnly"):
+        return {"set": c.status if c else None, "captureSetId": c.capture_set_id if c else None,
+                "detections": "TEST_ONLY", "lastError": c.last_error if c else None}
     return {
         "set": c.status if c else None, "captureSetId": c.capture_set_id if c else None,
         "detections": u.status if u else "PENDING",

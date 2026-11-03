@@ -164,6 +164,7 @@ function renderResult() {
   const u = r.upload || {};
   const up = u.set !== "SUBMITTED" ? (u.set === "FAILED" ? "서버에 못 올림(자동으로 다시)" : "서버에 올리는 중")
     : u.detections === "SENT" ? "서버에 올림" : u.detections === "CLOSED" ? "서버 등급이 이미 매겨짐"
+    : u.detections === "TEST_ONLY" ? "사진만 올림(시험 결과는 안 올림)"
     : r.status === "DONE" ? "탐지 결과 올리는 중" : "사진 올림";
   $("verdictMeta").textContent += ` · ${up}`;
   $("redetect").hidden = r.status !== "FAILED";
@@ -184,7 +185,7 @@ async function pollResult() {
     if ((result.status === "DONE" || result.status === "FAILED") && waitMs == null && completedAt) waitMs = Date.now() - completedAt;
     renderResult();
     const up = result.upload || {};
-    const settled = up.detections === "SENT" || up.detections === "CLOSED" || (result.status === "FAILED" && up.set === "SUBMITTED");
+    const settled = ["SENT", "CLOSED", "TEST_ONLY"].includes(up.detections) && up.set === "SUBMITTED" || (result.status === "FAILED" && up.set === "SUBMITTED");
     if ((result.status === "DONE" || result.status === "FAILED") && settled) return;
   } catch (e) { /* 다음에 다시 */ }
   setTimeout(pollResult, result && (result.status === "DONE" || result.status === "FAILED") ? 3000 : 700);

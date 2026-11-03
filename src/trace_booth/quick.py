@@ -83,8 +83,11 @@ class QuickInspector:
             self.store.put_quick_result(session_id, "FAILED", self._now(), error=f"{type(e).__name__}: {e}"[:300])
         else:
             verdict = "DEFECT" if result.count else "CLEAN"
+            data = result.to_json()
+            # 엔진 없는 시험·시험용 기본 모델(model.json testOnly)은 화면에만 보이고 서버에 올리지 않는다
+            data["testOnly"] = info.model_version == NO_ENGINE_VERSION or bool(getattr(info, "test_only", False))
             self.store.put_quick_result(session_id, "DONE", self._now(), verdict=verdict,
-                                        result_json=json.dumps(result.to_json(), ensure_ascii=False))
+                                        result_json=json.dumps(data, ensure_ascii=False))
         if self.after is not None:
             self.after(session_id)
 
@@ -120,5 +123,5 @@ def result_json(store: Store, session_id: int, shooting: bool) -> dict[str, Any]
             "width": p.get("width", 0), "height": p.get("height", 0), "detections": p["detections"],
         })
     out.update(count=data["count"], faces=faces, seconds=data["seconds"], modelVersion=data["modelVersion"],
-               testOnly=data["modelVersion"] == NO_ENGINE_VERSION, photos=photos)
+               testOnly=bool(data.get("testOnly")) or data["modelVersion"] == NO_ENGINE_VERSION, photos=photos)
     return out

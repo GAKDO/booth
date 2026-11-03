@@ -296,7 +296,8 @@ class Store:
                 "SELECT e.id FROM session e JOIN checkout c ON c.session_id = e.id "
                 "LEFT JOIN quick_result r ON r.session_id = e.id LEFT JOIN quick_upload u ON u.session_id = e.id "
                 "WHERE e.mode = 'QUICK' AND e.status = 'COMPLETE' AND (c.status != 'SUBMITTED' OR "
-                "(r.status = 'DONE' AND COALESCE(u.status, '') != 'CLOSED' AND u.sent_result_at IS NOT r.updated_at)) "
+                "(r.status = 'DONE' AND COALESCE(u.status, '') != 'CLOSED' AND u.sent_result_at IS NOT r.updated_at "
+                "AND r.result_json NOT LIKE '%\"testOnly\": true%')) "
                 "ORDER BY e.id LIMIT ?",
                 (limit,),
             ).fetchall()
