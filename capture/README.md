@@ -85,7 +85,7 @@ export TRACE_BOOTH_CAM2=<CAM2 경로>
 trace-booth serve --port 8320
 ```
 
-촬영 목록은 기본이 `mvp`(11/3 방향 전환)입니다. BOT → 뒤집어 TOP을 면마다 L1·L2·L3로 한 장씩, CAM1·CAM2로 찍어 한 대에 12장(+ID 카드 1장)입니다. 조명 값은 프리셋 파일의 L1·L2·L3를 씁니다. 보관한 28장 목록(9면×여러 조명)이 필요하면 `TRACE_BOOTH_SHOTLIST=full`을 넣습니다. 목록을 바꾸면 하던 촬영은 끝내고 새로 시작합니다.
+촬영 목록은 기본이 `mvp`(11/3 방향 전환)입니다. BOT은 L1 → L2 → L3, 뒤집어 TOP은 L3 → L2 → L1로 한 장씩, CAM1·CAM2로 찍어 한 대에 12장(+ID 카드 1장)입니다. 조명 값은 프리셋 파일의 L1·L2·L3를 씁니다. 보관한 28장 목록(9면×여러 조명)이 필요하면 `TRACE_BOOTH_SHOTLIST=full`을 넣습니다. 목록을 바꾸면 하던 촬영은 끝내고 새로 시작합니다.
 
 `MINIO_ENDPOINT`를 넣지 않으면 업로드 없이 로컬에만 남습니다. 업로드까지 볼 때는 `MINIO_ENDPOINT`·`MINIO_ACCESS_KEY`·`MINIO_SECRET_KEY`를 환경 변수로 넣습니다.
 
