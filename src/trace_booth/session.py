@@ -22,6 +22,7 @@ from .store import SessionRecord, ShotRecord, Store
 
 MIN_FREE_BYTES = 200 * 1024 * 1024
 MODES = ("TRAINING", "OUT", "RET", "QUICK")  # QUICK = 부스 빠른 검사(위·아래 2면, 11/3 MVP)
+BOOTH_CODE_RE = re.compile(r"^[A-Z]{2,4}[0-9]{2}$")
 PUBLIC_ID_RE = re.compile(r"^[A-Za-z0-9_-]{21}$")  # 다른 서버의 publicId(NanoID 21자)
 
 
@@ -93,7 +94,8 @@ class CaptureService:
         self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None
     ) -> SessionRecord:
         """세션을 열거나 이어 간다. 출고·반납(OUT·RET)·빠른 검사(QUICK)는 렌탈·시점 publicId가 필요하다."""
-        if not is_valid_device_id(device_id):
+        if not is_valid_device_id(device_id) or (mode == "TRAINING" and not BOOTH_CODE_RE.match(device_id)):
+            # 학습 데이터는 ID 카드의 부스 코드만(trace-raw 키가 파일명 앞 `_`까지를 기기 ID로 씀)
             raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01, 빠른 검사는 목록의 기기)")
         if mode not in MODES:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")

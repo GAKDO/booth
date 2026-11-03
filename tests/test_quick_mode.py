@@ -226,3 +226,8 @@ def test_서버_설정이_없으면_기기_목록은_503이고_엔진이_없으�
 def test_학습_모드_세션에는_결과_API가_409(quick_base):
     call(quick_base, "POST", "/api/sessions", {"deviceId": "MB01"})
     assert call(quick_base, "GET", "/api/sessions/current/result")[0] == 409
+
+
+def test_학습_데이터_모드는_ID_카드_코드만_받는다(service):
+    with pytest.raises(InvalidInput):
+        service.start(DEVICE, "TRAINING")

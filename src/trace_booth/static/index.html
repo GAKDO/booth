@@ -289,7 +289,19 @@ $("submit").onclick = async () => {
   $("submit").disabled = true;
   try { state = await call("POST", "/api/sessions/current/submit"); } finally { $("submit").disabled = false; render(); }
 };
-applyMode();
+async function restore() {
+  // 새로고침해도 하던 빠른 검사(촬영 중이거나 판정 결과)를 이어 보인다
+  try {
+    const res = await fetch("/api/sessions/current");
+    if (!res.ok) return applyMode();
+    const s = await res.json();
+    if (s.mode !== "QUICK") return applyMode();
+    $("mode").value = "QUICK"; applyMode();
+    state = s; label = s.deviceId; render();
+    if (s.status === "COMPLETE") pollResult();
+  } catch (e) { applyMode(); }
+}
+restore();
 setInterval(async () => {
   if (!state) return;
   try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }
