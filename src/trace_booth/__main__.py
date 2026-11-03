@@ -75,7 +75,7 @@ def _detector_source() -> DetectorSource | None:
     engine = os.environ.get("TRACE_BOOTH_ENGINE")
     if engine:
         path = Path(engine).expanduser()
-        return lambda: (UltralyticsDetector(path), ModelInfo.load(path.parent / "model.json"))
+        return lambda: (open_detector(path), ModelInfo.load(path.parent / "model.json"))
     if os.environ.get("TRACE_BOOTH_DETECTOR") == "none":
         return no_engine_source
     return None

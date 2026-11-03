@@ -83,7 +83,9 @@ def detect_photos(photos: list[Photo], detector: Detector, info: ModelInfo,
     start = clock()
     result = SetResult(info.model_version)
     for p in photos:
-        result.photos.append(PhotoResult(p.face, p.light, p.camera, p.filename, detect_photo(p.image, detector, info)))
+        height, width = p.image.shape[:2]
+        result.photos.append(PhotoResult(p.face, p.light, p.camera, p.filename, detect_photo(p.image, detector, info),
+                                         int(width), int(height)))
     result.seconds = round(clock() - start, 3)
     return result
 
