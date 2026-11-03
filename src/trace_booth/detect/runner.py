@@ -34,10 +34,16 @@ class SetResult:
     def count(self) -> int:
         return sum(len(p.found) for p in self.photos)
 
+    @property
+    def has_problem(self) -> bool:
+        """부스 화면의 "문제 있음/없음". 사진 하나라도 흠집이 잡히면 문제 있음."""
+        return self.count > 0
+
     def to_json(self) -> dict[str, Any]:
         """로컬 기록용. 폴리곤은 원본 사진 px(표준 좌표로 바꾸는 일은 서버가 한다)."""
         return {
             "modelVersion": self.model_version, "seconds": self.seconds, "count": self.count,
+            "hasProblem": self.has_problem,
             "coordinates": "photo_px",
             "photos": [
                 {"face": p.face, "light": p.light, "camera": p.camera, "filename": p.filename,
@@ -57,13 +63,35 @@ class SetResult:
         ]
 
 
+@dataclass(frozen=True)
+class Photo:
+    """빠른 검사 모드가 넘기는 사진 한 장. image는 OpenCV BGR 배열(높이, 너비, 3)."""
+
+    face: str
+    light: str
+    camera: str
+    image: Any
+    filename: str = ""
+
+
+def detect_photos(photos: list[Photo], detector: Detector, info: ModelInfo,
+                  clock: Callable[[], float] = time.perf_counter) -> SetResult:
+    """사진 몇 장(MVP: BOT·TOP × CAM1·CAM2 4장)을 탐지한다. 폴리곤은 원본 사진 px. 걸린 시간은 seconds."""
+    start = clock()
+    result = SetResult(info.model_version)
+    for p in photos:
+        result.photos.append(PhotoResult(p.face, p.light, p.camera, p.filename, detect_photo(p.image, detector, info)))
+    result.seconds = round(clock() - start, 3)
+    return result
+
+
 def detect_photo(image: Any, detector: Detector, info: ModelInfo, size: int = 640,
                  overlap: float = 0.2) -> list[Found]:
     height, width = image.shape[:2]
     found = []
     for t in tiles(width, height, size, overlap):
         for raw in detector.infer(image[t.y:t.y + t.h, t.x:t.x + t.w]):
-            found.append(Found(info.classes[raw.class_index], to_image(raw.polygon, t, width, height),
+            found.append(Found(info.class_name(raw.class_index), to_image(raw.polygon, t, width, height),
                                round(raw.confidence, 4)))
     return dedupe(found)
 

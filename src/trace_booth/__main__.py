@@ -14,8 +14,10 @@ from .camera_presets import Presets
 from .capture_client import ApiError, BoothAuth, CaptureClient
 from .checkout import submit_session
 from .codes import Camera
-from .detect.engine import DetectError, Detector, ModelInfo, UltralyticsDetector
-from .detect.runner import detect_set
+from .detect.build import build_engine
+from .detect.engine import DetectError, Detector, ModelInfo, open_detector
+from .detect.runner import Photo, detect_photos, detect_set
+from .detect.timing import LIMIT_SECONDS, TARGET_SECONDS, grade
 from .live import CameraGate, OpenCvLiveSource, live_frames
 from .session import CaptureService, _now
 from .shotlist import SHOTLISTS
@@ -135,7 +137,10 @@ NFR_DETECT_SECONDS = 30
 def _imread(path: str) -> object:
     import cv2
 
-    return cv2.imread(path, cv2.IMREAD_COLOR)
+    image = cv2.imread(path, cv2.IMREAD_COLOR)
+    if image is None:
+        raise SystemExit(f"사진을 읽지 못했어요: {path}")
+    return image
 
 
 def detect(session_public_id: str, engine: str | None, make_detector: Callable[[Path], Detector] | None = None,
@@ -155,7 +160,7 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
     engine_path = Path(engine or _env("TRACE_BOOTH_ENGINE")).expanduser()
     try:
         info = ModelInfo.load(engine_path.parent / "model.json")
-        detector = (make_detector or UltralyticsDetector)(engine_path)
+        detector = (make_detector or open_detector)(engine_path)
     except DetectError as e:
         raise SystemExit(f"탐지를 시작할 수 없어요: {e}") from e
     result = detect_set(store.shots(session.id), detector, info, load)
@@ -167,6 +172,9 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
     if result.seconds > NFR_DETECT_SECONDS:
         print(f"경고: 한 세트 {NFR_DETECT_SECONDS}초를 넘었어요")
         code = 2
+    if info.test_only:
+        print("시험용 모델(testOnly)이라 서버에는 올리지 않아요")
+        return code
     record = store.get_checkout(session.id)
     if record is None or record.status != "SUBMITTED" or record.capture_set_id is None:
         print("올린 출고·반납 세트가 없어 탐지 결과는 로컬에만 남겨요")
@@ -190,6 +198,54 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
     return code
 
 
+def bench(engine: str | None, images: list[str], session_public_id: str | None, runs: int,
+          make_detector: Callable[[Path], Detector] | None = None, load: Callable[[str], object] = _imread,
+          clock: Callable[[], float] | None = None) -> int:
+    """탐지 시간 재기(Jetson): 엔진 올리기 1번, 첫 실행(데우기) 1번, 이어서 runs번. 중간값으로 목표·기준을 본다.
+
+    사진은 파일로 주거나(--images) 찍은 세션(--session, 올리는 세트와 같은 마지막 장)으로 준다. 종료 코드: 기준 초과 2.
+    """
+    import statistics
+    import time
+
+    tick = clock or time.perf_counter
+    engine_path = Path(engine or _env("TRACE_BOOTH_ENGINE")).expanduser()
+    if session_public_id:
+        store = Store(_data_dir() / "booth.db")
+        session = store.find_session(session_public_id)
+        if session is None:
+            raise SystemExit(f"세션이 없어요: {session_public_id}")
+        from .store import latest_shots
+
+        sources = [(s.face or "", s.light or "", s.camera, s.local_path) for s in latest_shots(store.shots(session.id))]
+    else:
+        sources = [("", "", "", path) for path in images]
+    if not sources:
+        raise SystemExit("잴 사진이 없어요(--images 또는 --session)")
+    start = tick()
+    try:
+        info = ModelInfo.load(engine_path.parent / "model.json")
+        detector = (make_detector or open_detector)(engine_path)
+    except DetectError as e:
+        raise SystemExit(f"탐지를 시작할 수 없어요: {e}") from e
+    loaded = tick() - start
+    start = tick()
+    photos = [Photo(face, light, cam, load(path), Path(path).name) for face, light, cam, path in sources]
+    read = tick() - start
+    print(f"엔진 올리기 {loaded:.2f}초(서버를 띄울 때 한 번), 사진 {len(photos)}장 읽기 {read:.2f}초")
+    first = detect_photos(photos, detector, info, clock=tick)
+    print(f"첫 실행(데우기) {first.seconds:.2f}초, 흠집 {first.count}개")
+    times = []
+    for i in range(runs):
+        result = detect_photos(photos, detector, info, clock=tick)
+        times.append(result.seconds)
+        print(f"{i + 1}회 {result.seconds:.2f}초, 흠집 {result.count}개 → {'문제 있음' if result.has_problem else '문제 없음'}")
+    median = statistics.median(times or [first.seconds])
+    print(f"탐지 중간값 {median:.2f}초(장당 {median / len(photos):.2f}초), 최대 {max(times or [first.seconds]):.2f}초 → "
+          f"{grade(median)} (목표 {TARGET_SECONDS:.0f}초, 기준 {LIMIT_SECONDS:.0f}초, 버튼→판정에는 촬영 시간이 더해짐)")
+    return 2 if median > LIMIT_SECONDS else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="trace-booth")
     parser.add_argument("--version", action="store_true", help="버전만 출력")
@@ -204,6 +260,16 @@ def main(argv: list[str] | None = None) -> int:
     p_detect = sub.add_parser("detect", help="세션 하나의 면 사진을 탐지해 로컬 JSON으로 남긴다(Jetson)")
     p_detect.add_argument("--session", required=True, help="세션 publicId(운영 화면의 sessionId)")
     p_detect.add_argument("--engine", help="TensorRT 엔진(.engine). 같은 폴더에 model.json. 기본 TRACE_BOOTH_ENGINE")
+    p_build = sub.add_parser("build-engine", help="ONNX → TensorRT FP16 엔진(Jetson, trtexec)")
+    p_build.add_argument("--onnx", required=True, help="YOLO11-seg ONNX(고정 1x3x640x640)")
+    p_build.add_argument("--out", default=str(Path.home() / "trace-models"), help="엔진·model.json을 둘 폴더")
+    p_build.add_argument("--model-json", help="model.json(기본: ONNX 옆)")
+    p_build.add_argument("--test", action="store_true", help="시험용 기본 모델(yolo11n-seg 등): 클래스 검사 없이, 서버에 안 올림")
+    p_bench = sub.add_parser("bench", help="탐지 시간 재기(Jetson). 목표 15초, 기준 30초")
+    p_bench.add_argument("--engine", help="엔진(.engine) 또는 CPU 확인용 .onnx. 기본 TRACE_BOOTH_ENGINE")
+    p_bench.add_argument("--images", nargs="*", default=[], help="사진 파일들(MVP는 4장)")
+    p_bench.add_argument("--session", help="찍은 세션 publicId(사진 대신)")
+    p_bench.add_argument("--runs", type=int, default=5)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "serve":
         return serve(args.host, args.port)
@@ -213,6 +279,15 @@ def main(argv: list[str] | None = None) -> int:
         return retry()
     if args.command == "detect":
         return detect(args.session, args.engine)
+    if args.command == "build-engine":
+        try:
+            build_engine(Path(args.onnx).expanduser(), Path(args.out).expanduser(),
+                         Path(args.model_json).expanduser() if args.model_json else None, test=args.test)
+        except DetectError as e:
+            raise SystemExit(f"엔진을 만들지 못했어요: {e}") from e
+        return 0
+    if args.command == "bench":
+        return bench(args.engine, args.images, args.session, args.runs)
     print(f"trace-booth {__version__}")
     return 0
 

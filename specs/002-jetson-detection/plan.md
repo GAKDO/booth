@@ -8,7 +8,7 @@
 
 ## 기술 맥락
 
-- Python 3.10(Jetson JetPack 6), CI 3.12. numpy(Jetson 기본), 엔진 추론은 ultralytics(선택 의존성 `detect`, Jetson에서만)
+- Python 3.10 문법(jetson2는 L4T R39·Python 3.12), CI 3.12. 엔진 추론은 시스템 tensorrt + libcudart(ctypes) + numpy·OpenCV(`detect/engine.py` `TensorRTDetector`, 출력 풀기 `detect/yolo_seg.py`). torch·ultralytics 없음(11/3 변경)
 - 이미지 읽기는 OpenCV(기존 `camera` 선택 의존성). 테스트는 numpy 배열과 가짜 탐지기로, GPU·OpenCV 없이
 - 타일: 기본 640px, 겹침 20%(엔진 입력 크기와 같게). 중복 제거: 같은 클래스, 상자 IoU ≥ 0.5
 - 모델 정보: 엔진 옆 `model.json` `{modelVersion, classes}`

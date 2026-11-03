@@ -68,5 +68,5 @@
 
 ## 가정
 
-- 가중치는 ML1(A, 11/6)이 만든 학습 실행의 ONNX. 엔진은 Jetson에서 `trtexec` 또는 ultralytics export로 FP16 빌드한다.
-- 추론은 ultralytics의 TensorRT 엔진 로더를 쓴다(Jetson에서만 설치).
+- 가중치는 민서 집 PC에서 학습한 v001 ONNX(고정 1x3x640x640). 엔진은 Jetson에서 `trtexec --fp16`으로 빌드한다(`trace-booth build-engine`).
+- 추론은 TensorRT 파이썬 + libcudart(ctypes) + numpy·OpenCV로 직접 한다. jetson2에 torch·ultralytics가 없어서다(11/3 확인).
