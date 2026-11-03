@@ -7,11 +7,13 @@ from dataclasses import dataclass
 
 from .codes import Camera, Face, Light
 
-DEVICE_ID_RE = re.compile(r"^[A-Z]{2,4}[0-9]{2}$")
+# 학습 데이터는 ID 카드의 부스 기기 코드(MB01), 빠른 검사는 렌탈 목록에서 고른 rental-server 기기 publicId(21자)
+_DEVICE = r"[A-Z]{2,4}[0-9]{2}|[A-Za-z0-9_-]{21}"
+DEVICE_ID_RE = re.compile(rf"^(?:{_DEVICE})$")
 _BOOTH_LIGHTS = (Light.L1, Light.L2, Light.L3, Light.L4, Light.OFF)
 _BOOTH_CAMERAS = (Camera.CAM1, Camera.CAM2)
 FILENAME_RE = re.compile(
-    r"^(?P<device>[A-Z]{2,4}[0-9]{2})"
+    rf"^(?P<device>{_DEVICE})"
     rf"_(?P<face>{'|'.join(f.value for f in Face)})"
     rf"_(?P<light>{'|'.join(x.value for x in _BOOTH_LIGHTS)})"
     rf"_(?P<camera>{'|'.join(c.value for c in _BOOTH_CAMERAS)})"

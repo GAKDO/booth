@@ -161,3 +161,18 @@ trace-booth serve --port 8320
 ## 4. 확인 한 바퀴
 
 `specs/001-booth-capture-tool/quickstart.md`의 Jetson 절차대로 REG01을 처음부터 끝까지 찍습니다. 중간에 랜선을 뽑았다 꽂아 "올리지 못함" 수가 0으로 돌아오는지, 끝나고 `trace-booth shots --device REG01 --verify`가 모두 "일치"인지 봅니다.
+
+## 5. 빠른 검사 (11/5 MVP)
+
+운영 화면 맨 위 선택이 **빠른 검사**(기본)면 "검사 기다리는 기기" 목록이 나옵니다. 관리자 화면에서 시점을 시작한 렌탈만 보입니다. 기기를 누르고 안내대로 BOT(뒤집어서) 3장씩 → 다시 뒤집어 TOP 3장씩 찍고 **완료**를 누르면, 몇 초 뒤 "문제 있음/없음"과 흠집 폴리곤이 그려진 사진이 나옵니다. 다음 기기는 **다음 기기**.
+
+```bash
+set -a; . ~/.config/trace-booth.env; set +a   # TRACE_API_URL·TRACE_BOOTH_CLIENT_ID·SECRET(값은 이 파일에만)
+export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine   # 같은 폴더에 model.json
+# 엔진이 오기 전 흐름만 시험: TRACE_BOOTH_ENGINE 대신 export TRACE_BOOTH_DETECTOR=none (늘 "문제 없음" + 시험 표시)
+trace-booth serve
+```
+
+- 서버 설정이 없으면 목록 자리에 "서버 연결 설정이 없어…"가 나옵니다.
+- 엔진을 못 부르면 "판정 못 함"과 이유가 나오고, 고친 뒤 **다시 탐지**를 누르면 같은 사진으로 다시 돌립니다.
+- 화면의 "완료→판정 N초"가 11/6 실측값입니다(목표 15초, 기준 30초).

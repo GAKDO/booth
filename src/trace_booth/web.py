@@ -13,11 +13,15 @@ from pathlib import Path
 
 from .camera import CameraError
 from .camera_presets import PresetError
+from .capture_client import ApiError
+from .quick import QuickInspector, result_json
+from .rentals import WaitingDevice
 from .session import CaptureError, CaptureService, Incomplete, InvalidInput
 from .store import CheckoutRecord, ShotRecord
 
 Submitter = Callable[[int], CheckoutRecord]
 LiveFeed = Callable[[], Iterator[bytes]]  # 카메라 하나의 실시간 JPEG 프레임
+WaitingList = Callable[[], list[WaitingDevice]]  # 빠른 검사의 검사 기다리는 기기
 
 
 class App:
@@ -28,10 +32,14 @@ class App:
         service: CaptureService,
         submitter: Submitter | None = None,
         live: dict[str, LiveFeed] | None = None,
+        quick: QuickInspector | None = None,
+        waiting: WaitingList | None = None,
     ) -> None:
         self.service = service
         self.live = live or {}  # 카메라 코드(CAM1·CAM2) → 실시간 보기
         self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
+        self.quick = quick  # 빠른 검사 탐지. 없으면 QUICK 모드를 막음
+        self.waiting = waiting  # 렌탈 목록. 서버 설정이 없으면 None
         self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
 
@@ -60,6 +68,7 @@ def _state(app: App) -> dict:
         "queue": app.service.store.upload_counts(), "presetsConfigured": app.service.presets.configured,
         "checkout": _checkout_json(app.service.store.get_checkout(v.session.id)),
         "checkoutEnabled": app.submitter is not None,
+        "quickEnabled": app.quick is not None, "waitingEnabled": app.waiting is not None,
     }
 
 
@@ -109,6 +118,14 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if shot is None:
                     return self._problem(404, "사진이 없음")
                 return self._send(200, _thumbnail(Path(shot.local_path)), "image/jpeg")
+            if method == "GET" and path == "/api/rentals/waiting":
+                if app.waiting is None:
+                    return self._problem(503, "서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 기기 목록을 못 불러와요")
+                try:
+                    items = app.waiting()
+                except (ApiError, OSError) as e:
+                    return self._problem(502, f"기기 목록을 못 불러왔어요: {e}")
+                return self._json(200, {"items": [w.to_json() for w in items]})
             if method == "GET" and path.startswith("/api/live/"):
                 feed = app.live.get(path[len("/api/live/"):])
                 if feed is None:
@@ -117,7 +134,9 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             if method == "POST" and path == "/api/sessions":
                 body = self._body()
                 mode = str(body.get("mode", "TRAINING"))
-                if mode != "TRAINING" and app.submitter is None:
+                if mode == "QUICK" and app.quick is None:
+                    raise InvalidInput("탐지 엔진 설정(TRACE_BOOTH_ENGINE)이 없어 빠른 검사를 쓸 수 없어요")
+                if mode in ("OUT", "RET") and app.submitter is None:
                     raise InvalidInput("서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 출고·반납 모드를 쓸 수 없어요")
                 rental, checkpoint = body.get("rentalId"), body.get("checkpointId")
                 with app.lock:
@@ -133,6 +152,11 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             action = path[len("/api/sessions/current"):]
             if method == "GET" and action == "":
                 return self._json(200, _state(app))
+            if method == "GET" and action == "/result":
+                session = svc.store.get_session(app.current)
+                if session.mode != "QUICK":
+                    return self._problem(409, "빠른 검사 촬영이 아니에요")
+                return self._json(200, result_json(svc.store, session.id, session.status == "IN_PROGRESS"))
             if method != "POST":
                 return self._problem(405, "허용하지 않는 메서드")
             if action == "/shoot":
@@ -149,9 +173,17 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._json(200, _state(app))
             if action == "/complete":
                 done = svc.complete(app.current)
-                if done.mode != "TRAINING" and app.submitter is not None:
+                if done.mode == "QUICK" and app.quick is not None:
+                    app.quick.start(done.id)  # 바로 돌아오고, 화면은 /result를 다시 읽는다
+                elif done.mode != "TRAINING" and app.submitter is not None:
                     app.submitter(done.id)
                 return self._json(200, {"session": asdict(done), "state": _state(app)})
+            if action == "/detect":
+                session = svc.store.get_session(app.current)
+                if session.mode != "QUICK" or session.status != "COMPLETE" or app.quick is None:
+                    raise CaptureError("완료한 빠른 검사만 다시 탐지할 수 있어요")
+                app.quick.start(session.id)
+                return self._json(202, result_json(svc.store, session.id, False))
             if action == "/submit":
                 if app.submitter is None:
                     raise InvalidInput("서버 연결 설정이 없어요")

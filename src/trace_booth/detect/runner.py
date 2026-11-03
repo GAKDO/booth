@@ -22,6 +22,8 @@ class PhotoResult:
     camera: str
     filename: str
     found: list[Found]
+    width: int = 0  # 원본 사진 px(화면이 축소 사진 위에 폴리곤을 겹칠 때 쓴다)
+    height: int = 0
 
 
 @dataclass
@@ -41,6 +43,7 @@ class SetResult:
             "coordinates": "photo_px",
             "photos": [
                 {"face": p.face, "light": p.light, "camera": p.camera, "filename": p.filename,
+                 "width": p.width, "height": p.height,
                  "detections": [{"class": f.defect_class, "polygon": [list(pt) for pt in f.polygon],
                                  "confidence": f.confidence} for f in p.found]}
                 for p in self.photos
@@ -74,7 +77,10 @@ def detect_set(shots: list[ShotRecord], detector: Detector, info: ModelInfo, loa
     start = clock()
     result = SetResult(info.model_version)
     for shot in latest_shots(shots):
-        found = detect_photo(load(shot.local_path), detector, info)
-        result.photos.append(PhotoResult(shot.face or "", shot.light or "", shot.camera, shot.filename, found))
+        image = load(shot.local_path)
+        found = detect_photo(image, detector, info)
+        height, width = image.shape[:2]
+        result.photos.append(PhotoResult(shot.face or "", shot.light or "", shot.camera, shot.filename, found,
+                                         int(width), int(height)))
     result.seconds = round(clock() - start, 3)
     return result
