@@ -14,7 +14,9 @@ from pathlib import Path
 from .camera import CameraError
 from .camera_presets import PresetError
 from .capture_client import ApiError
-from .quick import QuickInspector, result_json
+from .quick import QuickInspector
+from .quick import result_json as _quick_result
+from .quick_upload import upload_json
 from .rentals import WaitingDevice
 from .session import CaptureError, CaptureService, Incomplete, InvalidInput
 from .store import CheckoutRecord, ShotRecord
@@ -22,6 +24,12 @@ from .store import CheckoutRecord, ShotRecord
 Submitter = Callable[[int], CheckoutRecord]
 LiveFeed = Callable[[], Iterator[bytes]]  # 카메라 하나의 실시간 JPEG 프레임
 WaitingList = Callable[[], list[WaitingDevice]]  # 빠른 검사의 검사 기다리는 기기
+
+
+def result_json(store, session_id: int, shooting: bool) -> dict:
+    out = _quick_result(store, session_id, shooting)
+    out["upload"] = upload_json(store, session_id)
+    return out
 
 
 class App:

@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS checkout (
   capture_set_id TEXT, status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT, updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS quick_upload (
+  session_id INTEGER PRIMARY KEY REFERENCES session(id), status TEXT NOT NULL DEFAULT 'PENDING',
+  sent_result_at TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS quick_result (
   session_id INTEGER PRIMARY KEY REFERENCES session(id), status TEXT NOT NULL, verdict TEXT,
   result_json TEXT, error TEXT, started_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -118,6 +122,16 @@ class QuickResultRecord:
     error: str | None
     started_at: str
     updated_at: str
+
+
+@dataclass
+class QuickUploadRecord:
+    session_id: int
+    status: str  # PENDING·SENT·FAILED·CLOSED(등급이 매겨져 더 못 바꿈)
+    sent_result_at: str | None
+    attempts: int
+    last_error: str | None
+    updated_at: str | None
 
 
 class Store:
@@ -255,6 +269,45 @@ class Store:
     def get_quick_result(self, session_id: int) -> QuickResultRecord | None:
         row = self._one("SELECT * FROM quick_result WHERE session_id = ?", (session_id,))
         return QuickResultRecord(**dict(row)) if row else None
+
+    def get_quick_upload(self, session_id: int) -> QuickUploadRecord | None:
+        row = self._one("SELECT * FROM quick_upload WHERE session_id = ?", (session_id,))
+        return QuickUploadRecord(**dict(row)) if row else None
+
+    def mark_quick_upload(
+        self, session_id: int, status: str, now: str, sent_result_at: str | None = None, error: str | None = None,
+    ) -> None:
+        """탐지 올리기 결과. SENT면 보낸 탐지 결과의 updated_at을 남겨, 다시 탐지하면 다시 보낸다."""
+        if status not in ("SENT", "FAILED", "CLOSED"):
+            raise ValueError(status)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO quick_upload (session_id, status, sent_result_at, attempts, last_error, updated_at) "
+                "VALUES (?, ?, ?, 1, ?, ?) ON CONFLICT(session_id) DO UPDATE SET status = excluded.status, "
+                "sent_result_at = COALESCE(excluded.sent_result_at, sent_result_at), attempts = attempts + 1, "
+                "last_error = excluded.last_error, updated_at = excluded.updated_at",
+                (session_id, status, sent_result_at, error, now),
+            )
+
+    def quick_sessions_to_upload(self, limit: int = 20) -> list[int]:
+        """다 찍은 빠른 검사 중 세트를 아직 못 올렸거나, 끝난 탐지를 아직 못 보낸 것(닫힌 세트 제외)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT e.id FROM session e JOIN checkout c ON c.session_id = e.id "
+                "LEFT JOIN quick_result r ON r.session_id = e.id LEFT JOIN quick_upload u ON u.session_id = e.id "
+                "WHERE e.mode = 'QUICK' AND e.status = 'COMPLETE' AND (c.status != 'SUBMITTED' OR "
+                "(r.status = 'DONE' AND COALESCE(u.status, '') != 'CLOSED' AND u.sent_result_at IS NOT r.updated_at "
+                "AND r.result_json NOT LIKE '%\"testOnly\": true%')) "
+                # 오래 안 건드린 것부터: 계속 실패하는 앞 세션이 뒤 세션의 차례를 막지 않게
+                "ORDER BY MAX(COALESCE(c.updated_at, ''), COALESCE(u.updated_at, '')), e.id LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [int(r["id"]) for r in rows]
+
+    def set_checkout_set_id(self, session_id: int, capture_set_id: str) -> None:
+        """서버가 세트를 만들어 주면 바로 남긴다(다시 시도할 때 새 세트를 만들지 않게)."""
+        with self._lock:
+            self._conn.execute("UPDATE checkout SET capture_set_id = ? WHERE session_id = ?", (capture_set_id, session_id))
 
     def shots_for_device(self, device_id: str) -> list[ShotRecord]:
         with self._lock:

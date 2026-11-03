@@ -74,12 +74,28 @@ def submit(
     client: CaptureClient,
     http: HttpCall = http_call,
     sleep: Callable[[float], None] = time.sleep,
+    profile: str | None = None,
+    existing_set_id: str | None = None,
+    on_created: Callable[[str], None] | None = None,
 ) -> SubmitResult:
+    """existing_set_id가 있으면(지난번에 만들고 못 끝낸 세트) 새로 만들지 않고 남은 사진의 URL만 다시 받아 이어 간다."""
     photos = select_photos(shots)
     if not photos:
         raise UploadFailed("올릴 사진이 없음")
-    set_id, uploads = client.create_set(rental_id, checkpoint_id, photos)
-    pending = list(zip(uploads, photos))
+    if existing_set_id is None:
+        set_id, uploads = client.create_set(rental_id, checkpoint_id, photos, profile)
+        if on_created is not None:
+            on_created(set_id)  # 사진 올리기에서 실패해도 다음엔 이 세트를 이어 쓰게
+        pending = list(zip(uploads, photos))
+    else:
+        set_id = existing_set_id
+        pending = [(UploadTarget("", "", "", "", {}, ""), p) for p in photos]
+        try:
+            _reissue(client, set_id, pending)
+        except ApiError as e:
+            if e.code != "CAPTURE_SET_CLOSED":
+                raise
+            pending = []  # 사진은 다 올라가 완료까지 갔던 세트: 같은 키로 완료를 다시 불러 결과만 받는다
     reissued = 0
     while True:
         try:
@@ -105,8 +121,10 @@ def submit_session(
     now: Callable[[], str],
     http: HttpCall = http_call,
     sleep: Callable[[float], None] = time.sleep,
+    profile: str | None = None,
 ) -> CheckoutRecord:
-    """끝난 출고·반납 세션을 올리고 결과를 기록한다. 실패해도 사진은 로컬에 남고, 다시 부르면 처음부터 다시 올린다."""
+    """끝난 출고·반납·빠른 검사 세션을 올리고 결과를 기록한다. 실패해도 사진은 로컬에 남고, 다시 부르면
+    만들어 둔 세트를 이어 간다(남은 사진만)."""
     session = store.get_session(session_id)
     record = store.get_checkout(session_id)
     if record is None or session.status != "COMPLETE":
@@ -115,7 +133,8 @@ def submit_session(
         return record
     skipped = {"SCR1": session.scr1_skip_reason} if session.scr1_skip_reason else {}
     try:
-        result = submit(store.shots(session_id), record.rental_id, record.checkpoint_id, skipped, client, http, sleep)
+        result = submit(store.shots(session_id), record.rental_id, record.checkpoint_id, skipped, client, http, sleep,
+                        profile, record.capture_set_id, lambda sid: store.set_checkout_set_id(session_id, sid))
     except (UploadFailed, ApiError, OSError) as e:
         store.mark_checkout(session_id, "FAILED", now(), error=f"{type(e).__name__}: {e}"[:300])
     else:
