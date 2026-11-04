@@ -152,7 +152,7 @@ def test_버튼에서_판정까지_구간별_시간과_목표_기준_판정을_�
     out = t.to_json()
     assert out["total"] == 12.0 and out["grade"] == "OK"
     assert [s["seconds"] for s in out["steps"]] == [4.0, 5.5, 2.5]
-    assert (grade(15.0), grade(15.1), grade(30.1)) == ("OK", "SLOW", "OVER")
+    assert (grade(30.0), grade(30.1), grade(60.1)) == ("OK", "SLOW", "OVER")
 
 
 def test_bench는_사진을_여러_번_탐지해_중간값으로_판정하고_기준을_넘으면_종료_코드_2(tmp_path, capsys):
@@ -173,7 +173,7 @@ def test_bench는_사진을_여러_번_탐지해_중간값으로_판정하고_�
     assert code == 0 and "문제 없음" in capsys.readouterr().out
 
     now[0] = 0.0
-    slow = iter([0, 0, 0, 0, 0, 0, 0, 40, 0, 40, 0, 40, 0, 40])
+    slow = iter([0, 0, 0, 0, 0, 0, 0, 70, 0, 70, 0, 70, 0, 70])
     code = bench(str(engine), ["a.jpg"], None, 3, make_detector=lambda _: OneScratch(), load=lambda _: image,
                  clock=lambda: float(next(slow)))
     assert code == 2 and "OVER" in capsys.readouterr().out

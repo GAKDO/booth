@@ -35,7 +35,7 @@ jetson2(11/3 확인): L4T R39, Python 3.12, TensorRT 10.16(시스템 파이썬),
    ```bash
    ~/trace-venv/bin/python -m trace_booth build-engine --onnx ~/yolo11n-seg.onnx --out ~/trace-models/test --test
    ```
-3. 시간을 잰다. 엔진 올리기 1번, 첫 실행(데우기) 1번, 이어서 `--runs`번 돌려 중간값을 목표 15초·기준 30초와 비교한다(넘으면 종료 코드 2).
+3. 시간을 잰다. 엔진 올리기 1번, 첫 실행(데우기) 1번, 이어서 `--runs`번 돌려 중간값을 목표 30초·기준 60초와 비교한다(넘으면 종료 코드 2).
 
    ```bash
    export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine

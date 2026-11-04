@@ -176,7 +176,7 @@ def retry() -> int:
     return 1 if failed else 0
 
 
-NFR_DETECT_SECONDS = 30
+NFR_DETECT_SECONDS = 60  # 11/5 민서 결정: 시연 기준 1분쯤
 
 
 def _imread(path: str) -> object:
@@ -193,7 +193,7 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
     """찍은 세션 하나의 면 사진을 탐지해 로컬에 JSON으로 남긴다(BO2). 원본 사진은 읽기만 한다.
 
     출고·반납 세트가 이미 올라갔으면 탐지 결과도 그 세트에 올린다. 다시 돌리면 다시 보내고, 서버가 그 세트의
-    부스 탐지를 마지막 요청으로 통째로 바꾼다(A 11/2). 종료 코드: 30초 초과 2, 올리기 실패 3.
+    부스 탐지를 마지막 요청으로 통째로 바꾼다(A 11/2). 종료 코드: 60초 초과 2, 올리기 실패 3.
     """
     import json
 
@@ -310,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--out", default=str(Path.home() / "trace-models"), help="엔진·model.json을 둘 폴더")
     p_build.add_argument("--model-json", help="model.json(기본: ONNX 옆)")
     p_build.add_argument("--test", action="store_true", help="시험용 기본 모델(yolo11n-seg 등): 클래스 검사 없이, 서버에 안 올림")
-    p_bench = sub.add_parser("bench", help="탐지 시간 재기(Jetson). 목표 15초, 기준 30초")
+    p_bench = sub.add_parser("bench", help="탐지 시간 재기(Jetson). 목표 30초, 기준 60초")
     p_bench.add_argument("--engine", help="엔진(.engine) 또는 CPU 확인용 .onnx. 기본 TRACE_BOOTH_ENGINE")
     p_bench.add_argument("--images", nargs="*", default=[], help="사진 파일들(MVP는 4장)")
     p_bench.add_argument("--session", help="찍은 세션 publicId(사진 대신)")
