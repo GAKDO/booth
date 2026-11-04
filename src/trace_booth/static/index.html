@@ -64,7 +64,9 @@
   .device .model { font-size:26px; font-weight:800; }
   .device .serial { font-size:19px; color:var(--muted); font-variant-numeric:tabular-nums; }
   .device .foot { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:15px; }
-  .device .go { color:var(--accent); font-weight:700; font-size:17px; }
+  .device .go { color:var(--accent); font-weight:700; font-size:17px; white-space:nowrap; flex:none; }
+  .device .foot { gap:12px; }
+  .device .foot > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tag { display:inline-block; padding:4px 10px; border-radius:8px; font-size:14px; font-weight:700; background:var(--panel2); color:var(--fg); }
   .tag.OUT { background:rgba(59,130,246,.16); color:#93c5fd; }
   .tag.RCV { background:rgba(168,85,247,.16); color:#d8b4fe; }
