@@ -1,4 +1,4 @@
-"""버튼 → 판정 시간 재기(NFR-01). 목표 15초 안쪽, 기준 30초."""
+"""버튼 → 판정 시간 재기(NFR-01). 목표 30초 안쪽, 기준 60초(11/5 민서: 시연에서 1분쯤이면 됨)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-TARGET_SECONDS = 15.0
-LIMIT_SECONDS = 30.0
+TARGET_SECONDS = 30.0
+LIMIT_SECONDS = 60.0
 
 
 def grade(seconds: float) -> str:
