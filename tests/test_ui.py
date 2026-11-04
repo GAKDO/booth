@@ -284,8 +284,21 @@ def test_판정_사진은_오른쪽_목록에서_고르면_가운데에_크게_�
 def test_판정_화면에서_결과를_다시_읽어도_고른_사진이_그대로다(page):
     finish_quick(page)
     page.locator("#resultPhotos figure").nth(3).click()
-    page.wait_for_timeout(2500)  # 결과를 몇 번 다시 읽는 동안
+    src = page.locator("#stageFrame img").get_attribute("src")
+    page.evaluate("pollResult()")  # 결과를 직접 다시 읽고 끝날 때까지 기다림
     expect(page.locator("#stageCap")).to_contain_text("4 / 12")
+    assert page.locator("#stageFrame img").get_attribute("src") == src
+
+
+def test_실시간_크기_막대에서_방향키를_눌러도_판정_사진은_넘어가지_않는다(page):
+    finish_quick(page)
+    page.locator("#liveToggle").click()
+    page.locator("#liveSize").focus()
+    page.keyboard.press("ArrowRight")
+    expect(page.locator("#stageCap")).to_contain_text("1 / 12")
+    page.locator("#stage").click(position={"x": 400, "y": 20})
+    page.keyboard.press("ArrowRight")
+    expect(page.locator("#stageCap")).to_contain_text("2 / 12")
 
 
 def test_실시간_화면은_카메라를_골라_보고_크기를_키울_수_있고_다시_열어도_기억한다(page):
