@@ -504,7 +504,10 @@ def test_코드를_기다리는_동안_Enter를_더_눌러도_한_번만_보내�
     page.locator("#boothCode").fill("123456")
     page.locator("#boothCode").press("Enter")
     page.locator("#boothCode").press("Enter")
-    page.wait_for_function("() => true")
+    for _ in range(100):  # 첫 요청이 가로채기에 닿을 때까지 기다린다(최대 5초)
+        if gate:
+            break
+        page.wait_for_timeout(50)
     page.locator('#modes button[data-mode="TRAINING"]').click()
     expect(page.locator("#deviceLabel")).to_have_text("기기 이름")
     assert len(gate) == 1
