@@ -358,6 +358,30 @@ def test_출고에서_ID가_21자가_아니면_서버에_보내기_전에_어느
     expect(page.locator("#capture")).to_be_hidden()
 
 
+def test_출고에서_22자를_붙여_넣으면_자르지_않고_길이를_알리며_21자라도_못_쓰는_글자는_따로_알린다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#device").fill(MBA.device_id)
+    page.locator("#rental").fill("x" + MBA.rental_id)  # 앞에 한 글자가 더 붙은 복사 실수
+    page.locator("#checkpoint").fill(MBA.checkpoint_id)
+    expect(page.locator("#rentalLen")).to_have_text("22 / 21자")
+    page.locator("#start").click()
+    expect(page.locator("#formError")).to_contain_text("렌탈 ID가 21자가 아니에요(지금 22자)")
+    page.locator("#rental").fill(MBA.rental_id[:20] + "!")
+    page.locator("#start").click()
+    expect(page.locator("#formError")).to_contain_text("렌탈 ID에 쓸 수 없는 글자가 있어요")
+    expect(page.locator("#capture")).to_be_hidden()
+
+
+def test_출고_시작에서_부스_서버에_닿지_못하면_연결_실패를_알린다(page):
+    page.route("**/api/sessions", lambda route: route.abort())
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#device").fill(MBA.device_id)
+    page.locator("#rental").fill(MBA.rental_id)
+    page.locator("#checkpoint").fill(MBA.checkpoint_id)
+    page.locator("#start").click()
+    expect(page.locator("#error")).to_contain_text("부스 서버에 연결하지 못했어요")
+
+
 def test_출고는_기기_ID의_대소문자를_그대로_보내고_세_ID가_맞으면_시작을_요청한다(page):
     sent: list[dict] = []
 
