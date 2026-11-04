@@ -93,7 +93,9 @@
 
   /* 1'. 학습·출고·반납 직접 입력 */
   .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:28px; }
-  .form { display:grid; gap:18px; max-width:620px; }
+  .form { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; max-width:620px; }
+  .form label { min-width:0; }
+  .form input { width:100%; min-width:0; }
   .form label { display:grid; gap:8px; font-size:16px; color:var(--muted); font-weight:600; }
   .form input { min-height:var(--tap); padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--bg);
     font-size:22px; user-select:text; }
@@ -104,6 +106,13 @@
   .form .len.ok { color:var(--ok); }
   .form-error { margin:0; min-height:0; color:#f87171; font-size:15px; font-weight:600; }
   .form-error:empty { display:none; }
+  .form-ok { margin:0; color:#4ade80; font-size:15px; font-weight:600; }
+  .form-ok:empty { display:none; }
+  .codebox { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+  .coderow { display:flex; gap:10px; }
+  .coderow input { flex:1 1 auto; width:100%; min-width:0; font-size:28px; letter-spacing:.3em; font-variant-numeric:tabular-nums; }
+  .or { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:14px; }
+  .or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
   .tip { display:flex; align-items:center; gap:16px; flex-wrap:wrap; max-width:620px; margin-bottom:16px; padding:16px 20px; border-radius:var(--r);
     border:1px solid rgba(200,22,29,.35); background:var(--accent-soft); font-size:16px; line-height:1.55; }
   .tip > div { flex:1 1 280px; }
@@ -298,6 +307,16 @@
       <strong>반납 촬영은 아직 쓸 수 없어요.</strong> MVP에서는 렌탈마다 출고 검사 한 번만 해서, 관리자 화면에 반납 시작 버튼이 없고 반납 시점 ID도 만들어지지 않아요.
     </div>
     <div class="card form" id="manualForm">
+      <!-- 부스 코드(11/4): 관리자 화면이 발급한 6자리를 넣으면 아래 세 칸이 채워진다. 21자를 손으로 옮기지 않게 -->
+      <div class="checkout codebox" id="codeBox">
+        <label for="boothCode"><span class="lab">부스 코드 <span class="len">가장 쉬워요</span></span>
+          <span class="coderow"><input id="boothCode" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" placeholder="숫자 6자리" aria-describedby="codeHelp">
+          <button type="button" class="btn" id="redeem">불러오기</button></span>
+          <small class="help" id="codeHelp">관리자 화면 → 렌탈 상세 → '부스에 넣을 ID' → <b>부스 코드 발급</b>. 6자리를 넣으면 아래 세 칸이 자동으로 채워져요(10분 안에 한 번).</small></label>
+        <p class="form-ok" id="codeOk" role="status"></p>
+        <p class="form-error" id="codeError" role="alert"></p>
+        <div class="or"><span>또는 세 ID를 직접 넣기</span></div>
+      </div>
       <label for="device"><span id="deviceLabel">기기 ID</span>
         <input id="device" autocomplete="off" spellcheck="false" aria-describedby="deviceHelp">
         <small class="help" id="deviceHelp"></small></label>
@@ -782,7 +801,7 @@ function applyMode() {
   $("manualTitle").textContent = training ? "학습 데이터 촬영 · 기기 이름을 넣고 시작하세요"
     : m === "RET" ? "반납 촬영" : `${MODE_NAME[m]} 촬영 · 세 ID를 넣고 시작하세요`;
   $("manualSub").textContent = training ? "학습 데이터는 서버에 올리지 않고 부스에만 저장해요"
-    : "세 ID 모두 관리자 화면(gakdo.site/admin)의 렌탈 상세에 있어요. 21자를 그대로 복사해 넣으세요";
+    : "관리자 화면(gakdo.site/admin) 렌탈 상세에서 부스 코드 6자리를 받아 넣거나, 21자 ID 세 개를 복사해 넣으세요";
   // 학습은 사람이 정한 짧은 기기 이름, 출고·반납은 관리자 화면의 기기 ID(21자)
   $("deviceLabel").textContent = training ? "기기 이름" : "기기 ID";
   $("device").placeholder = training ? "예: MB01" : "21자, 예: aAXQFO2Vz6ZTFbPctC2dq";
@@ -793,6 +812,7 @@ function applyMode() {
   $("manualForm").hidden = m === "RET";
   $("formError").textContent = "";
   markInvalid("");
+  $("codeOk").textContent = ""; $("codeError").textContent = "";
   updateLens();
 }
 // 21자 칸은 몇 자 넣었는지 바로 보이게(복사가 덜 됐는지 알 수 있게)
@@ -804,6 +824,46 @@ function updateLens() {
   }
 }
 for (const id of ["rental", "checkpoint"]) $(id).addEventListener("input", updateLens);
+// 부스 코드 → 세 ID 채우기. 서버는 코드를 한 번만 받으므로, 채운 뒤 기기가 맞는지 보이고 시작은 사람이 누른다
+let redeeming = false;  // Enter·버튼이 겹쳐 한 번만 쓰는 코드를 두 번 보내지 않게
+let codeFilled = false; // 세 칸이 코드로 채워졌는지(새 코드를 넣으면 앞 코드 값은 지워 엉뚱한 기기로 시작하지 않게)
+async function redeemCode() {
+  if (redeeming) return;
+  const code = $("boothCode").value.replace(/\s/g, "");
+  $("codeOk").textContent = ""; $("codeError").textContent = "";
+  if (!/^[0-9]{6}$/.test(code)) { $("codeError").textContent = "부스 코드는 숫자 6자리예요"; return; }
+  if (codeFilled) {
+    for (const id of ["device", "rental", "checkpoint"]) $(id).value = "";
+    codeFilled = false; updateLens();
+  }
+  redeeming = true; $("redeem").disabled = true;
+  let t;
+  try {
+    const res = await fetch("/api/booth-code", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }) });
+    const data = await res.json();
+    if (!res.ok) { $("codeError").textContent = data.detail || "부스 코드를 확인하지 못했어요"; return; }
+    t = data;
+  } catch (e) {
+    $("codeError").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요"; return;
+  } finally { redeeming = false; $("redeem").disabled = false; }
+  if (t.checkpointType !== "OUT") {
+    $("codeError").textContent = `${MODE_NAME[t.checkpointType] || t.checkpointType} 시점 코드예요. 지금 부스는 출고 촬영만 받아요`;
+    return;
+  }
+  // 기다리는 동안 다른 탭으로 옮겼어도 코드는 이미 쓰였으므로 출고 탭으로 돌아와 채운다
+  if (mode !== "OUT") { setMode("OUT"); state = null; applyMode(); }
+  $("device").value = t.deviceId; $("rental").value = t.rentalId; $("checkpoint").value = t.checkpointId;
+  codeFilled = true;
+  $("boothCode").value = ""; $("formError").textContent = ""; markInvalid("");
+  updateLens();
+  $("codeOk").textContent = `${t.modelCode} · ${t.serial} 불러왔어요. 부스 안 기기가 맞는지 확인하고 시작을 누르세요`;
+  $("start").focus();
+}
+$("redeem").onclick = redeemCode;
+// 사람이 칸을 고치면 직접 넣은 값으로 보고 새 코드를 넣어도 지우지 않는다
+for (const id of ["device", "rental", "checkpoint"]) $(id).addEventListener("input", () => { codeFilled = false; });
+$("boothCode").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); redeemCode(); } });
 $("toQuick").onclick = () => document.querySelector('#modes button[data-mode="QUICK"]').click();
 for (const b of document.querySelectorAll("#modes button")) {
   b.onclick = async () => {

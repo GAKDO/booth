@@ -27,7 +27,7 @@ from .session import CaptureService, _now
 from .shotlist import SHOTLISTS
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
-from .web import App, LiveFeed, Submitter, WaitingList, make_server
+from .web import App, CodeRedeemer, LiveFeed, Submitter, WaitingList, make_server
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -61,13 +61,13 @@ def _client() -> CaptureClient | None:
     return CaptureClient(url, auth)
 
 
-def _waiting() -> WaitingList | None:
-    """빠른 검사의 기기 목록(rental-server). 서버 설정이 없으면 None."""
+def _rentals() -> RentalClient | None:
+    """rental-server 호출용(빠른 검사의 기기 목록, 부스 코드). 서버 설정이 없으면 None."""
     url = os.environ.get("TRACE_API_URL")
     if not url:
         return None
     auth = BoothAuth(url, _env("TRACE_BOOTH_CLIENT_ID"), _env("TRACE_BOOTH_CLIENT_SECRET"))
-    return RentalClient(url, auth).waiting
+    return RentalClient(url, auth)
 
 
 def _detector_source() -> DetectorSource | None:
@@ -134,8 +134,10 @@ def serve(host: str, port: int) -> int:
         if quick is not None:
             quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
         worker.start()
-    waiting = _waiting()
-    server = make_server(App(service, submitter, live, quick, waiting), host, port)
+    rentals = _rentals()
+    waiting: WaitingList | None = rentals.waiting if rentals else None
+    redeem: CodeRedeemer | None = rentals.redeem if rentals else None
+    server = make_server(App(service, submitter, live, quick, waiting, redeem), host, port)
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
     try:
         server.serve_forever()
