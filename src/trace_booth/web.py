@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from .camera import CameraError
 from .camera_presets import PresetError
@@ -125,7 +126,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 shot = svc.store.get_shot(path.split("/")[3])
                 if shot is None:
                     return self._problem(404, "사진이 없음")
-                return self._send(200, _thumbnail(Path(shot.local_path)), "image/jpeg")
+                return self._send(200, _thumbnail(Path(shot.local_path), _thumb_width(self.path)), "image/jpeg")
             if method == "GET" and path == "/api/rentals/waiting":
                 if app.waiting is None:
                     return self._problem(503, "서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 기기 목록을 못 불러와요")
@@ -244,6 +245,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
     return Handler
+
+
+def _thumb_width(raw_path: str) -> int:
+    """?w=긴 변 픽셀(선택). 판정 화면의 큰 사진용. 없거나 이상하면 480, 160~1920로 묶음."""
+    w = parse_qs(urlsplit(raw_path).query).get("w", [""])[0]
+    return max(160, min(1920, int(w))) if w.isdigit() else 480
 
 
 def _thumbnail(path: Path, long_side: int = 480) -> bytes:

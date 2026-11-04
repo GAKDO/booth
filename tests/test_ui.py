@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 
 import pytest
@@ -238,3 +239,83 @@ def test_확인_시트가_열리면_Tab은_시트_안에서만_돌고_닫으면_
     page.keyboard.press("Escape")
     expect(page.locator("#sheet")).to_be_hidden()
     expect(card).to_be_focused()
+
+
+
+def finish_quick(page: Page) -> None:
+    pick(page, "TEST-0001")
+    shoot(page, 3)
+    page.locator("#next").click()
+    shoot(page, 3)
+    page.locator("#complete").click()
+    expect(page.locator("#verdict")).to_have_text("문제 있음")
+
+
+def test_판정_사진은_오른쪽_목록에서_고르면_가운데에_크게_하나씩_보인다(page):
+    finish_quick(page)
+    rail = page.locator("#resultPhotos figure")
+    expect(rail).to_have_count(12)
+    expect(page.locator("#photoCount")).to_have_text("12장")
+    # 흠집 많은 사진이 먼저, 처음엔 그 사진이 크게 보인다
+    expect(rail.first).to_have_class("hit")
+    expect(rail.first).to_have_attribute("aria-current", "true")
+    expect(page.locator("#stageCap")).to_contain_text("흠집 1곳")
+    expect(page.locator("#stageCap")).to_contain_text("1 / 12")
+    expect(page.locator("#stageFrame img")).to_have_attribute("src", re.compile(r"thumbnail\?w=1600$"))
+    expect(page.locator("#prevPhoto")).to_be_disabled()
+    rail.nth(4).click()
+    expect(page.locator("#stageCap")).to_contain_text("5 / 12")
+    expect(page.locator("#stageCap")).to_contain_text("흠집 없음")
+    expect(rail.nth(4)).to_have_attribute("aria-current", "true")
+    expect(rail.first).to_have_attribute("aria-current", "false")
+    page.locator("#nextPhoto").click()
+    expect(page.locator("#stageCap")).to_contain_text("6 / 12")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#stageCap")).to_contain_text("5 / 12")
+    rail.last.click()
+    expect(page.locator("#nextPhoto")).to_be_disabled()
+    # 오른쪽 목록은 화면 안에서 스크롤된다(페이지가 길게 늘어나지 않음)
+    rail_box = page.locator("#resultPhotos").bounding_box()
+    stage_box = page.locator("#stage").bounding_box()
+    assert rail_box["height"] <= stage_box["height"], (rail_box, stage_box)
+    assert page.evaluate("getComputedStyle(document.getElementById('resultPhotos')).overflowY") == "auto"
+
+
+def test_판정_화면에서_결과를_다시_읽어도_고른_사진이_그대로다(page):
+    finish_quick(page)
+    page.locator("#resultPhotos figure").nth(3).click()
+    page.wait_for_timeout(2500)  # 결과를 몇 번 다시 읽는 동안
+    expect(page.locator("#stageCap")).to_contain_text("4 / 12")
+
+
+def test_실시간_화면은_카메라를_골라_보고_크기를_키울_수_있고_다시_열어도_기억한다(page):
+    page.locator("#liveToggle").click()
+    expect(page.locator("#live")).to_be_visible()
+    expect(page.locator("#liveFigCAM1")).to_be_visible()
+    expect(page.locator("#liveFigCAM2")).to_be_visible()
+    narrow = page.locator("#liveGrid").bounding_box()["width"]
+    page.locator('#liveLayout button[data-v="CAM1"]').click()
+    expect(page.locator("#liveFigCAM2")).to_be_hidden()
+    expect(page.locator("#liveCAM2")).not_to_have_attribute("src", re.compile("."))  # 안 보이는 카메라는 스트림을 끊음
+    page.locator("#liveSize").fill("100")
+    wide = page.locator("#liveGrid").bounding_box()["width"]
+    assert wide > narrow, (narrow, wide)
+    assert wide <= TABLET["width"], "화면 밖으로 넘침"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.reload()
+    page.locator("#liveToggle").click()
+    expect(page.locator("#liveFigCAM2")).to_be_hidden()
+    expect(page.locator("#liveSize")).to_have_value("100")
+
+
+def test_폰_폭에서도_판정_사진_화면이_가로로_넘치지_않는다(browser, base):
+    ctx = browser.new_context(viewport={"width": 375, "height": 812}, has_touch=True)
+    pg = ctx.new_page()
+    pg.goto(base + "/")
+    expect(pg.locator(".device")).to_have_count(2)
+    finish_quick(pg)
+    expect(pg.locator("#resultPhotos figure")).to_have_count(12)
+    assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "판정 화면"
+    box = pg.locator("#nextPhoto").bounding_box()
+    assert box["x"] + box["width"] <= 375, "다음 사진 버튼이 화면 밖으로 밀림"
+    ctx.close()
