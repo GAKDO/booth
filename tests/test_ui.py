@@ -332,3 +332,63 @@ def test_폰_폭에서도_판정_사진_화면이_가로로_넘치지_않는다(
     box = pg.locator("#nextPhoto").bounding_box()
     assert box["x"] + box["width"] <= 375, "다음 사진 버튼이 화면 밖으로 밀림"
     ctx.close()
+
+
+def test_출고_탭은_세_ID가_무엇이고_어디서_찾는지_보이고_빠른_검사로_보내_준다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    expect(page.locator("#quickTip")).to_be_visible()
+    expect(page.locator("#deviceLabel")).to_have_text("기기 ID")
+    expect(page.locator("#deviceHelp")).to_contain_text("시리얼 번호 아님")
+    expect(page.locator("#rentalHelp")).to_contain_text("부스에 넣을 ID")
+    expect(page.locator("#checkpointHelp")).to_contain_text("출고 시작")
+    page.locator("#rental").fill(MBA.rental_id[:20])
+    expect(page.locator("#rentalLen")).to_have_text("20 / 21자")
+    page.locator("#toQuick").click()
+    expect(page.locator("#waiting")).to_be_visible()
+    expect(page.locator(".device")).to_have_count(2)
+
+
+def test_출고에서_ID가_21자가_아니면_서버에_보내기_전에_어느_칸인지_알려_준다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#device").fill(MBA.device_id)
+    page.locator("#rental").fill(MBA.rental_id[:20])
+    page.locator("#checkpoint").fill(MBA.checkpoint_id)
+    page.locator("#start").click()
+    expect(page.locator("#formError")).to_contain_text("렌탈 ID가 21자가 아니에요(지금 20자)")
+    expect(page.locator("#capture")).to_be_hidden()
+
+
+def test_출고는_기기_ID의_대소문자를_그대로_보내고_세_ID가_맞으면_시작을_요청한다(page):
+    sent: list[dict] = []
+
+    def capture(route):  # 이 가짜 서버에는 서버 연결 설정이 없어 출고가 거절되므로 보낸 값만 확인한다
+        sent.append(route.request.post_data_json)
+        route.fulfill(status=503, json={"detail": "시험용 거절"})
+
+    page.route("**/api/sessions", capture)
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#device").fill(MBA.device_id)
+    page.locator("#rental").fill(MBA.rental_id)
+    page.locator("#checkpoint").fill(MBA.checkpoint_id)
+    expect(page.locator("#checkpointLen")).to_have_class("len ok")
+    page.locator("#start").click()
+    expect(page.locator("#error")).to_have_text("시험용 거절")
+    assert sent == [{"deviceId": MBA.device_id, "mode": "OUT", "rentalId": MBA.rental_id,
+                     "checkpointId": MBA.checkpoint_id}]  # 대문자로 바뀌면 다른 기기가 됨
+    expect(page.locator("#formError")).to_be_hidden()
+
+
+def test_반납_탭은_지금_쓸_수_없다고_먼저_알리고_입력_칸을_보이지_않는다(page):
+    page.locator('#modes button[data-mode="RET"]').click()
+    expect(page.locator("#retBlocked")).to_be_visible()
+    expect(page.locator("#retBlocked")).to_contain_text("반납 촬영은 아직 쓸 수 없어요")
+    expect(page.locator("#manualForm")).to_be_hidden()
+
+
+def test_학습_탭은_기기_이름_규칙을_보이고_소문자로_넣어도_대문자로_시작한다(page):
+    page.locator('#modes button[data-mode="TRAINING"]').click()
+    expect(page.locator("#deviceLabel")).to_have_text("기기 이름")
+    expect(page.locator("#quickTip")).to_be_hidden()
+    page.locator("#device").fill("mb01")
+    page.locator("#start").click()
+    expect(page.locator("#who")).to_contain_text("MB01")
