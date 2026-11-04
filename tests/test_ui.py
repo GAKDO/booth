@@ -416,10 +416,10 @@ def test_출고는_기기_ID의_대소문자를_그대로_보내고_세_ID가_�
     expect(page.locator("#formError")).to_be_hidden()
 
 
-def test_반납_탭은_지금_쓸_수_없다고_먼저_알리고_입력_칸을_보이지_않는다(page):
+def test_반납_탭은_빠른_검사에서_찍으라고_알리고_입력_칸을_보이지_않는다(page):
     page.locator('#modes button[data-mode="RET"]').click()
     expect(page.locator("#retBlocked")).to_be_visible()
-    expect(page.locator("#retBlocked")).to_contain_text("반납 촬영은 아직 쓸 수 없어요")
+    expect(page.locator("#retBlocked")).to_contain_text("수령·반납은 빠른 검사에서 찍어요")
     expect(page.locator("#manualForm")).to_be_hidden()
 
 
