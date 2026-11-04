@@ -166,9 +166,21 @@ trace-booth serve --port 8320
 
 운영 화면 맨 위 선택이 **빠른 검사**(기본)면 "검사 기다리는 기기" 목록이 나옵니다. 관리자 화면에서 시점을 시작한 렌탈만 보입니다. 기기를 누르고 안내대로 BOT(뒤집어서) 3장씩 → 다시 뒤집어 TOP 3장씩 찍고 **완료**를 누르면, 몇 초 뒤 "문제 있음/없음"과 흠집 폴리곤이 그려진 사진이 나옵니다. 다음 기기는 **다음 기기**.
 
+서버 주소는 `https://gakdo.site/`입니다(11/3 개통, 강사님 nginx → 학교 서버. `trace.java21.net`은 쓰지 않음). 부스 자격(client id·secret)은 학교 서버 `.env`의 `BOOTH_CLIENT_ID`·`BOOTH_CLIENT_SECRET` 값으로, A에게 따로 받습니다. 처음 한 번만 아래처럼 `~/.config/trace-booth.env`에 더합니다. secret은 화면·셸 기록에 남지 않게 `read -s`로 넣습니다.
+
 ```bash
-# ~/.config/trace-booth.env(권한 600)에 MINIO_* 말고 아래 세 줄도 더 둡니다. 값은 A에게 받아 이 파일에만 적어요.
-#   TRACE_API_URL=…   TRACE_BOOTH_CLIENT_ID=…   TRACE_BOOTH_CLIENT_SECRET=…
+read -r -p 'BOOTH_CLIENT_ID: ' CID
+read -r -s -p 'BOOTH_CLIENT_SECRET(입력이 안 보여요): ' CSECRET; echo
+umask 077
+printf 'TRACE_API_URL=https://gakdo.site/\nTRACE_BOOTH_CLIENT_ID=%s\nTRACE_BOOTH_CLIENT_SECRET=%s\nTRACE_BOOTH_SHOTLIST=mvp\n' "$CID" "$CSECRET" >> ~/.config/trace-booth.env
+unset CID CSECRET
+chmod 600 ~/.config/trace-booth.env
+grep -c '^TRACE_' ~/.config/trace-booth.env   # 4가 나오면 됨(값은 화면에 찍지 않음)
+```
+
+매번 띄울 때:
+
+```bash
 set -a; . ~/.config/trace-booth.env; set +a
 # 엔진 만들기·의존성(tensorrt, Jetson 시스템 패키지)은 specs/002-jetson-detection/quickstart.md
 export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine   # 같은 폴더에 model.json
@@ -177,5 +189,7 @@ trace-booth serve
 ```
 
 - 서버 설정이 없으면 목록 자리에 "서버 연결 설정이 없어…"가 나옵니다.
+- 목록이 비어 있으면 관리자 화면에서 렌탈을 열고 출고(OUT) 시점을 시작했는지 봅니다. 부스는 진행 중(OPEN) 렌탈 가운데 지금 시점이 OPEN인 것만 받습니다. MVP는 렌탈당 출고 검사 1번입니다.
+- 사진은 서버가 준 `https://gakdo.site/trace-captures/...` 주소로 바로 올라갑니다(한 장 64MB까지, 부스 JPEG는 훨씬 작음).
 - 엔진을 못 부르면 "판정 못 함"과 이유가 나오고, 고친 뒤 **다시 탐지**를 누르면 같은 사진으로 다시 돌립니다.
 - 화면의 "완료→판정 N초"가 11/6 실측값입니다(목표 15초, 기준 30초).

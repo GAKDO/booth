@@ -27,7 +27,7 @@ export MINIO_ENDPOINT=http://storage.java21.net:8000   # S3 API(https://storage.
 # MINIO_ACCESS_KEY·MINIO_SECRET_KEY는 trace-capture 키. capture/README.md의 키 파일 방법으로 넣고 채팅·코드에 쓰지 않음
 export TRACE_RAW_BUCKET=trace-raw                     # 기본값
 # 출고·반납 모드(CA1 배포 뒤). 없으면 학습 데이터 모드만 켜진다
-export TRACE_API_URL=https://<gateway 주소>
+export TRACE_API_URL=https://gakdo.site/   # 11/3 개통한 공개 주소
 export TRACE_BOOTH_CLIENT_ID=...  TRACE_BOOTH_CLIENT_SECRET=...   # 값은 trace-secrets, 채팅·코드에 쓰지 않음
 trace-booth serve --port 8320
 ```
