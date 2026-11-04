@@ -168,14 +168,22 @@ trace-booth serve --port 8320
 
 서버 주소는 `https://gakdo.site/`입니다(11/3 개통, 강사님 nginx → 학교 서버. `trace.java21.net`은 쓰지 않음). 부스 자격(client id·secret)은 학교 서버 `.env`의 `BOOTH_CLIENT_ID`·`BOOTH_CLIENT_SECRET` 값으로, A에게 따로 받습니다. 처음 한 번만 아래처럼 `~/.config/trace-booth.env`에 더합니다. secret은 화면·셸 기록에 남지 않게 `read -s`로 넣습니다.
 
+`read` 두 줄은 **한 줄씩** 칩니다. 한꺼번에 붙여 넣으면 뒤에 붙은 줄을 입력값으로 먹어 버립니다.
+
 ```bash
 read -r -p 'BOOTH_CLIENT_ID: ' CID
 read -r -s -p 'BOOTH_CLIENT_SECRET(입력이 안 보여요): ' CSECRET; echo
+```
+
+나머지는 한꺼번에 붙여 넣어도 됩니다. 다시 해도 같은 줄이 겹치지 않게 먼저 지우고 넣습니다(MINIO_* 줄은 그대로).
+
+```bash
+sed -i '/^TRACE_API_URL=/d;/^TRACE_BOOTH_CLIENT_ID=/d;/^TRACE_BOOTH_CLIENT_SECRET=/d;/^TRACE_BOOTH_SHOTLIST=/d' ~/.config/trace-booth.env
 umask 077
 printf 'TRACE_API_URL=https://gakdo.site/\nTRACE_BOOTH_CLIENT_ID=%s\nTRACE_BOOTH_CLIENT_SECRET=%s\nTRACE_BOOTH_SHOTLIST=mvp\n' "$CID" "$CSECRET" >> ~/.config/trace-booth.env
 unset CID CSECRET
 chmod 600 ~/.config/trace-booth.env
-grep -c '^TRACE_' ~/.config/trace-booth.env   # 4가 나오면 됨(값은 화면에 찍지 않음)
+cut -d= -f1 ~/.config/trace-booth.env   # 이름만 보임. TRACE_ 네 개가 한 번씩이면 됨
 ```
 
 매번 띄울 때:
