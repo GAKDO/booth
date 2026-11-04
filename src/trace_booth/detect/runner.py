@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..codes import NON_PROBLEM_CLASSES
 from ..store import ShotRecord, latest_shots
 from .engine import Detector, ModelInfo
 from .merge import Found, dedupe
@@ -37,15 +38,20 @@ class SetResult:
         return sum(len(p.found) for p in self.photos)
 
     @property
+    def problem_count(self) -> int:
+        """판정에 넣는 흠집 수. 오염만 서버 등급처럼 빼고, 모르는 클래스는 안전하게 문제로 센다."""
+        return sum(1 for p in self.photos for f in p.found if f.defect_class not in NON_PROBLEM_CLASSES)
+
+    @property
     def has_problem(self) -> bool:
-        """부스 화면의 "문제 있음/없음". 사진 하나라도 흠집이 잡히면 문제 있음."""
-        return self.count > 0
+        """부스 화면의 "문제 있음/없음". 긁힘·찍힘·균열이 하나라도 잡히면 문제 있음, 오염만이면 문제 없음(서버 등급 A와 같게)."""
+        return self.problem_count > 0
 
     def to_json(self) -> dict[str, Any]:
         """로컬 기록용. 폴리곤은 원본 사진 px(표준 좌표로 바꾸는 일은 서버가 한다)."""
         return {
             "modelVersion": self.model_version, "seconds": self.seconds, "count": self.count,
-            "hasProblem": self.has_problem,
+            "problemCount": self.problem_count, "hasProblem": self.has_problem,
             "coordinates": "photo_px",
             "photos": [
                 {"face": p.face, "light": p.light, "camera": p.camera, "filename": p.filename,
