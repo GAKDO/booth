@@ -37,3 +37,6 @@ FACE_REQUIRED_BOOTH = (Face.TOP, Face.BOT, Face.SF, Face.SB, Face.SL, Face.SR, F
 
 # inspection.defect_class: 흠집 4종(긁힘·찍힘·균열·오염). 모델 클래스 이름은 이것과 같아야 한다
 DEFECT_CLASSES = ("scratch", "dent", "crack", "stain")
+
+# 판정·등급에 넣는 흠집. 오염(stain)은 닦으면 없어지므로 뺀다(capture-server grade-rules-v1과 같게)
+PROBLEM_CLASSES = ("scratch", "dent", "crack")

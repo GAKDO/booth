@@ -82,7 +82,7 @@ class QuickInspector:
         except Exception as e:  # noqa: BLE001 — 백그라운드 스레드: 엔진·사진 실패를 모두 화면에 남겨 다시 돌리게
             self.store.put_quick_result(session_id, "FAILED", self._now(), error=f"{type(e).__name__}: {e}"[:300])
         else:
-            verdict = "DEFECT" if result.count else "CLEAN"
+            verdict = "DEFECT" if result.has_problem else "CLEAN"  # 오염만 잡히면 CLEAN(서버 등급 A와 같게)
             data = result.to_json()
             # 엔진 없는 시험·시험용 기본 모델(model.json testOnly)은 화면에만 보이고 서버에 올리지 않는다
             data["testOnly"] = info.model_version == NO_ENGINE_VERSION or bool(getattr(info, "test_only", False))
