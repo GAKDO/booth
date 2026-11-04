@@ -7,8 +7,10 @@
 <style>
   /* 부스 태블릿(가로 1280px 안팎, 손가락 터치)에 맞춘 단계형 화면. API·순서는 그대로 두고 보이는 방식만 정리했다 */
   :root {
-    --bg:#0e1116; --panel:#161b22; --panel2:#1d232c; --line:#2a313c;
-    --fg:#eef1f5; --muted:#8b95a3; --accent:#3b82f6; --accent-ink:#fff;
+    /* gakdo.site(GAKDO/web src/index.css)와 같은 값: 검정 바탕 #0b0b0f, 브랜드 빨강 #c8161d */
+    --bg:#0b0b0f; --panel:#131318; --panel2:#1c1c23; --line:#26262e;
+    --fg:#f4f4f5; --muted:#a1a1aa; --accent:#c8161d; --accent-hover:#a51218; --accent-ink:#fff;
+    --accent-soft:rgba(200,22,29,.14);
     --ok:#22c55e; --ok-bg:rgba(34,197,94,.12); --bad:#ef4444; --bad-bg:rgba(239,68,68,.12);
     --warn:#f5b93b; --warn-bg:rgba(245,185,59,.12);
     --r:16px; --tap:64px;
@@ -16,17 +18,29 @@
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   [hidden] { display:none !important; }
   html, body { height:100%; }
-  body { margin:0; font-family:system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-    background:var(--bg); color:var(--fg); font-size:18px; line-height:1.45; user-select:none; }
+  body { margin:0; font-family:"Pretendard Variable", Pretendard, Inter, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    color:var(--fg); font-size:18px; line-height:1.45; user-select:none; letter-spacing:-0.005em;
+    font-feature-settings:"cv11", "ss01"; -webkit-font-smoothing:antialiased;
+    /* 사이트 첫 화면처럼 옅은 격자 + 위쪽 빨간 빛 */
+    background:
+      radial-gradient(1100px 520px at 75% -12%, rgba(200,22,29,.22), transparent 62%),
+      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 56px 56px,
+      linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 56px 56px,
+      var(--bg);
+    background-attachment:fixed; }
+  .num { font-variant-numeric:tabular-nums; }
   button, input { font:inherit; color:inherit; }
   button { cursor:pointer; touch-action:manipulation; }
 
   /* 위 막대: 이름 · 모드 · 업로드 대기 · 실시간 */
   .topbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:16px;
-    padding:12px 24px; background:rgba(14,17,22,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
-  .brand { font-weight:800; font-size:20px; letter-spacing:.02em; white-space:nowrap; }
-  .brand span { color:var(--muted); font-weight:600; margin-left:6px; }
-  .modes { display:flex; background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:4px; gap:2px; }
+    padding:12px 24px; background:rgba(11,11,15,.82); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:12px; font-weight:800; font-size:19px; letter-spacing:.2em; white-space:nowrap; }
+  .brand .logo { width:34px; height:34px; border-radius:10px; background:var(--accent); display:grid; place-items:center;
+    font-style:normal; font-size:18px; letter-spacing:0; box-shadow:0 6px 24px rgba(200,22,29,.45); }
+  .brand span { color:var(--muted); font-weight:600; font-size:14px; letter-spacing:.02em; padding:3px 10px;
+    border:1px solid var(--line); border-radius:999px; }
+  .modes { display:flex; background:rgba(19,19,24,.8); border:1px solid var(--line); border-radius:999px; padding:4px; gap:2px; }
   .modes button { white-space:nowrap; border:0; background:none; padding:10px 18px; border-radius:999px; font-size:16px; font-weight:600; color:var(--muted); min-height:44px; }
   .modes button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); }
   .spacer { flex:1; }
@@ -34,7 +48,7 @@
     background:var(--panel2); color:var(--muted); white-space:nowrap; }
   .pill.warn { background:var(--warn-bg); color:var(--warn); }
   .iconbtn { min-height:44px; padding:8px 16px; border-radius:999px; border:1px solid var(--line); background:var(--panel); font-size:16px; font-weight:600; }
-  .iconbtn[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+  .iconbtn[aria-pressed="true"] { border-color:var(--accent); color:#fca5a5; background:var(--accent-soft); }
 
   main { max-width:1180px; margin:0 auto; padding:24px 24px 140px; }
   h1 { font-size:30px; margin:0; line-height:1.25; }
@@ -52,7 +66,8 @@
     font-size:20px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:10px; }
   .btn:active:not(:disabled) { transform:scale(.98); }
   .btn:disabled { opacity:.35; cursor:default; }
-  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); box-shadow:0 8px 28px rgba(200,22,29,.35); }
+  .btn.primary:hover:not(:disabled) { background:var(--accent-hover); }
   .btn.ghost { background:none; }
   .btn.big { min-height:84px; padding:0 48px; font-size:26px; border-radius:18px; }
 
@@ -60,11 +75,12 @@
   .devices { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:16px; }
   .device { text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:22px 24px;
     min-height:132px; display:flex; flex-direction:column; justify-content:space-between; gap:14px; transition:border-color .15s; }
+  .device:hover, .device:focus-visible { border-color:rgba(200,22,29,.6); }
   .device:active { border-color:var(--accent); transform:scale(.99); }
   .device .model { font-size:26px; font-weight:800; }
   .device .serial { font-size:19px; color:var(--muted); font-variant-numeric:tabular-nums; }
   .device .foot { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:15px; }
-  .device .go { color:var(--accent); font-weight:700; font-size:17px; white-space:nowrap; flex:none; }
+  .device .go { color:#f87171; font-weight:700; font-size:17px; white-space:nowrap; flex:none; }
   .device .foot { gap:12px; }
   .device .foot > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tag { display:inline-block; padding:4px 10px; border-radius:8px; font-size:14px; font-weight:700; background:var(--panel2); color:var(--fg); }
@@ -89,7 +105,7 @@
   .phases { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:18px; }
   .phase { padding:12px 14px; border-radius:12px; background:var(--panel); border:1px solid var(--line); color:var(--muted); font-size:16px; font-weight:600; }
   .phase b { display:block; font-size:13px; font-weight:700; letter-spacing:.04em; opacity:.8; }
-  .phase.now { border-color:var(--accent); color:var(--fg); background:rgba(59,130,246,.1); }
+  .phase.now { border-color:var(--accent); color:var(--fg); background:var(--accent-soft); }
   .phase.passed { color:var(--ok); }
   .phase.passed b::after { content:" ✓"; }
   .progress { display:flex; align-items:center; gap:14px; margin-bottom:14px; color:var(--muted); font-size:16px; font-variant-numeric:tabular-nums; }
@@ -122,17 +138,55 @@
   .thumbs figure.hit figcaption { color:#fca5a5; }
 
   /* 실시간 보기 */
-  #live { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
+  #live { margin-bottom:20px; }
+  .live-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .live-bar .title { font-size:15px; color:var(--muted); font-weight:700; margin-right:auto; }
+  .seg { display:flex; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px; }
+  .seg button { border:0; background:none; min-height:44px; padding:0 14px; border-radius:9px; font-size:15px; font-weight:700; color:var(--muted); }
+  .seg button[aria-pressed="true"] { background:var(--panel2); color:var(--fg); box-shadow:inset 0 0 0 1px var(--line); }
+  .live-size { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:15px; font-weight:700; }
+  .live-size input { width:180px; accent-color:var(--accent); height:44px; }
+  /* 크기 막대(--live-w, 화면 폭의 %)만큼 본문 폭을 넘어서도 가운데로 넓힌다 */
+  .live-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px;
+    width:max(100%, min(calc(100vw - 32px), calc(var(--live-w, 0) * 1vw))); position:relative; left:50%; transform:translateX(-50%); }
+  .live-grid.one { grid-template-columns:1fr; }
   #live figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   #live img { display:block; width:100%; aspect-ratio:16/9; background:#000; cursor:zoom-in; }
   #live img:fullscreen { object-fit:contain; cursor:zoom-out; }
   #live figcaption { padding:8px 12px; font-size:14px; color:var(--muted); }
 
   /* 3. 판정 */
-  .verdict { border-radius:24px; padding:36px 40px; display:flex; align-items:center; gap:28px; border:2px solid var(--line); background:var(--panel); }
-  .verdict .icon { width:96px; height:96px; flex:none; border-radius:50%; display:grid; place-items:center; font-size:52px; font-weight:900; background:var(--panel2); }
-  #verdict { font-size:56px; font-weight:900; line-height:1.1; }
-  #verdictMeta { color:var(--muted); font-size:17px; margin-top:10px; }
+  .verdict { border-radius:20px; padding:22px 28px; display:flex; align-items:center; gap:22px; border:2px solid var(--line); background:var(--panel); margin-bottom:16px; }
+  .verdict .icon { width:72px; height:72px; flex:none; border-radius:50%; display:grid; place-items:center; font-size:40px; font-weight:900; background:var(--panel2); }
+  #verdict { font-size:44px; font-weight:900; line-height:1.1; letter-spacing:-0.02em; }
+  #verdictMeta { color:var(--muted); font-size:16px; margin-top:6px; }
+  /* 판정 사진: 왼쪽 큰 사진 하나, 오른쪽은 스크롤 되는 작은 사진 목록(행 높이는 큰 사진이 정함) */
+  .viewer { display:grid; grid-template-columns:minmax(0, 1fr) 240px; gap:16px; align-items:start; }
+  .stage { margin:0; background:#000; border:1px solid var(--line); border-radius:16px; overflow:hidden; position:relative;
+    touch-action:pan-y pinch-zoom;  /* 가로 밀기는 페이지가 받아 사진을 넘기고, 세로 스크롤·두 손가락 확대는 브라우저가 처리 */
+    /* 큰 사진이 아래 막대에 가리지 않게 화면 높이에 맞춘다(머리·판정 카드·막대 높이를 뺀 값) */
+    --maxh:max(240px, calc(100vh - 440px)); }
+  .stage .frame { position:relative; margin:0 auto; width:min(100%, calc(var(--maxh) * var(--ar, 16/9))); aspect-ratio:var(--ar, 16/9); }
+  .stage .frame img { display:block; width:100%; height:100%; object-fit:contain; }
+  .stage .frame svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .stage figcaption { background:var(--panel); border-top:1px solid var(--line); display:flex; align-items:center; gap:10px; padding:12px 16px; font-size:16px; font-weight:700; }
+  .stage figcaption .count { margin-left:auto; color:var(--muted); font-weight:600; }
+  .stage figcaption .hitn { color:#f87171; }
+  .stage .nav { position:absolute; top:calc(50% - 50px); width:56px; height:56px; border-radius:50%; border:1px solid rgba(255,255,255,.15);
+    background:rgba(11,11,15,.6); backdrop-filter:blur(6px); font-size:34px; line-height:1; display:grid; place-items:center; }
+  .stage .nav:disabled { opacity:.25; }
+  .stage .prev { left:12px; } .stage .next { right:12px; }
+  .rail { position:relative; align-self:stretch; min-height:240px; }
+  .rail-head { font-size:14px; color:var(--muted); font-weight:700; margin-bottom:8px; }
+  .rail-list { position:absolute; inset:28px 0 0 0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:4px;
+    overscroll-behavior:contain; scrollbar-width:thin; }
+  .rail-list figure { margin:0; flex:none; background:var(--panel); border:2px solid var(--line); border-radius:12px; overflow:hidden; cursor:pointer; }
+  .rail-list figure[aria-current="true"] { border-color:var(--fg); }
+  .rail-list figure.hit { border-color:rgba(239,68,68,.55); }
+  .rail-list figure.hit[aria-current="true"] { border-color:#f87171; box-shadow:0 0 0 3px rgba(239,68,68,.25); }
+  .rail-list img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#000; }
+  .rail-list figcaption { padding:6px 10px; font-size:13px; color:var(--muted); display:flex; justify-content:space-between; }
+  .rail-list figure.hit figcaption { color:#fca5a5; }
   .verdict.ok { border-color:rgba(34,197,94,.55); background:linear-gradient(0deg, var(--ok-bg), var(--ok-bg)), var(--panel); }
   .verdict.ok .icon, .verdict.ok #verdict { color:var(--ok); }
   .verdict.ok .icon { background:var(--ok-bg); }
@@ -168,15 +222,22 @@
     main { padding:16px 16px 230px; }  /* 좁으면 아래 막대가 두 줄이 됨 */
     .actions { padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
     .phases { grid-template-columns:repeat(2, 1fr); }
-    #live { grid-template-columns:1fr; }
-    .verdict { flex-direction:column; text-align:center; padding:28px; }
+    .live-grid { grid-template-columns:1fr; }
+    .live-size input { width:120px; }
+    .verdict { padding:18px; gap:14px; }
+    .verdict .icon { width:52px; height:52px; font-size:28px; }
+    #verdict { font-size:32px; }
+    .viewer { grid-template-columns:minmax(0, 1fr); }
+    .rail { min-height:0; }
+    .rail-list { position:static; flex-direction:row; overflow-x:auto; overflow-y:hidden; }
+    .rail-list figure { width:150px; }
     .btn.big { padding:0 28px; }
   }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">TRACE<span>부스</span></div>
+  <div class="brand"><i class="logo" aria-hidden="true">T</i>TRACE<span>부스</span></div>
   <nav class="modes" id="modes" aria-label="모드">
     <button data-mode="QUICK" aria-pressed="true">빠른 검사</button>
     <button data-mode="TRAINING" aria-pressed="false">학습 데이터</button>
@@ -192,8 +253,17 @@
   <div id="error" role="alert"></div>
 
   <div id="live" hidden>
-    <figure><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
-    <figure><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+    <div class="live-bar">
+      <span class="title">실시간 카메라</span>
+      <div class="seg" id="liveLayout" role="group" aria-label="보일 카메라">
+        <button data-v="both" aria-pressed="true">둘 다</button><button data-v="CAM1" aria-pressed="false">CAM1</button><button data-v="CAM2" aria-pressed="false">CAM2</button>
+      </div>
+      <label class="live-size">크기<input type="range" id="liveSize" min="0" max="100" step="5" value="0" aria-label="실시간 화면 크기"></label>
+    </div>
+    <div class="live-grid" id="liveGrid">
+      <figure id="liveFigCAM1"><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+      <figure id="liveFigCAM2"><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+    </div>
   </div>
 
   <!-- 1. 빠른 검사: 기기 고르기 -->
@@ -244,8 +314,18 @@
       <div class="icon" id="verdictIcon"></div>
       <div><div id="verdict"></div><div id="verdictMeta"></div></div>
     </div>
-    <div class="section-title">사진별 탐지 (흠집이 많은 사진부터)</div>
-    <div class="thumbs" id="resultPhotos"></div>
+    <div class="viewer">
+      <figure class="stage" id="stage">
+        <div class="frame overlay" id="stageFrame"></div>
+        <button class="nav prev" id="prevPhoto" aria-label="이전 사진">‹</button>
+        <button class="nav next" id="nextPhoto" aria-label="다음 사진">›</button>
+        <figcaption id="stageCap"></figcaption>
+      </figure>
+      <aside class="rail" aria-label="사진 목록">
+        <div class="rail-head">사진 <span id="photoCount" class="num"></span> · 흠집 많은 순</div>
+        <div class="rail-list" id="resultPhotos"></div>
+      </aside>
+    </div>
   </section>
 </main>
 
@@ -425,15 +505,72 @@ function renderResult() {
     : r.status === "DONE" ? "탐지 결과 올리는 중" : "사진 올림";
   $("verdictMeta").textContent += ` · ${up}`;
   $("redetect").hidden = r.status !== "FAILED";
-  const photos = [...r.photos].sort((a, b) => b.detections.length - a.detections.length);
-  $("resultPhotos").innerHTML = photos.map((p) => {
-    const polys = p.detections.map((d) =>
-      `<polygon points="${d.polygon.map((pt) => pt.join(",")).join(" ")}"><title>${esc(d.class)} ${d.confidence}</title></polygon>`).join("");
-    return `<figure class="${p.detections.length ? "hit" : ""}"><div class="overlay"><img src="/api/shots/${p.shotId}/thumbnail" alt="${p.face} ${p.light} ${p.camera}">` +
-      `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polys}</svg></div>` +
-      `<figcaption>${p.face} · ${p.light} · ${p.camera} · 흠집 ${p.detections.length}</figcaption></figure>`;
-  }).join("");
+  renderPhotos([...r.photos].sort((a, b) => b.detections.length - a.detections.length));
 }
+
+// 판정 사진. 결과를 다시 읽을 때마다 그리면 목록 스크롤과 이미지가 깜박이므로, 사진·탐지가 바뀔 때만 다시 그린다
+let photos = [], photosKey = "", selShot = null;
+const polysOf = (p) => p.detections.map((d) =>
+  `<polygon points="${d.polygon.map((pt) => pt.join(",")).join(" ")}"><title>${esc(d.class)} ${d.confidence}</title></polygon>`).join("");
+const nameOf = (p) => `${esc(p.face)} · ${esc(p.light)} · ${esc(p.camera)}`;
+function renderPhotos(list) {
+  const key = JSON.stringify(list.map((p) => [p.shotId, p.detections.length]));
+  if (key === photosKey) return;
+  photosKey = key; photos = list;
+  if (!photos.some((p) => p.shotId === selShot)) selShot = photos.length ? photos[0].shotId : null;
+  $("photoCount").textContent = `${photos.length}장`;
+  $("resultPhotos").innerHTML = photos.map((p, i) =>
+    `<figure class="${p.detections.length ? "hit" : ""}" data-i="${i}" tabindex="0" role="button" aria-label="${nameOf(p)} 크게 보기">` +
+    `<div class="overlay"><img src="/api/shots/${encodeURIComponent(p.shotId)}/thumbnail" alt="${nameOf(p)}" loading="lazy">` +
+    `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polysOf(p)}</svg></div>` +
+    `<figcaption><span>${nameOf(p)}</span><span>${p.detections.length ? "흠집 " + p.detections.length : ""}</span></figcaption></figure>`).join("");
+  for (const el of $("resultPhotos").children) {
+    el.onclick = () => selectPhoto(Number(el.dataset.i));
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectPhoto(Number(el.dataset.i)); } };
+  }
+  showStage();
+}
+function selectPhoto(i) {
+  if (!photos[i]) return;
+  selShot = photos[i].shotId; showStage();
+  const el = $("resultPhotos").children[i];
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+function showStage() {
+  const i = photos.findIndex((p) => p.shotId === selShot);
+  $("stage").hidden = i < 0;
+  if (i < 0) return;
+  const p = photos[i];
+  for (const el of $("resultPhotos").children) el.setAttribute("aria-current", String(Number(el.dataset.i) === i));
+  // 큰 사진은 썸네일보다 큰 크기(w=1600)로 받는다
+  $("stageFrame").style.setProperty("--ar", `${p.width}/${p.height}`);
+  $("stageFrame").innerHTML = `<img src="/api/shots/${encodeURIComponent(p.shotId)}/thumbnail?w=1600" alt="${nameOf(p)}">` +
+    `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polysOf(p)}</svg>`;
+  const n = p.detections.length;
+  $("stageCap").innerHTML = `<span>${nameOf(p)}</span>${n ? `<span class="hitn">흠집 ${n}곳</span>` : "<span>흠집 없음</span>"}` +
+    `<span class="count num">${i + 1} / ${photos.length}</span>`;
+  $("prevPhoto").disabled = i === 0;
+  $("nextPhoto").disabled = i === photos.length - 1;
+}
+const stepPhoto = (d) => selectPhoto(photos.findIndex((p) => p.shotId === selShot) + d);
+$("prevPhoto").onclick = () => stepPhoto(-1);
+$("nextPhoto").onclick = () => stepPhoto(1);
+document.addEventListener("keydown", (e) => {
+  if ($("result").hidden || sheetDone) return;
+  // 실시간 크기 막대 같은 입력 칸에서 누른 방향키·수정 키 조합은 사진을 넘기지 않는다
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (e.target.closest && e.target.closest("input, textarea, select")) return;
+  if (e.key === "ArrowLeft") stepPhoto(-1);
+  if (e.key === "ArrowRight") stepPhoto(1);
+});
+// 큰 사진을 손가락으로 옆으로 밀어도 넘긴다
+let swipeX = null;
+$("stage").addEventListener("pointerdown", (e) => { swipeX = e.clientX; });
+$("stage").addEventListener("pointerup", (e) => {
+  if (swipeX == null) return;
+  const dx = e.clientX - swipeX; swipeX = null;
+  if (Math.abs(dx) > 60) stepPhoto(dx < 0 ? 1 : -1);
+});
 
 async function pollResult() {
   if (!state || state.mode !== "QUICK" || state.status !== "COMPLETE") return;
@@ -485,7 +622,7 @@ async function startQuick(w) {
     { mode: "QUICK", deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
   if (openDevice === w.deviceId) openDevice = null;  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
   result = null; waitMs = null; completedAt = 0;
-  $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; render();
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; photosKey = ""; photos = []; selShot = null; render();
 }
 
 // 기기를 누르면 바로 시작하지 않고 한 번 확인한다(잘못 누름 방지). 찍던 기기는 이어 찍는다고 알려 준다
@@ -565,13 +702,38 @@ function showShots(shots) {
     `<figcaption>${esc(x.filename)}</figcaption></figure>`).join("");
 }
 
+// 실시간 보기: 보일 카메라(둘 다·CAM1·CAM2)와 크기(0=본문 폭 ~ 100=화면 끝까지). 고른 값은 이 태블릿에만 기억한다
+const liveView = { layout: "both", size: 0 };
+try { Object.assign(liveView, JSON.parse(localStorage.getItem("trace.booth.live") || "{}")); } catch (e) { /* 기억 못 해도 기본값 */ }
+function saveLive() { try { localStorage.setItem("trace.booth.live", JSON.stringify(liveView)); } catch (e) { /* 무시 */ } }
+function applyLive() {
+  const on = !$("live").hidden;
+  for (const b of document.querySelectorAll("#liveLayout button")) b.setAttribute("aria-pressed", String(b.dataset.v === liveView.layout));
+  $("liveSize").value = liveView.size;
+  $("liveGrid").style.setProperty("--live-w", liveView.size);
+  $("liveGrid").classList.toggle("one", liveView.layout !== "both");
+  for (const cam of ["CAM1", "CAM2"]) {
+    const show = liveView.layout === "both" || liveView.layout === cam;
+    $("liveFig" + cam).hidden = !show;
+    // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
+    const want = on && show;
+    const img = $("live" + cam);
+    if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
+    if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
+  }
+}
 $("liveToggle").onclick = () => {
   const on = $("live").hidden;
   $("live").hidden = !on;
   $("liveToggle").textContent = on ? "실시간 끄기" : "실시간 보기";
   $("liveToggle").setAttribute("aria-pressed", String(on));
-  for (const cam of ["CAM1", "CAM2"]) $("live" + cam).src = on ? `/api/live/${cam}?t=${Date.now()}` : "";
+  applyLive();
 };
+for (const b of document.querySelectorAll("#liveLayout button")) {
+  b.onclick = () => { liveView.layout = b.dataset.v; saveLive(); applyLive(); };
+}
+$("liveSize").oninput = () => { liveView.size = Number($("liveSize").value); saveLive(); applyLive(); };
+applyLive();
 for (const cam of ["CAM1", "CAM2"]) {
   $("live" + cam).onclick = (e) => {
     if (document.fullscreenElement) document.exitFullscreen(); else e.target.requestFullscreen();

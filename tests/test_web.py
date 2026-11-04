@@ -55,6 +55,8 @@ def test_시작_찍기_미리보기_완료_흐름(base):
     assert shot["filename"] == "MB01_SLATE_CAM1_01.jpg"
     status, ctype, thumb = call(base, "GET", f"/api/shots/{shot['id']}/thumbnail")
     assert status == 200 and ctype == "image/jpeg" and thumb.startswith(b"\xff\xd8")
+    status, ctype, _ = call(base, "GET", f"/api/shots/{shot['id']}/thumbnail?w=1600")  # 판정 화면 큰 사진
+    assert status == 200 and ctype == "image/jpeg"
     status, _, body = call(base, "POST", "/api/sessions/current/complete")
     problem = json.loads(body)
     assert status == 409 and "TOP_L1_CAM1" in problem["missing"]
@@ -94,3 +96,14 @@ def test_화면과_API에는_NanoID_21자_publicId만_나가고_내부_정수_id
         assert nanoid.match(s["id"])
     status, _, _ = call(base, "GET", "/api/shots/1/thumbnail")  # 내부 id로는 찾을 수 없다
     assert status == 404
+
+
+def test_미리보기_크기는_선택이고_범위_밖이나_이상한_값은_묶이거나_기본값이다():
+    from trace_booth.web import _thumb_width
+
+    assert _thumb_width("/api/shots/x/thumbnail") == 480
+    assert _thumb_width("/api/shots/x/thumbnail?w=1600") == 1600
+    assert _thumb_width("/api/shots/x/thumbnail?w=99999") == 1920
+    assert _thumb_width("/api/shots/x/thumbnail?w=10") == 160
+    assert _thumb_width("/api/shots/x/thumbnail?w=-5") == 480
+    assert _thumb_width("/api/shots/x/thumbnail?w=abc") == 480
