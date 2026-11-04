@@ -69,6 +69,8 @@
   .tag.OUT { background:rgba(59,130,246,.16); color:#93c5fd; }
   .tag.RCV { background:rgba(168,85,247,.16); color:#d8b4fe; }
   .tag.RET { background:rgba(245,185,59,.16); color:#fcd34d; }
+  .device.resume { border-color:rgba(245,185,59,.6); }
+  .device .resume-tag { background:var(--warn-bg); color:var(--warn); }
   .empty { background:var(--panel); border:1px dashed var(--line); border-radius:var(--r); padding:48px 24px; text-align:center; color:var(--muted); font-size:19px; }
 
   /* 1'. 학습·출고·반납 직접 입력 */
@@ -108,7 +110,7 @@
   /* 아래 고정 동작 막대: 왼쪽 보조, 오른쪽 큰 주 버튼 하나 */
   .actions { position:fixed; left:0; right:0; bottom:0; z-index:9; display:flex; align-items:center; gap:12px;
     padding:16px 24px calc(16px + env(safe-area-inset-bottom)); background:rgba(14,17,22,.95); border-top:1px solid var(--line); }
-  .actions .inner { max-width:1180px; margin:0 auto; width:100%; display:flex; gap:12px; align-items:center; }
+  .actions .inner { max-width:1180px; margin:0 auto; width:100%; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
 
   .thumbs { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; }
   .thumbs figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
@@ -142,12 +144,27 @@
   .overlay svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .overlay polygon { fill:rgba(239,68,68,.25); stroke:#ef4444; stroke-width:4; vector-effect:non-scaling-stroke; }
 
+  /* 확인 시트: 브라우저 confirm 대신 큰 버튼 두 개(터치용) */
+  .sheet { position:fixed; inset:0; z-index:20; display:flex; align-items:flex-end; justify-content:center;
+    background:rgba(0,0,0,.6); padding:24px; }
+  .sheet .box { width:min(640px, 100%); background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:32px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); animation:up .18s ease-out; }
+  @keyframes up { from { transform:translateY(24px); opacity:0; } }
+  .sheet h2 { margin:0 0 6px; font-size:28px; line-height:1.3; }
+  .sheet .lead { font-size:22px; font-weight:800; margin:14px 0 4px; }
+  .sheet p { color:var(--muted); margin:8px 0 0; font-size:17px; }
+  .sheet .row2 { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-top:28px; }
+  .sheet .row2 .btn { width:100%; }
+  .btn.danger { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .back { min-height:48px; }
+
   @media (max-width:860px) {
     .topbar { flex-wrap:wrap; padding:10px 16px; }
     .modes { order:3; width:100%; overflow-x:auto; }
     .modes button { flex:1; padding:10px 8px; }
     .head { flex-direction:column; align-items:stretch; }
-    main { padding:16px 16px 140px; }
+    main { padding:16px 16px 230px; }  /* 좁으면 아래 막대가 두 줄이 됨 */
+    .actions { padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
     .phases { grid-template-columns:repeat(2, 1fr); }
     #live { grid-template-columns:1fr; }
     .verdict { flex-direction:column; text-align:center; padding:28px; }
@@ -199,7 +216,7 @@
 
   <!-- 2. 단계별 촬영 -->
   <section id="capture" hidden>
-    <div class="who"><span class="tag" id="modeTag"></span><strong id="who"></strong></div>
+    <div class="who"><button id="back" class="iconbtn back" hidden>← 목록으로</button><span class="tag" id="modeTag"></span><strong id="who"></strong></div>
     <div class="phases" id="phases" hidden>
       <div class="phase" data-phase="0"><b>1</b>바닥면 촬영</div>
       <div class="phase" data-phase="1"><b>2</b>뒤집기</div>
@@ -230,6 +247,15 @@
   </section>
 </main>
 
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="box">
+    <h2 id="sheetTitle"></h2>
+    <div class="lead" id="sheetLead"></div>
+    <p id="sheetBody"></p>
+    <div class="row2"><button id="sheetNo" class="btn">취소</button><button id="sheetYes" class="btn primary big">확인</button></div>
+  </div>
+</div>
+
 <footer class="actions" id="actions" hidden>
   <div class="inner">
     <button id="retake" class="btn" disabled>다시 찍기</button>
@@ -247,6 +273,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let state = null, result = null, completedAt = 0, waitMs = null, label = "", mode = "QUICK";
+let openDevice = null;  // 목록으로 돌아오며 멈춘 기기(서버에 열린 세션이 남아 있음)
 const MODE_NAME = { TRAINING: "학습", OUT: "출고", RET: "반납", QUICK: "빠른 검사" };
 const KIND = { OUT: "출고", RCV: "수령", RET: "반납" };
 const FACE = { BOT: "바닥면", TOP: "상판", KB: "키보드", SF: "앞면", SB: "뒷면", SL: "왼쪽", SR: "오른쪽", SCR0: "화면(꺼짐)", SCR1: "화면(켜짐)" };
@@ -290,9 +317,11 @@ function render() {
   $("complete").className = end ? "btn primary big" : "btn";
   $("complete").hidden = busy;
   $("retake").hidden = busy;
+  $("back").hidden = busy;
   renderStep(s, step);
   if (s.mode === "QUICK") return renderQuick(s, step);
   show("capture");
+  $("redetect").hidden = true;  // 빠른 검사 판정에서 켠 버튼이 남지 않게
   const c = s.checkout;
   $("submit").hidden = !(c && c.status === "FAILED");
   $("nextDevice").hidden = true;
@@ -436,7 +465,13 @@ async function loadWaiting() {
       b.innerHTML = `<div><div class="model">${esc(w.modelCode)}</div><div class="serial">${esc(w.serial)}</div></div>`
         + `<div class="foot"><span><span class="tag ${esc(w.checkpointType)}">${esc(kind)}</span> &nbsp;렌탈 ${esc(w.rentalId.slice(0, 6))}…</span>`
         + `<span class="go">촬영 시작 →</span></div>`;
-      b.onclick = () => startQuick(w);
+      const resume = openDevice === w.deviceId;
+      if (resume) {
+        b.classList.add("resume");
+        b.querySelector(".go").textContent = "이어 찍기 →";
+        b.querySelector(".foot > span").insertAdjacentHTML("afterbegin", '<span class="tag resume-tag">찍던 기기</span> ');
+      }
+      b.onclick = () => pickDevice(w, resume);
       $("waitingList").appendChild(b);
     }
   } catch (e) { emptyList("목록을 못 불러왔어요"); }
@@ -444,11 +479,61 @@ async function loadWaiting() {
 
 async function startQuick(w) {
   label = `${w.modelCode} · ${w.serial}`;
+  if (openDevice === w.deviceId) openDevice = null;
   state = await call("POST", "/api/sessions",
     { mode: "QUICK", deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
   result = null; waitMs = null; completedAt = 0;
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; render();
 }
+
+// 기기를 누르면 바로 시작하지 않고 한 번 확인한다(잘못 누름 방지). 찍던 기기는 이어 찍는다고 알려 준다
+async function pickDevice(w, resume) {
+  const kind = KIND[w.checkpointType] || w.checkpointType;
+  const ok = await ask({
+    title: resume ? "찍던 기기를 이어 찍을까요?" : `${kind} 검사를 시작할까요?`,
+    lead: `${w.modelCode} · ${w.serial}`,
+    body: resume ? "앞에서 찍은 사진은 그대로 두고 멈춘 단계부터 이어서 찍어요."
+      : "부스에 올린 노트북 바닥 라벨의 시리얼과 같은지 확인하세요.",
+    yes: resume ? "이어 찍기" : "촬영 시작", no: "다시 고르기",
+  });
+  if (ok) startQuick(w);
+}
+
+// 확인 시트. 누른 버튼이 '확인'이면 true. 바깥이나 Esc는 취소
+let sheetDone = null;
+function ask({ title, lead = "", body = "", yes = "확인", no = "취소", danger = false }) {
+  if (sheetDone) sheetDone(false);
+  $("sheetTitle").textContent = title; $("sheetLead").textContent = lead; $("sheetBody").textContent = body;
+  $("sheetLead").hidden = !lead;
+  $("sheetYes").textContent = yes; $("sheetNo").textContent = no;
+  $("sheetYes").className = "btn big " + (danger ? "danger" : "primary");
+  $("sheet").hidden = false; $("sheetYes").focus();
+  return new Promise((resolve) => { sheetDone = (v) => { sheetDone = null; $("sheet").hidden = true; resolve(v); }; });
+}
+$("sheetYes").onclick = () => sheetDone && sheetDone(true);
+$("sheetNo").onclick = () => sheetDone && sheetDone(false);
+$("sheet").onclick = (e) => { if (e.target === $("sheet") && sheetDone) sheetDone(false); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheetDone) sheetDone(false); });
+
+// 촬영을 멈추고 처음 화면으로. 서버 세션은 그대로 두므로 같은 기기를 다시 고르면 이어 찍는다
+async function leaveCapture() {
+  if (!state || state.status !== "IN_PROGRESS") return true;
+  const taken = !state.step || state.step.index > 0;
+  if (taken) {
+    const ok = await ask({
+      title: "촬영을 멈추고 나갈까요?", lead: state.mode === "QUICK" ? label : state.deviceId,
+      body: "찍은 사진은 지워지지 않아요. 같은 기기를 다시 고르면 멈춘 단계부터 이어 찍어요.",
+      yes: "나가기", no: "계속 찍기", danger: true,
+    });
+    if (!ok) return false;
+  }
+  openDevice = state.deviceId;
+  return true;
+}
+$("back").onclick = async () => {
+  if (!(await leaveCapture())) return;
+  state = null; $("error").textContent = ""; applyMode();
+};
 
 function resetQuick() {
   state = null; result = null;
@@ -493,9 +578,9 @@ function applyMode() {
   $("manualSub").textContent = m === "TRAINING" ? "학습 데이터는 서버에 올리지 않고 부스에만 저장해요" : "렌탈 ID와 시점 ID는 관리자 화면에서 확인하세요";
 }
 for (const b of document.querySelectorAll("#modes button")) {
-  b.onclick = () => {
-    if (b.dataset.mode === mode && !state) return;
-    if (state && state.status === "IN_PROGRESS" && !confirm("찍던 촬영에서 나갈까요?")) return;
+  b.onclick = async () => {
+    if (b.dataset.mode === mode) return;  // 같은 모드를 다시 눌러도 하던 화면 그대로
+    if (!(await leaveCapture())) return;
     setMode(b.dataset.mode); state = null; applyMode();
   };
 }

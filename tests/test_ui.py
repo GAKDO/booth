@@ -1,0 +1,223 @@
+"""운영 화면(태블릿) 하네스: 가짜 카메라·탐지기로 서버를 띄우고 실제 브라우저(Playwright)로 눌러 본다.
+
+- playwright가 없으면 건너뛴다(Jetson·개발 PC). CI는 TRACE_UI_TESTS=1로 돌려 빠지면 실패한다.
+- 브라우저 경로를 바꾸려면 TRACE_UI_CHROMIUM(예: /opt/pw-browsers/chromium)
+"""
+
+from __future__ import annotations
+
+import os
+import threading
+
+import pytest
+from fakes import FakeCamera
+from test_detect import SquareDetector
+from test_quick_mode import INFO, NOW, _loader
+
+from trace_booth.camera_presets import Presets
+from trace_booth.codes import Camera
+from trace_booth.quick import QuickInspector
+from trace_booth.rentals import WaitingDevice
+from trace_booth.session import CaptureService
+from trace_booth.store import Store
+from trace_booth.web import App, make_server
+
+if os.environ.get("TRACE_UI_TESTS") == "1":
+    from playwright.sync_api import Page, expect, sync_playwright
+else:
+    sync_api = pytest.importorskip("playwright.sync_api", reason="playwright가 없어 화면 하네스를 건너뜀")
+    Page, expect, sync_playwright = sync_api.Page, sync_api.expect, sync_api.sync_playwright
+
+MBA = WaitingDevice("Ws0HLv6QRbDILPWOcz5I2", "aAXQFO2Vz6ZTFbPctC2dq", "TEST-0001", "MBA13-M2",
+                    "h40b9AN9xMQhXRHrOyJWB", "OUT")
+GRAM = WaitingDevice("Xs0HLv6QRbDILPWOcz5I2", "bAXQFO2Vz6ZTFbPctC2dq", "GRAM-0002", "LG-GRAM16",
+                     "i40b9AN9xMQhXRHrOyJWB", "RET")
+TABLET = {"width": 1280, "height": 800}
+
+
+@pytest.fixture
+def base(tmp_path):
+    values = {light: {"exposure_time_absolute": 100} for light in ["L1", "L2", "L3", "L4", "OFF"]}
+    cams = {c: FakeCamera(c) for c in (Camera.CAM1, Camera.CAM2)}
+    service = CaptureService(Store(tmp_path / "booth.db"), cams, Presets(values, "test"), tmp_path / "data",
+                             min_free_bytes=0)
+    quick = QuickInspector(service.store, lambda: (SquareDetector(), INFO), _loader("BOT_L1_CAM1"), lambda: NOW,
+                           background=False)
+    server = make_server(App(service, None, None, quick, lambda: [MBA, GRAM]), "127.0.0.1", 0)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture(scope="module")
+def browser():
+    with sync_playwright() as p:
+        path = os.environ.get("TRACE_UI_CHROMIUM")
+        b = p.chromium.launch(executable_path=path) if path else p.chromium.launch()
+        yield b
+        b.close()
+
+
+@pytest.fixture
+def page(browser, base):
+    ctx = browser.new_context(viewport=TABLET, has_touch=True)
+    pg = ctx.new_page()
+    errors: list[str] = []
+    pg.on("pageerror", lambda e: errors.append(str(e)))
+    pg.goto(base + "/")
+    expect(pg.locator(".device")).to_have_count(2)
+    yield pg
+    ctx.close()
+    assert errors == [], f"화면 스크립트 오류: {errors}"
+
+
+def device(page: Page, serial: str):
+    return page.locator(".device", has_text=serial)
+
+
+def pick(page: Page, serial: str) -> None:
+    device(page, serial).click()
+    expect(page.locator("#sheet")).to_be_visible()
+    page.locator("#sheetYes").click()
+    expect(page.locator("#capture")).to_be_visible()
+
+
+def shoot(page: Page, times: int) -> None:
+    for _ in range(times):
+        before = page.locator("#stepNo").inner_text()
+        page.locator("#shoot").click()
+        expect(page.locator("#stepNo")).not_to_have_text(before)  # 다음 단계로 넘어갈 때까지 기다림
+
+
+def test_기기를_누르면_바로_시작하지_않고_확인_시트가_뜬다(page):
+    device(page, "TEST-0001").click()
+    expect(page.locator("#sheet")).to_be_visible()
+    expect(page.locator("#sheetLead")).to_have_text("MBA13-M2 · TEST-0001")
+    expect(page.locator("#capture")).to_be_hidden()
+
+
+def test_잘못_고른_기기는_다시_고르기로_목록에_남는다(page):
+    device(page, "TEST-0001").click()
+    page.locator("#sheetNo").click()
+    expect(page.locator("#sheet")).to_be_hidden()
+    expect(page.locator("#waiting")).to_be_visible()
+    device(page, "TEST-0001").click()
+    page.mouse.click(5, 5)  # 시트 바깥을 눌러도 취소
+    expect(page.locator("#sheet")).to_be_hidden()
+    expect(page.locator("#waiting")).to_be_visible()
+
+
+def test_사진을_찍기_전에는_확인_없이_바로_목록으로_돌아간다(page):
+    pick(page, "TEST-0001")
+    page.locator("#back").click()
+    expect(page.locator("#sheet")).to_be_hidden()
+    expect(page.locator("#waiting")).to_be_visible()
+
+
+def test_찍던_중_목록으로를_누르면_한_번_묻고_계속_찍기면_그대로_남는다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 1)
+    page.locator("#back").click()
+    expect(page.locator("#sheetTitle")).to_have_text("촬영을 멈추고 나갈까요?")
+    page.locator("#sheetNo").click()
+    expect(page.locator("#capture")).to_be_visible()
+    expect(page.locator("#stepNo")).to_have_text("단계 2 / 7")
+
+
+def test_목록으로_나가면_찍던_기기에_이어_찍기가_보이고_멈춘_단계부터_이어진다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 2)
+    page.locator("#back").click()
+    page.locator("#sheetYes").click()
+    expect(page.locator("#waiting")).to_be_visible()
+    expect(device(page, "TEST-0001")).to_contain_text("이어 찍기")
+    expect(device(page, "GRAM-0002")).not_to_contain_text("이어 찍기")
+    device(page, "TEST-0001").click()
+    expect(page.locator("#sheetTitle")).to_have_text("찍던 기기를 이어 찍을까요?")
+    page.locator("#sheetYes").click()
+    expect(page.locator("#stepNo")).to_have_text("단계 3 / 7")
+
+
+def test_잘못_고른_기기에서_나와_다른_기기를_고르면_새로_처음부터_찍는다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 1)
+    page.locator("#back").click()
+    page.locator("#sheetYes").click()
+    pick(page, "GRAM-0002")
+    expect(page.locator("#who")).to_have_text("LG-GRAM16 · GRAM-0002")
+    expect(page.locator("#stepNo")).to_have_text("단계 1 / 7")
+
+
+def test_촬영_중_모드_탭을_누르면_나갈지_묻는다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 1)
+    page.locator('#modes button[data-mode="OUT"]').click()
+    expect(page.locator("#sheet")).to_be_visible()
+    page.locator("#sheetNo").click()
+    expect(page.locator("#capture")).to_be_visible()
+    expect(page.locator('#modes button[data-mode="QUICK"]')).to_have_attribute("aria-pressed", "true")
+
+
+def test_빠른_검사를_끝까지_찍으면_뒤집기_안내를_거쳐_판정과_다음_기기가_보인다(page):
+    pick(page, "TEST-0001")
+    expect(page.locator(".phase.now")).to_contain_text("바닥면")
+    shoot(page, 3)
+    expect(page.locator("#stepCard")).to_have_class("step notice")
+    expect(page.locator("#shoot")).to_be_hidden()
+    page.locator("#next").click()
+    expect(page.locator(".phase.now")).to_contain_text("상판")
+    shoot(page, 3)
+    expect(page.locator("#complete")).to_have_class("btn primary big")
+    page.locator("#complete").click()
+    expect(page.locator("#verdict")).to_have_text("문제 있음")
+    expect(page.locator("#resultPhotos figure")).to_have_count(12)
+    expect(page.locator("#resultPhotos figure.hit")).to_have_count(1)
+    expect(page.locator("#back")).to_be_hidden()
+    page.locator("#nextDevice").click()
+    expect(page.locator("#waiting")).to_be_visible()
+
+
+def test_새로고침해도_찍던_빠른_검사_화면으로_돌아온다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 2)
+    page.reload()
+    expect(page.locator("#capture")).to_be_visible()
+    expect(page.locator("#stepNo")).to_have_text("단계 3 / 7")
+    expect(page.locator("#back")).to_be_visible()
+
+
+@pytest.mark.parametrize("size", [TABLET, {"width": 375, "height": 812}])
+def test_태블릿과_폰_폭에서_가로_스크롤이_없고_주_버튼이_손가락_크기다(browser, base, size):
+    ctx = browser.new_context(viewport=size, has_touch=True)
+    pg = ctx.new_page()
+    pg.goto(base + "/")
+    expect(pg.locator(".device")).to_have_count(2)
+    no_hscroll = "document.documentElement.scrollWidth <= window.innerWidth"
+    assert pg.locator(".device").first.bounding_box()["height"] >= 64
+    assert pg.evaluate(no_hscroll), "기기 목록"
+    pick(pg, "TEST-0001")
+    shoot_box = pg.locator("#shoot").bounding_box()
+    assert shoot_box["height"] >= 64
+    assert shoot_box["x"] + shoot_box["width"] <= size["width"], "촬영 버튼이 화면 밖으로 밀림"
+    assert pg.locator("#back").bounding_box()["height"] >= 44
+    assert pg.evaluate(no_hscroll), "촬영"
+    ctx.close()
+
+
+def test_촬영_중_지금_모드_탭을_다시_눌러도_하던_화면_그대로다(page):
+    pick(page, "TEST-0001")
+    shoot(page, 1)
+    page.locator('#modes button[data-mode="QUICK"]').click()
+    expect(page.locator("#sheet")).to_be_hidden()
+    expect(page.locator("#stepNo")).to_have_text("단계 2 / 7")
+
+
+def test_빠른_검사_뒤_출고_모드로_가면_다시_탐지_버튼이_남지_않는다(page):
+    page.evaluate("document.getElementById('redetect').hidden = false")  # 판정 실패 뒤 상태를 흉내
+    page.locator('#modes button[data-mode="TRAINING"]').click()
+    page.locator("#device").fill("MB01")
+    page.locator("#start").click()
+    expect(page.locator("#capture")).to_be_visible()
+    expect(page.locator("#redetect")).to_be_hidden()
