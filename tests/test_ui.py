@@ -214,10 +214,27 @@ def test_촬영_중_지금_모드_탭을_다시_눌러도_하던_화면_그대�
     expect(page.locator("#stepNo")).to_have_text("단계 2 / 7")
 
 
-def test_빠른_검사_뒤_출고_모드로_가면_다시_탐지_버튼이_남지_않는다(page):
+def test_빠른_검사_판정_뒤_학습_모드로_가면_다시_탐지_버튼이_남지_않는다(page):
     page.evaluate("document.getElementById('redetect').hidden = false")  # 판정 실패 뒤 상태를 흉내
     page.locator('#modes button[data-mode="TRAINING"]').click()
     page.locator("#device").fill("MB01")
     page.locator("#start").click()
     expect(page.locator("#capture")).to_be_visible()
     expect(page.locator("#redetect")).to_be_hidden()
+
+
+def test_확인_시트가_열리면_Tab은_시트_안에서만_돌고_닫으면_연_자리로_포커스가_돌아간다(page):
+    page.locator("#reload").focus()
+    page.locator("#reload").press("Enter")  # 목록을 다시 불러와도 같은 자리
+    expect(page.locator(".device")).to_have_count(2)
+    card = device(page, "TEST-0001")
+    card.focus()
+    card.press("Enter")
+    expect(page.locator("#sheetYes")).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(page.locator("#sheetNo")).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(page.locator("#sheetYes")).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(page.locator("#sheet")).to_be_hidden()
+    expect(card).to_be_focused()

@@ -481,9 +481,9 @@ async function loadWaiting() {
 
 async function startQuick(w) {
   label = `${w.modelCode} · ${w.serial}`;
-  if (openDevice === w.deviceId) openDevice = null;
   state = await call("POST", "/api/sessions",
     { mode: "QUICK", deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
+  if (openDevice === w.deviceId) openDevice = null;  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
   result = null; waitMs = null; completedAt = 0;
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; render();
 }
@@ -502,20 +502,34 @@ async function pickDevice(w, resume) {
 }
 
 // 확인 시트. 누른 버튼이 '확인'이면 true. 바깥이나 Esc는 취소
-let sheetDone = null;
+let sheetDone = null, sheetReturnFocus = null;
 function ask({ title, lead = "", body = "", yes = "확인", no = "취소", danger = false }) {
   if (sheetDone) sheetDone(false);
+  sheetReturnFocus = document.activeElement;
   $("sheetTitle").textContent = title; $("sheetLead").textContent = lead; $("sheetBody").textContent = body;
   $("sheetLead").hidden = !lead;
   $("sheetYes").textContent = yes; $("sheetNo").textContent = no;
   $("sheetYes").className = "btn big " + (danger ? "danger" : "primary");
   $("sheet").hidden = false; $("sheetYes").focus();
-  return new Promise((resolve) => { sheetDone = (v) => { sheetDone = null; $("sheet").hidden = true; resolve(v); }; });
+  return new Promise((resolve) => {
+    sheetDone = (v) => {
+      sheetDone = null; $("sheet").hidden = true;
+      if (sheetReturnFocus && sheetReturnFocus.isConnected) sheetReturnFocus.focus();  // 연 자리로 포커스를 돌려준다
+      sheetReturnFocus = null; resolve(v);
+    };
+  });
 }
 $("sheetYes").onclick = () => sheetDone && sheetDone(true);
 $("sheetNo").onclick = () => sheetDone && sheetDone(false);
 $("sheet").onclick = (e) => { if (e.target === $("sheet") && sheetDone) sheetDone(false); };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheetDone) sheetDone(false); });
+document.addEventListener("keydown", (e) => {
+  if (!sheetDone) return;
+  if (e.key === "Escape") { sheetDone(false); return; }
+  if (e.key === "Tab") {  // 시트가 열려 있는 동안 Tab은 두 버튼 사이만 돈다
+    e.preventDefault();
+    ($(document.activeElement === $("sheetYes") ? "sheetNo" : "sheetYes")).focus();
+  }
+});
 
 // 촬영을 멈추고 처음 화면으로. 서버 세션은 그대로 두므로 같은 기기를 다시 고르면 이어 찍는다
 async function leaveCapture() {
