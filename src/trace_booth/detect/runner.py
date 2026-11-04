@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..codes import PROBLEM_CLASSES
+from ..codes import NON_PROBLEM_CLASSES
 from ..store import ShotRecord, latest_shots
 from .engine import Detector, ModelInfo
 from .merge import Found, dedupe
@@ -39,8 +39,8 @@ class SetResult:
 
     @property
     def problem_count(self) -> int:
-        """판정에 넣는 흠집 수(긁힘·찍힘·균열). 오염은 서버 등급처럼 뺀다."""
-        return sum(1 for p in self.photos for f in p.found if f.defect_class in PROBLEM_CLASSES)
+        """판정에 넣는 흠집 수. 오염만 서버 등급처럼 빼고, 모르는 클래스는 안전하게 문제로 센다."""
+        return sum(1 for p in self.photos for f in p.found if f.defect_class not in NON_PROBLEM_CLASSES)
 
     @property
     def has_problem(self) -> bool:

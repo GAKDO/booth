@@ -222,3 +222,18 @@ def test_오염만_잡히면_흠집은_남기되_서버_등급처럼_문제_없�
     assert result.count == 1 and result.problem_count == 0 and not result.has_problem
     assert result.detections()[0]["class"] == "stain"
     assert result.to_json()["hasProblem"] is False and result.to_json()["problemCount"] == 0
+
+
+class OutOfRange:
+    def infer(self, tile) -> list[RawDetection]:
+        return [RawDetection(9, 0.8, [(1, 1), (20, 1), (20, 5)])] if tile[0, 0] == 255 else []
+
+
+def test_엔진이_모르는_클래스를_내면_정상으로_넘기지_않고_문제_있음이다():
+    odd = np.zeros((1080, 1920), dtype=np.uint8)
+    odd[0, 0] = 255
+
+    result = detect_photos([Photo("TOP", "L1", "CAM1", odd)], OutOfRange(), INFO)
+
+    assert result.detections()[0]["class"] == "class9"
+    assert result.problem_count == 1 and result.has_problem

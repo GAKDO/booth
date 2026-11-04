@@ -40,3 +40,5 @@ DEFECT_CLASSES = ("scratch", "dent", "crack", "stain")
 
 # 판정·등급에 넣는 흠집. 오염(stain)은 닦으면 없어지므로 뺀다(capture-server grade-rules-v1과 같게)
 PROBLEM_CLASSES = ("scratch", "dent", "crack")
+# 판정에서 빼는 클래스는 이것뿐. 모르는 클래스(엔진 클래스 수가 안 맞아 생긴 classN 등)는 놓치지 않게 문제로 센다
+NON_PROBLEM_CLASSES = ("stain",)
