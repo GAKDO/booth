@@ -98,6 +98,17 @@
   .form input { min-height:var(--tap); padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--bg);
     font-size:22px; user-select:text; }
   .form input:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+  .form .help { font-size:14px; font-weight:500; color:var(--muted); line-height:1.5; }
+  .form .lab { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .form .len { font-size:13px; font-weight:600; color:var(--muted); }
+  .form .len.ok { color:var(--ok); }
+  .form-error { margin:0; min-height:0; color:#f87171; font-size:15px; font-weight:600; }
+  .form-error:empty { display:none; }
+  .tip { display:flex; align-items:center; gap:16px; flex-wrap:wrap; max-width:620px; margin-bottom:16px; padding:16px 20px; border-radius:var(--r);
+    border:1px solid rgba(200,22,29,.35); background:var(--accent-soft); font-size:16px; line-height:1.55; }
+  .tip > div { flex:1 1 280px; }
+  .tip.warn { border-color:rgba(245,185,59,.5); background:var(--warn-bg); }
+  .tip.warn strong { color:var(--warn); }
 
   /* 2. 단계별 촬영 */
   .who { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
@@ -278,10 +289,25 @@
   <!-- 1'. 학습·출고·반납: 직접 입력 -->
   <section id="manual" hidden>
     <div class="head"><div><h1 id="manualTitle">기기 ID를 넣고 시작하세요</h1><p class="sub" id="manualSub"></p></div></div>
-    <div class="card form">
-      <label>기기 ID<input id="device" placeholder="예: MB01" autocapitalize="characters" autocomplete="off"></label>
-      <label class="checkout">렌탈 ID (21자)<input id="rental" autocomplete="off"></label>
-      <label class="checkout">시점 ID (21자)<input id="checkpoint" autocomplete="off"></label>
+    <!-- 출고·반납: 세 ID를 손으로 넣는 화면. 무엇을 어디서 찾는지 칸마다 적고, 빠른 검사로 가면 자동으로 채워진다는 것을 먼저 보인다 -->
+    <div class="tip checkout" id="quickTip">
+      <div><strong>ID를 몰라도 돼요.</strong> 관리자 화면에서 출고를 시작한 기기는 <b>빠른 검사</b> 목록에 뜨고, 누르면 세 ID가 자동으로 채워져요.</div>
+      <button type="button" class="iconbtn" id="toQuick">빠른 검사로 가기</button>
+    </div>
+    <div class="tip warn" id="retBlocked" hidden role="status">
+      <strong>반납 촬영은 아직 쓸 수 없어요.</strong> MVP에서는 렌탈마다 출고 검사 한 번만 해서, 관리자 화면에 반납 시작 버튼이 없고 반납 시점 ID도 만들어지지 않아요.
+    </div>
+    <div class="card form" id="manualForm">
+      <label for="device"><span id="deviceLabel">기기 ID</span>
+        <input id="device" autocomplete="off" spellcheck="false" aria-describedby="deviceHelp">
+        <small class="help" id="deviceHelp"></small></label>
+      <label class="checkout" for="rental"><span class="lab">렌탈 ID <span class="len" id="rentalLen">0 / 21자</span></span>
+        <input id="rental" autocomplete="off" spellcheck="false" aria-describedby="rentalHelp">
+        <small class="help" id="rentalHelp">관리자 화면 → 렌탈 → 그 렌탈을 열면 '부스에 넣을 ID'에 있어요(주소창 /admin/rentals/ 뒤 21자와 같아요). 복사 버튼을 쓰세요.</small></label>
+      <label class="checkout" for="checkpoint"><span class="lab">시점 ID <span class="len" id="checkpointLen">0 / 21자</span></span>
+        <input id="checkpoint" autocomplete="off" spellcheck="false" aria-describedby="checkpointHelp">
+        <small class="help" id="checkpointHelp">같은 렌탈 상세의 '시점 진행'에서 출고를 시작하면 생기는 ID예요. 출고 시작을 먼저 눌러야 보여요.</small></label>
+      <p class="form-error" id="formError" role="alert"></p>
       <button id="start" class="btn primary big">시작</button>
     </div>
   </section>
@@ -752,9 +778,33 @@ function applyMode() {
   $("result").hidden = true;
   if (m === "QUICK") { resetQuick(); return; }
   show("manual");
-  $("manualTitle").textContent = `${MODE_NAME[m]} 촬영 · 기기 ID를 넣고 시작하세요`;
-  $("manualSub").textContent = m === "TRAINING" ? "학습 데이터는 서버에 올리지 않고 부스에만 저장해요" : "렌탈 ID와 시점 ID는 관리자 화면에서 확인하세요";
+  const training = m === "TRAINING";
+  $("manualTitle").textContent = training ? "학습 데이터 촬영 · 기기 이름을 넣고 시작하세요"
+    : m === "RET" ? "반납 촬영" : `${MODE_NAME[m]} 촬영 · 세 ID를 넣고 시작하세요`;
+  $("manualSub").textContent = training ? "학습 데이터는 서버에 올리지 않고 부스에만 저장해요"
+    : "세 ID 모두 관리자 화면(gakdo.site/admin)의 렌탈 상세에 있어요. 21자를 그대로 복사해 넣으세요";
+  // 학습은 사람이 정한 짧은 기기 이름, 출고·반납은 관리자 화면의 기기 ID(21자)
+  $("deviceLabel").textContent = training ? "기기 이름" : "기기 ID";
+  $("device").placeholder = training ? "예: MB01" : "21자, 예: aAXQFO2Vz6ZTFbPctC2dq";
+  $("device").autocapitalize = training ? "characters" : "off";
+  $("deviceHelp").textContent = training ? "영문 대문자 2~4자 + 숫자 2자리. 기기에 붙인 ID 카드의 이름을 쓰고, 사진 파일 이름 앞에 들어가요"
+    : "렌탈 상세의 '부스에 넣을 ID'에 있는 기기 ID예요(시리얼 번호 아님). 대소문자를 그대로 넣으세요";
+  $("retBlocked").hidden = m !== "RET";
+  $("manualForm").hidden = m === "RET";
+  $("formError").textContent = "";
+  markInvalid("");
+  updateLens();
 }
+// 21자 칸은 몇 자 넣었는지 바로 보이게(복사가 덜 됐는지 알 수 있게)
+function updateLens() {
+  for (const id of ["rental", "checkpoint"]) {
+    const n = $(id).value.trim().length;
+    $(id + "Len").textContent = `${n} / 21자`;
+    $(id + "Len").classList.toggle("ok", n === 21);
+  }
+}
+for (const id of ["rental", "checkpoint"]) $(id).addEventListener("input", updateLens);
+$("toQuick").onclick = () => document.querySelector('#modes button[data-mode="QUICK"]').click();
 for (const b of document.querySelectorAll("#modes button")) {
   b.onclick = async () => {
     if (b.dataset.mode === mode) return;  // 같은 모드를 다시 눌러도 하던 화면 그대로
@@ -768,12 +818,46 @@ $("redetect").onclick = async () => {
   completedAt = Date.now(); waitMs = null;
   result = await call("POST", "/api/sessions/current/detect"); renderResult(); pollResult();
 };
+// 서버에 보내기 전에 어느 칸이 잘못됐는지 알려 준다(서버도 같은 규칙으로 다시 검사)
+const ID21 = /^[A-Za-z0-9_-]{21}$/;
+// 돌려주는 값: [잘못된 칸의 id, 문장]. 문제가 없으면 ["", ""]
+function formProblem(body) {
+  if (body.mode === "TRAINING") return /^[A-Z]{2,4}[0-9]{2}$/.test(body.deviceId) ? ["", ""] : ["device", "기기 이름은 영문 대문자 2~4자 + 숫자 2자리예요(예: MB01)"];
+  if (!ID21.test(body.deviceId)) return ["device", "기기 ID는 관리자 화면 렌탈 상세의 21자 기기 ID예요(시리얼 번호가 아니에요)"];
+  const rental = idProblem("렌탈 ID", body.rentalId, "복사 버튼으로 다시 넣어 주세요");
+  if (rental) return ["rental", rental];
+  const checkpoint = idProblem("시점 ID", body.checkpointId, "출고를 시작했는지 확인하세요");
+  return checkpoint ? ["checkpoint", checkpoint] : ["", ""];
+}
+// 오류 칸에 aria-invalid와 오류 문장 연결(화면 읽기 프로그램이 칸으로 돌아왔을 때 이유를 읽게)
+function markInvalid(field) {
+  for (const id of ["device", "rental", "checkpoint"]) {
+    if (id === field) { $(id).setAttribute("aria-invalid", "true"); $(id).setAttribute("aria-errormessage", "formError"); }
+    else { $(id).removeAttribute("aria-invalid"); $(id).removeAttribute("aria-errormessage"); }
+  }
+}
+// 길이가 틀린 것과 글자가 틀린 것을 나눠 알려 준다(입력칸은 자르지 않으니 22자 이상도 여기서 걸린다)
+function idProblem(name, value, hint) {
+  if (value.length !== 21) return `${name}가 21자가 아니에요(지금 ${value.length}자). ${hint}`;
+  if (!ID21.test(value)) return `${name}에 쓸 수 없는 글자가 있어요(영문·숫자·_·-만). ${hint}`;
+  return "";
+}
 $("start").onclick = async () => {
-  const body = { deviceId: $("device").value.trim().toUpperCase(), mode };
+  const raw = $("device").value.trim();
+  // 학습 이름만 대문자로 바꾼다. 21자 ID는 대소문자가 달라지면 다른 기기가 된다
+  const body = { deviceId: mode === "TRAINING" ? raw.toUpperCase() : raw, mode };
   if (body.mode !== "TRAINING") {
     body.rentalId = $("rental").value.trim(); body.checkpointId = $("checkpoint").value.trim();
   }
-  state = await call("POST", "/api/sessions", body);
+  const [field, problem] = formProblem(body);
+  $("formError").textContent = problem;
+  markInvalid(field);
+  if (problem) { $(field).focus(); return; }
+  try { state = await call("POST", "/api/sessions", body); } catch (e) {
+    // 서버가 거절한 문장은 call()이 이미 보여 줌. 비어 있으면 연결 자체가 실패한 것
+    if (!$("error").textContent) $("error").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요";
+    return;
+  }
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true; render();
 };
 $("shoot").onclick = async () => {
