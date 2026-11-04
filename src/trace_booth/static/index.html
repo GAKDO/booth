@@ -163,7 +163,7 @@
   /* 판정 사진: 왼쪽 큰 사진 하나, 오른쪽은 스크롤 되는 작은 사진 목록(행 높이는 큰 사진이 정함) */
   .viewer { display:grid; grid-template-columns:minmax(0, 1fr) 240px; gap:16px; align-items:start; }
   .stage { margin:0; background:#000; border:1px solid var(--line); border-radius:16px; overflow:hidden; position:relative;
-    touch-action:pan-y;  /* 가로 밀기는 페이지가 받아 사진을 넘기고, 세로 스크롤은 브라우저가 처리 */
+    touch-action:pan-y pinch-zoom;  /* 가로 밀기는 페이지가 받아 사진을 넘기고, 세로 스크롤·두 손가락 확대는 브라우저가 처리 */
     /* 큰 사진이 아래 막대에 가리지 않게 화면 높이에 맞춘다(머리·판정 카드·막대 높이를 뺀 값) */
     --maxh:max(240px, calc(100vh - 440px)); }
   .stage .frame { position:relative; margin:0 auto; width:min(100%, calc(var(--maxh) * var(--ar, 16/9))); aspect-ratio:var(--ar, 16/9); }
