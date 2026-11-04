@@ -304,7 +304,7 @@
       <button type="button" class="iconbtn" id="toQuick">빠른 검사로 가기</button>
     </div>
     <div class="tip warn" id="retBlocked" hidden role="status">
-      <strong>반납 촬영은 아직 쓸 수 없어요.</strong> MVP에서는 렌탈마다 출고 검사 한 번만 해서, 관리자 화면에 반납 시작 버튼이 없고 반납 시점 ID도 만들어지지 않아요.
+      <strong>수령·반납은 빠른 검사에서 찍어요.</strong> 관리자 화면에서 수령·반납을 시작하면 빠른 검사 목록에 그 기기가 '수령'·'반납'으로 떠요. 부스 코드를 넣어도 빠른 검사로 바로 넘어가요.
     </div>
     <div class="card form" id="manualForm">
       <!-- 부스 코드(11/4): 관리자 화면이 발급한 6자리를 넣으면 아래 세 칸이 채워진다. 21자를 손으로 옮기지 않게 -->
@@ -848,7 +848,10 @@ async function redeemCode() {
     $("codeError").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요"; return;
   } finally { redeeming = false; $("redeem").disabled = false; }
   if (t.checkpointType !== "OUT") {
-    $("codeError").textContent = `${MODE_NAME[t.checkpointType] || t.checkpointType} 시점 코드예요. 지금 부스는 출고 촬영만 받아요`;
+    // 수령·반납 코드는 빠른 검사(위·아래 2면)로 찍는다. 코드는 이미 쓰였으므로 버리지 않고 빠른 검사 확인으로 넘긴다(11/4)
+    $("boothCode").value = "";
+    if (mode !== "QUICK") { setMode("QUICK"); state = null; applyMode(); }
+    pickDevice(t, false);
     return;
   }
   // 기다리는 동안 다른 탭으로 옮겼어도 코드는 이미 쓰였으므로 출고 탭으로 돌아와 채운다
