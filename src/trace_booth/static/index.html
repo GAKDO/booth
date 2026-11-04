@@ -825,11 +825,18 @@ function updateLens() {
 }
 for (const id of ["rental", "checkpoint"]) $(id).addEventListener("input", updateLens);
 // 부스 코드 → 세 ID 채우기. 서버는 코드를 한 번만 받으므로, 채운 뒤 기기가 맞는지 보이고 시작은 사람이 누른다
+let redeeming = false;  // Enter·버튼이 겹쳐 한 번만 쓰는 코드를 두 번 보내지 않게
+let codeFilled = false; // 세 칸이 코드로 채워졌는지(새 코드를 넣으면 앞 코드 값은 지워 엉뚱한 기기로 시작하지 않게)
 async function redeemCode() {
+  if (redeeming) return;
   const code = $("boothCode").value.replace(/\s/g, "");
   $("codeOk").textContent = ""; $("codeError").textContent = "";
   if (!/^[0-9]{6}$/.test(code)) { $("codeError").textContent = "부스 코드는 숫자 6자리예요"; return; }
-  $("redeem").disabled = true;
+  if (codeFilled) {
+    for (const id of ["device", "rental", "checkpoint"]) $(id).value = "";
+    codeFilled = false; updateLens();
+  }
+  redeeming = true; $("redeem").disabled = true;
   let t;
   try {
     const res = await fetch("/api/booth-code", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -839,18 +846,23 @@ async function redeemCode() {
     t = data;
   } catch (e) {
     $("codeError").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요"; return;
-  } finally { $("redeem").disabled = false; }
-  if (t.checkpointType !== mode) {
-    $("codeError").textContent = `${MODE_NAME[t.checkpointType] || t.checkpointType} 시점 코드예요. ${MODE_NAME[t.checkpointType] || t.checkpointType} 탭에서 쓰세요`;
+  } finally { redeeming = false; $("redeem").disabled = false; }
+  if (t.checkpointType !== "OUT") {
+    $("codeError").textContent = `${MODE_NAME[t.checkpointType] || t.checkpointType} 시점 코드예요. 지금 부스는 출고 촬영만 받아요`;
     return;
   }
+  // 기다리는 동안 다른 탭으로 옮겼어도 코드는 이미 쓰였으므로 출고 탭으로 돌아와 채운다
+  if (mode !== "OUT") { setMode("OUT"); state = null; applyMode(); }
   $("device").value = t.deviceId; $("rental").value = t.rentalId; $("checkpoint").value = t.checkpointId;
+  codeFilled = true;
   $("boothCode").value = ""; $("formError").textContent = ""; markInvalid("");
   updateLens();
   $("codeOk").textContent = `${t.modelCode} · ${t.serial} 불러왔어요. 부스 안 기기가 맞는지 확인하고 시작을 누르세요`;
   $("start").focus();
 }
 $("redeem").onclick = redeemCode;
+// 사람이 칸을 고치면 직접 넣은 값으로 보고 새 코드를 넣어도 지우지 않는다
+for (const id of ["device", "rental", "checkpoint"]) $(id).addEventListener("input", () => { codeFilled = false; });
 $("boothCode").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); redeemCode(); } });
 $("toQuick").onclick = () => document.querySelector('#modes button[data-mode="QUICK"]').click();
 for (const b of document.querySelectorAll("#modes button")) {

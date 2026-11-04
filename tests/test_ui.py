@@ -470,6 +470,51 @@ def test_틀리거나_만료된_부스_코드는_이유를_알리고_칸을_채�
     expect(page.locator("#codeOk")).to_be_hidden()
 
 
+def test_코드로_채운_뒤_새_코드가_틀리면_앞_코드의_ID는_지워져_엉뚱한_기기로_시작하지_않는다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#boothCode").fill("123456")
+    page.locator("#redeem").click()
+    expect(page.locator("#rental")).to_have_value(MBA.rental_id)
+    page.locator("#boothCode").fill("000000")
+    page.locator("#redeem").click()
+    expect(page.locator("#codeError")).to_contain_text("코드가 맞지 않아요")
+    for field in ("#device", "#rental", "#checkpoint"):
+        expect(page.locator(field)).to_have_value("")
+
+
+def test_직접_넣은_ID는_틀린_코드를_넣어도_그대로_둔다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#rental").fill(MBA.rental_id)
+    page.locator("#boothCode").fill("000000")
+    page.locator("#redeem").click()
+    expect(page.locator("#codeError")).to_contain_text("코드가 맞지 않아요")
+    expect(page.locator("#rental")).to_have_value(MBA.rental_id)
+
+
+def test_코드를_기다리는_동안_Enter를_더_눌러도_한_번만_보내고_탭을_옮겨도_출고_탭에_채운다(page):
+    calls: list[str] = []
+    gate: list = []
+
+    def slow(route):
+        calls.append(route.request.post_data_json["code"])
+        gate.append(route)  # 탭을 옮길 때까지 답을 미룬다
+
+    page.route("**/api/booth-code", slow)
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#boothCode").fill("123456")
+    page.locator("#boothCode").press("Enter")
+    page.locator("#boothCode").press("Enter")
+    page.wait_for_function("() => true")
+    page.locator('#modes button[data-mode="TRAINING"]').click()
+    expect(page.locator("#deviceLabel")).to_have_text("기기 이름")
+    assert len(gate) == 1
+    gate[0].fulfill(json=MBA.to_json())
+    expect(page.locator('#modes button[data-mode="OUT"]')).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#rental")).to_have_value(MBA.rental_id)
+    expect(page.locator("#codeOk")).to_contain_text("불러왔어요")
+    assert calls == ["123456"]
+
+
 def test_학습_탭과_반납_탭에는_부스_코드_칸이_없다(page):
     page.locator('#modes button[data-mode="TRAINING"]').click()
     expect(page.locator("#codeBox")).to_be_hidden()
