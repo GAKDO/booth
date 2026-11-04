@@ -11,6 +11,8 @@ dependencies = ["nanoid>=2.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "boto3>=1.34", "numpy>=1.24", "opencv-python-headless>=4.8"]
+# 운영 화면 하네스(tests/test_ui.py). Jetson에는 깔지 않아도 됨
+ui = ["playwright>=1.48"]
 # Jetson은 JetPack의 시스템 OpenCV를 쓰므로 런타임 필수 의존성으로 두지 않는다
 camera = ["opencv-python-headless>=4.8"]
 # BO2 탐지: tensorrt·CUDA·OpenCV는 JetPack 시스템 것을 쓴다(가상환경 --system-site-packages). torch·ultralytics 불필요
