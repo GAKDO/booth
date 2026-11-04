@@ -236,4 +236,4 @@ def test_엔진이_모르는_클래스를_내면_정상으로_넘기지_않고_�
     result = detect_photos([Photo("TOP", "L1", "CAM1", odd)], OutOfRange(), INFO)
 
     assert result.detections()[0]["class"] == "class9"
-    assert result.problem_count == 1 and result.has_problem
+    assert result.problem_count == 1 and result.has_problem and result.to_json()["problemCount"] == 1

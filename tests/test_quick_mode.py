@@ -14,7 +14,7 @@ from test_web import call
 
 from trace_booth.capture_client import BoothAuth, Response
 from trace_booth.codes import DEFECT_CLASSES
-from trace_booth.detect.engine import DetectError, ModelInfo
+from trace_booth.detect.engine import DetectError, ModelInfo, RawDetection
 from trace_booth.naming import parse_filename
 from trace_booth.quick import QuickInspector, no_engine_source, result_json
 from trace_booth.rentals import RentalClient, WaitingDevice
@@ -92,6 +92,22 @@ def test_흠집이_없으면_문제_없음(service):
     _inspector(service, defect_on=None).start(done.id)
     r = result_json(service.store, done.id, shooting=False)
     assert r["verdict"] == "CLEAN" and r["count"] == 0
+
+
+class StainDetector(SquareDetector):
+    """SquareDetector와 같은 곳을 잡되 클래스를 오염(stain)으로 낸다."""
+
+    def infer(self, tile) -> list[RawDetection]:
+        return [RawDetection(DEFECT_CLASSES.index("stain"), d.confidence, d.polygon) for d in super().infer(tile)]
+
+
+def test_오염만_잡히면_폴리곤은_남기고_문제_없음으로_저장한다(service):
+    done = _shoot_quick(service)
+    _inspector(service, source=lambda: (StainDetector(), INFO)).start(done.id)
+    r = result_json(service.store, done.id, shooting=False)
+    assert r["status"] == "DONE" and r["verdict"] == "CLEAN" and r["count"] == 1
+    hit = [d for p in r["photos"] for d in p["detections"]]
+    assert len(hit) == 1 and hit[0]["class"] == "stain"
 
 
 def test_엔진_없이_시험하면_문제_없음에_시험_표시가_붙는다(service):
