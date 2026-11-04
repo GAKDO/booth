@@ -12,7 +12,7 @@ from fake_capture import BASE, SECRET, FakeCapture
 from test_detect import SquareDetector
 from test_web import call
 
-from trace_booth.capture_client import BoothAuth, Response
+from trace_booth.capture_client import ApiError, BoothAuth, Response
 from trace_booth.codes import DEFECT_CLASSES
 from trace_booth.detect.engine import DetectError, ModelInfo, RawDetection
 from trace_booth.naming import parse_filename
@@ -188,6 +188,38 @@ def test_기다리는_기기는_진행_중_렌탈의_열린_시점만_다음_쪽
     assert "status=OPEN" in server.queries[0] and "cursor=p2" in server.queries[1]
 
 
+class FakeBoothCode(FakeRentals):
+    """rental-server 부스 코드 조회: 305718만 맞음"""
+
+    def __init__(self) -> None:
+        super().__init__([])
+        self.bodies: list[dict] = []
+
+    def __call__(self, method, url, headers, body):
+        if url.endswith("/api/v1/rentals/booth-codes/redeem"):
+            self.bodies.append(json.loads(body))
+            if self.bodies[-1]["code"] != "305718":
+                return Response(400, json.dumps({"code": "BOOTH_CODE_INVALID"}).encode())
+            return Response(200, json.dumps({"rentalId": RENTAL, "deviceId": DEVICE, "serial": "C02EXAMPLE01",
+                                             "modelCode": "MBA13-M2", "checkpointId": CHECKPOINT,
+                                             "checkpointType": "OUT"}).encode())
+        return super().__call__(method, url, headers, body)
+
+
+def test_부스_코드를_rental_server에_보내_기기_렌탈_시점을_받는다():
+    server = FakeBoothCode()
+    client = RentalClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
+
+    assert client.redeem("305718") == WaitingDevice(RENTAL, DEVICE, "C02EXAMPLE01", "MBA13-M2", CHECKPOINT, "OUT")
+    assert server.bodies == [{"code": "305718"}]
+    with pytest.raises(ApiError) as e:
+        client.redeem("111111")
+    assert e.value.status == 400 and e.value.code == "BOOTH_CODE_INVALID"
+    with pytest.raises(ValueError):
+        client.redeem("12345")  # 서버에 보내기 전에 거른다
+    assert len(server.bodies) == 2
+
+
 # --- 로컬 API ---
 
 @pytest.fixture
@@ -199,6 +231,25 @@ def quick_base(service):
     yield f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
     server.server_close()
+
+
+def test_부스_코드_API는_서버_설정이_없으면_503_형식이_틀리면_400_만료는_410으로_알린다(service):
+    def redeem(code: str) -> WaitingDevice:
+        raise ApiError("부스 코드", 410, "BOOTH_CODE_EXPIRED")
+
+    for app, code, expected in ((App(service), "305718", 503), (App(service, redeem=redeem), "30571", 400),
+                                (App(service, redeem=redeem), "305718", 410)):
+        server = make_server(app, "127.0.0.1", 0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            status, _, body = call(f"http://127.0.0.1:{server.server_address[1]}", "POST", "/api/booth-code",
+                                   {"code": code})
+        finally:
+            server.shutdown()
+            server.server_close()
+        assert status == expected
+        if expected == 410:
+            assert "다시 발급하세요" in json.loads(body)["detail"]
 
 
 def test_태블릿에서_기기를_골라_찍고_완료하면_결과_API가_판정을_준다(quick_base):

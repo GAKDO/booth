@@ -16,6 +16,7 @@ from test_detect import SquareDetector
 from test_quick_mode import INFO, NOW, _loader
 
 from trace_booth.camera_presets import Presets
+from trace_booth.capture_client import ApiError
 from trace_booth.codes import Camera
 from trace_booth.quick import QuickInspector
 from trace_booth.rentals import WaitingDevice
@@ -36,6 +37,15 @@ GRAM = WaitingDevice("Xs0HLv6QRbDILPWOcz5I2", "bAXQFO2Vz6ZTFbPctC2dq", "GRAM-000
 TABLET = {"width": 1280, "height": 800}
 
 
+def _redeem(code: str) -> WaitingDevice:
+    """가짜 rental-server 부스 코드: 123456만 맞고, 999999는 만료, 나머지는 틀림"""
+    if code == "123456":
+        return MBA
+    if code == "999999":
+        raise ApiError("부스 코드", 410, "BOOTH_CODE_EXPIRED")
+    raise ApiError("부스 코드", 400, "BOOTH_CODE_INVALID")
+
+
 @pytest.fixture
 def base(tmp_path):
     values = {light: {"exposure_time_absolute": 100} for light in ["L1", "L2", "L3", "L4", "OFF"]}
@@ -44,7 +54,7 @@ def base(tmp_path):
                              min_free_bytes=0)
     quick = QuickInspector(service.store, lambda: (SquareDetector(), INFO), _loader("BOT_L1_CAM1"), lambda: NOW,
                            background=False)
-    server = make_server(App(service, None, None, quick, lambda: [MBA, GRAM]), "127.0.0.1", 0)
+    server = make_server(App(service, None, None, quick, lambda: [MBA, GRAM], _redeem), "127.0.0.1", 0)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     yield f"http://127.0.0.1:{server.server_address[1]}"
@@ -420,3 +430,48 @@ def test_학습_탭은_기기_이름_규칙을_보이고_소문자로_넣어도_
     page.locator("#device").fill("mb01")
     page.locator("#start").click()
     expect(page.locator("#who")).to_contain_text("MB01")
+
+
+def test_출고_탭에_부스_코드_6자리를_넣으면_세_ID가_채워지고_기기를_확인하라고_알린다(page):
+    sent: list[dict] = []
+
+    def capture(route):
+        sent.append(route.request.post_data_json)
+        route.fulfill(status=503, json={"detail": "시험용 거절"})
+
+    page.route("**/api/sessions", capture)
+    page.locator('#modes button[data-mode="OUT"]').click()
+    expect(page.locator("#codeBox")).to_be_visible()
+    page.locator("#boothCode").fill("123 456")  # 띄어 쓴 채로 넣어도 된다
+    page.locator("#boothCode").press("Enter")
+    expect(page.locator("#codeOk")).to_contain_text("MBA13-M2 · TEST-0001 불러왔어요")
+    expect(page.locator("#device")).to_have_value(MBA.device_id)
+    expect(page.locator("#rental")).to_have_value(MBA.rental_id)
+    expect(page.locator("#checkpoint")).to_have_value(MBA.checkpoint_id)
+    expect(page.locator("#rentalLen")).to_have_class("len ok")
+    page.locator("#start").click()
+    expect(page.locator("#error")).to_have_text("시험용 거절")
+    assert sent == [{"deviceId": MBA.device_id, "mode": "OUT", "rentalId": MBA.rental_id,
+                     "checkpointId": MBA.checkpoint_id}]
+
+
+def test_틀리거나_만료된_부스_코드는_이유를_알리고_칸을_채우지_않는다(page):
+    page.locator('#modes button[data-mode="OUT"]').click()
+    page.locator("#boothCode").fill("12345")
+    page.locator("#redeem").click()
+    expect(page.locator("#codeError")).to_have_text("부스 코드는 숫자 6자리예요")
+    page.locator("#boothCode").fill("000000")
+    page.locator("#redeem").click()
+    expect(page.locator("#codeError")).to_contain_text("코드가 맞지 않아요")
+    page.locator("#boothCode").fill("999999")
+    page.locator("#redeem").click()
+    expect(page.locator("#codeError")).to_contain_text("만료됐거나 이미 쓴 코드예요")
+    expect(page.locator("#rental")).to_have_value("")
+    expect(page.locator("#codeOk")).to_be_hidden()
+
+
+def test_학습_탭과_반납_탭에는_부스_코드_칸이_없다(page):
+    page.locator('#modes button[data-mode="TRAINING"]').click()
+    expect(page.locator("#codeBox")).to_be_hidden()
+    page.locator('#modes button[data-mode="RET"]').click()
+    expect(page.locator("#codeBox")).to_be_hidden()

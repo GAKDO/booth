@@ -18,13 +18,14 @@ from .capture_client import ApiError
 from .quick import QuickInspector
 from .quick import result_json as _quick_result
 from .quick_upload import upload_json
-from .rentals import WaitingDevice
+from .rentals import BOOTH_CODE_RE, WaitingDevice, redeem_message
 from .session import CaptureError, CaptureService, Incomplete, InvalidInput
 from .store import CheckoutRecord, ShotRecord
 
 Submitter = Callable[[int], CheckoutRecord]
 LiveFeed = Callable[[], Iterator[bytes]]  # 카메라 하나의 실시간 JPEG 프레임
 WaitingList = Callable[[], list[WaitingDevice]]  # 빠른 검사의 검사 기다리는 기기
+CodeRedeemer = Callable[[str], WaitingDevice]  # 부스 6자리 코드 → 기기·렌탈·시점
 
 
 def result_json(store, session_id: int, shooting: bool) -> dict:
@@ -43,12 +44,14 @@ class App:
         live: dict[str, LiveFeed] | None = None,
         quick: QuickInspector | None = None,
         waiting: WaitingList | None = None,
+        redeem: CodeRedeemer | None = None,
     ) -> None:
         self.service = service
         self.live = live or {}  # 카메라 코드(CAM1·CAM2) → 실시간 보기
         self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
         self.quick = quick  # 빠른 검사 탐지. 없으면 QUICK 모드를 막음
         self.waiting = waiting  # 렌탈 목록. 서버 설정이 없으면 None
+        self.redeem = redeem  # 부스 코드 조회. 서버 설정이 없으면 None
         self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
 
@@ -135,6 +138,19 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 except (ApiError, OSError, ValueError, KeyError, TypeError) as e:  # 서버 응답 문제는 502
                     return self._problem(502, f"기기 목록을 못 불러왔어요: {type(e).__name__}: {e}")
                 return self._json(200, {"items": [w.to_json() for w in items]})
+            if method == "POST" and path == "/api/booth-code":
+                if app.redeem is None:
+                    return self._problem(503, "서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 부스 코드를 못 써요")
+                code = str(self._body().get("code", "")).strip()
+                if not BOOTH_CODE_RE.match(code):
+                    return self._problem(400, "부스 코드는 숫자 6자리예요")
+                try:
+                    target = app.redeem(code)
+                except ApiError as e:  # 서버가 거절한 이유를 부스 문장으로(틀림 400·만료 410·막힘 429)
+                    return self._problem(e.status if e.status in (400, 410, 429) else 502, redeem_message(e))
+                except (OSError, ValueError, KeyError, TypeError) as e:
+                    return self._problem(502, f"부스 코드를 확인하지 못했어요: {type(e).__name__}: {e}")
+                return self._json(200, target.to_json())
             if method == "GET" and path.startswith("/api/live/"):
                 feed = app.live.get(path[len("/api/live/"):])
                 if feed is None:

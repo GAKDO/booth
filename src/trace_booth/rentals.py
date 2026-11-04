@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 import urllib.parse
 from dataclasses import dataclass
 
-from .capture_client import BoothAuth, HttpCall, authed_call, http_call
+from .capture_client import ApiError, BoothAuth, HttpCall, authed_call, http_call
 
+BOOTH_CODE_RE = re.compile(r"^[0-9]{6}$")  # contracts BoothCode
 PAGE_LIMIT = 100  # contracts common Limit 최대
 MAX_PAGES = 5
 
@@ -59,3 +62,28 @@ class RentalClient:
             if not cursor:
                 break
         return out
+
+    def redeem(self, code: str) -> WaitingDevice:
+        """관리자 화면이 발급한 6자리 부스 코드 → 촬영할 기기·렌탈·시점(contracts redeemBoothCode, 한 번만 쓰임)."""
+        if not BOOTH_CODE_RE.match(code):
+            raise ValueError("부스 코드는 숫자 6자리예요")
+        body = json.dumps({"code": code}).encode()
+        item = authed_call(self._http, self._auth, "부스 코드", "POST", f"{self._url}/booth-codes/redeem", body,
+                           (200,)).json()
+        return WaitingDevice(
+            str(item["rentalId"]), str(item["deviceId"]), str(item.get("serial") or ""),
+            str(item.get("modelCode") or ""), str(item["checkpointId"]), str(item["checkpointType"]),
+        )
+
+
+# 서버 오류 code → 부스 화면 문장
+REDEEM_MESSAGES = {
+    "BOOTH_CODE_INVALID": "코드가 맞지 않아요. 관리자 화면의 6자리를 다시 확인하세요",
+    "BOOTH_CODE_EXPIRED": "만료됐거나 이미 쓴 코드예요. 관리자 화면에서 다시 발급하세요",
+    "RATE_LIMITED": "틀린 코드가 너무 많아 잠시 막혔어요. 1분 뒤 다시 넣어 주세요",
+    "VALIDATION_FAILED": "부스 코드는 숫자 6자리예요",
+}
+
+
+def redeem_message(e: ApiError) -> str:
+    return REDEEM_MESSAGES.get(e.code or "", f"부스 코드를 확인하지 못했어요(HTTP {e.status})")
