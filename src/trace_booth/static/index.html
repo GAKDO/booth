@@ -792,6 +792,7 @@ function applyMode() {
   $("retBlocked").hidden = m !== "RET";
   $("manualForm").hidden = m === "RET";
   $("formError").textContent = "";
+  markInvalid("");
   updateLens();
 }
 // 21자 칸은 몇 자 넣었는지 바로 보이게(복사가 덜 됐는지 알 수 있게)
@@ -819,11 +820,21 @@ $("redetect").onclick = async () => {
 };
 // 서버에 보내기 전에 어느 칸이 잘못됐는지 알려 준다(서버도 같은 규칙으로 다시 검사)
 const ID21 = /^[A-Za-z0-9_-]{21}$/;
+// 돌려주는 값: [잘못된 칸의 id, 문장]. 문제가 없으면 ["", ""]
 function formProblem(body) {
-  if (body.mode === "TRAINING") return /^[A-Z]{2,4}[0-9]{2}$/.test(body.deviceId) ? "" : "기기 이름은 영문 대문자 2~4자 + 숫자 2자리예요(예: MB01)";
-  if (!ID21.test(body.deviceId)) return "기기 ID는 관리자 화면 렌탈 상세의 21자 기기 ID예요(시리얼 번호가 아니에요)";
-  return idProblem("렌탈 ID", body.rentalId, "복사 버튼으로 다시 넣어 주세요")
-    || idProblem("시점 ID", body.checkpointId, "출고를 시작했는지 확인하세요");
+  if (body.mode === "TRAINING") return /^[A-Z]{2,4}[0-9]{2}$/.test(body.deviceId) ? ["", ""] : ["device", "기기 이름은 영문 대문자 2~4자 + 숫자 2자리예요(예: MB01)"];
+  if (!ID21.test(body.deviceId)) return ["device", "기기 ID는 관리자 화면 렌탈 상세의 21자 기기 ID예요(시리얼 번호가 아니에요)"];
+  const rental = idProblem("렌탈 ID", body.rentalId, "복사 버튼으로 다시 넣어 주세요");
+  if (rental) return ["rental", rental];
+  const checkpoint = idProblem("시점 ID", body.checkpointId, "출고를 시작했는지 확인하세요");
+  return checkpoint ? ["checkpoint", checkpoint] : ["", ""];
+}
+// 오류 칸에 aria-invalid와 오류 문장 연결(화면 읽기 프로그램이 칸으로 돌아왔을 때 이유를 읽게)
+function markInvalid(field) {
+  for (const id of ["device", "rental", "checkpoint"]) {
+    if (id === field) { $(id).setAttribute("aria-invalid", "true"); $(id).setAttribute("aria-errormessage", "formError"); }
+    else { $(id).removeAttribute("aria-invalid"); $(id).removeAttribute("aria-errormessage"); }
+  }
 }
 // 길이가 틀린 것과 글자가 틀린 것을 나눠 알려 준다(입력칸은 자르지 않으니 22자 이상도 여기서 걸린다)
 function idProblem(name, value, hint) {
@@ -838,9 +849,10 @@ $("start").onclick = async () => {
   if (body.mode !== "TRAINING") {
     body.rentalId = $("rental").value.trim(); body.checkpointId = $("checkpoint").value.trim();
   }
-  const problem = formProblem(body);
+  const [field, problem] = formProblem(body);
   $("formError").textContent = problem;
-  if (problem) return;
+  markInvalid(field);
+  if (problem) { $(field).focus(); return; }
   try { state = await call("POST", "/api/sessions", body); } catch (e) {
     // 서버가 거절한 문장은 call()이 이미 보여 줌. 비어 있으면 연결 자체가 실패한 것
     if (!$("error").textContent) $("error").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요";

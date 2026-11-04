@@ -355,6 +355,10 @@ def test_출고에서_ID가_21자가_아니면_서버에_보내기_전에_어느
     page.locator("#checkpoint").fill(MBA.checkpoint_id)
     page.locator("#start").click()
     expect(page.locator("#formError")).to_contain_text("렌탈 ID가 21자가 아니에요(지금 20자)")
+    expect(page.locator("#rental")).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#rental")).to_have_attribute("aria-errormessage", "formError")
+    expect(page.locator("#rental")).to_be_focused()
+    expect(page.locator("#checkpoint")).not_to_have_attribute("aria-invalid", "true")
     expect(page.locator("#capture")).to_be_hidden()
 
 
