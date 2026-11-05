@@ -213,3 +213,23 @@ def test_찍지_않은_단계는_다음으로_넘어가지_않는다(service, ca
     with pytest.raises(CaptureError):
         service.advance(sid)
     assert service.view(sid).step.light is Light.L1
+
+
+def test_다음을_두_번_보내도_안내_단계를_건너뛰지_않는다(service):
+    sid = service.start("MB01").id
+    go_to(service, sid, Face.BOT, Light.L3)
+    service.shoot(sid)
+    index = service.view(sid).step.index
+    service.advance(sid, index)
+    with pytest.raises(CaptureError):
+        service.advance(sid, index)
+    assert service.view(sid).step.kind is StepKind.NOTICE
+
+
+def test_찍은_선택_단계는_건너뛰기로_넘길_수_없다(service):
+    sid = service.start("MB01").id
+    go_to(service, sid, Face.SCR1, Light.OFF)
+    service.shoot(sid)
+    with pytest.raises(CaptureError):
+        service.skip_optional(sid, "흰 화면 불가")
+    assert service.store.get_session(sid).scr1_skip_reason is None

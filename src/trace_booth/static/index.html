@@ -938,7 +938,9 @@ $("retake").onclick = async () => {
   const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); render();
 };
 $("next").onclick = async () => {
-  state = await call("POST", "/api/sessions/current/next");
+  $("next").disabled = true;  // 두 번 눌러도 한 번만(서버도 단계 번호로 한 번 더 막는다)
+  try { state = await call("POST", "/api/sessions/current/next", { step: state.step.index }); }
+  finally { $("next").disabled = false; }
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true;  // 다음 단계에 앞 단계 사진이 남지 않게
   render();
 };

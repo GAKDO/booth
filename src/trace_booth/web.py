@@ -191,7 +191,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 shots = svc.retake(app.current)
                 return self._json(201, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
             if action == "/next":
-                svc.advance(app.current)
+                expected = self._body().get("step")
+                svc.advance(app.current, expected if isinstance(expected, int) else None)
                 return self._json(200, _state(app))
             if action == "/skip-scr1":
                 svc.skip_optional(app.current, str(self._body().get("reason", "")))
