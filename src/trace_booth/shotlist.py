@@ -51,12 +51,13 @@ _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
 _SIDE_CAMS = (Camera.CAM1,)
 
 
-# 11/4 조명 장비(민서 11/3 주문): L1 = VIJIM VL49(확산, 앞 기둥 위), L2·L3 = 5V USB LED 바 35cm 6000K 두 개(낮은 스침광).
+# 11/4 조명 장비(민서 11/3 주문): L1 = VIJIM VL49(확산, 앞 기둥 위), L2·L3 = 5V USB LED 바 35cm 6000K 두 개(스침광).
+# 11/5 실기 확정 배치: L1 큰 확산지·2단계, L2 왼쪽 위에 붙이고 A4로 가림, L3 뒤쪽 바닥(capture/README.md 3절).
 # VL49는 배터리가 들어 있어 USB 전원을 끊어도 꺼지지 않으므로 손으로 켜고 끈다.
 LIGHT_GEAR = {
-    Light.L1: "VL49(앞 기둥 위, 확산지 뒤)",
-    Light.L2: "LED 바 #1(왼쪽, 낮게)",
-    Light.L3: "LED 바 #2(뒤쪽, 낮게)",
+    Light.L1: "VL49(앞 기둥 위, 큰 확산지 뒤, 2단계)",
+    Light.L2: "LED 바 #1(왼쪽 위, A4로 가림)",
+    Light.L3: "LED 바 #2(뒤쪽 바닥)",
     Light.L4: "LED 바 #2(앞 자리로 옮김)",
 }
 
