@@ -34,6 +34,8 @@ _AUTO_TOGGLES = {
     "white_balance_automatic": (0, 1),
 }
 _TOLERANCE = 1  # 카메라가 gain 90을 89로 읽어 주는 일이 있다
+# 화이트밸런스는 6500을 6480으로 읽어 주는 일이 있다(11/5 CAM2). 50K 차이는 색에 거의 영향이 없다
+_TOLERANCES = {"white_balance_temperature": 50}
 
 
 class ControlMismatch(subprocess.SubprocessError):
@@ -82,7 +84,7 @@ def run_v4l2_ctl(device: str, controls: dict[str, int], run: Runner = subprocess
         r = run(["v4l2-ctl", "-d", device, "-C", ",".join(controls)],
                 check=True, capture_output=True, text=True, timeout=10)
         got = parse_controls(r.stdout)
-        return {k: got.get(k, -1) for k, v in controls.items() if abs(got.get(k, -10_000) - v) > _TOLERANCE}
+        return {k: got.get(k, -1) for k, v in controls.items() if abs(got.get(k, -10_000) - v) > _TOLERANCES.get(k, _TOLERANCE)}
 
     for attempt in range(2):
         for name, value in pre.items():
