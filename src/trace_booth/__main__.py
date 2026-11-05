@@ -24,7 +24,7 @@ from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
 from .session import CaptureService, _now
-from .shotlist import SHOTLISTS
+from .shotlist import MVP_SHOTLIST, QUICK_SHOTLIST, SHOTLISTS
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
 from .web import App, CodeRedeemer, LiveFeed, Submitter, WaitingList, make_server
@@ -108,7 +108,11 @@ def serve(host: str, port: int) -> int:
     shotlist_name = os.environ.get("TRACE_BOOTH_SHOTLIST", "mvp")
     if shotlist_name not in SHOTLISTS:
         raise SystemExit(f"TRACE_BOOTH_SHOTLIST는 {', '.join(SHOTLISTS)} 중 하나여야 해요")
-    service = CaptureService(store, cameras, presets, data_dir, steps=SHOTLISTS[shotlist_name])
+    steps = SHOTLISTS[shotlist_name]
+    # kb·side는 학습 촬영 전용: 출고·반납은 위·아래(mvp) 목록을 그대로 쓴다
+    checkout = steps if shotlist_name in ("mvp", "full") else MVP_SHOTLIST
+    mode_steps = {"QUICK": QUICK_SHOTLIST, "OUT": checkout, "RET": checkout}
+    service = CaptureService(store, cameras, presets, data_dir, steps=steps, mode_steps=mode_steps)
     objects = _object_store()
     if objects is None:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")

@@ -110,11 +110,40 @@ def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tu
     return tuple(Step(i, k, text, f, li, cams) for i, (k, text, f, li, cams) in enumerate(raw))
 
 
+def _build_kb() -> tuple[Step, ...]:
+    """키보드만(11/5): 카메라는 위에 그대로 두고 펼친 노트북을 L1·L2·L4로 찍는다(CAM1·CAM2, 6장)."""
+    raw: list[tuple] = [
+        (StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS, False),
+        (StepKind.NOTICE, "노트북을 펼쳐 100° 가이드에 맞추고, 바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮기세요", None, None, (), False),
+    ]
+    for light in (Light.L1, Light.L2, Light.L4):
+        raw.append((StepKind.SHOT, f"{_POSE[Face.KB]} · {light_instruction(light)}", Face.KB, light, _TOP_CAMS, False))
+    return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
+
+
+def _build_side() -> tuple[Step, ...]:
+    """옆면만(11/5): CAM1을 하루에 한 번만 책상에 내리고 여러 대를 몰아서 찍는다(CAM1, 10장 + SCR1 선택)."""
+    raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS, False)]
+    for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
+        for light in (Light.L1, Light.L2):
+            raw.append((StepKind.SHOT, f"{_POSE[face]} · {light_instruction(light)}", face, light, _SIDE_CAMS, False))
+    raw.append((StepKind.SHOT, f"{_POSE[Face.SCR1]} · {light_instruction(Light.OFF)}", Face.SCR1, Light.OFF, _SIDE_CAMS, Face.SCR1 not in REQUIRED_FACES))
+    return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
+
+
 DEFAULT_SHOTLIST: tuple[Step, ...] = _build()  # full(보관)
 MVP_SHOTLIST: tuple[Step, ...] = _build_mvp()
+KB_SHOTLIST: tuple[Step, ...] = _build_kb()
+SIDE_SHOTLIST: tuple[Step, ...] = _build_side()
 # 빠른 검사: 기기는 태블릿 목록에서 골랐으므로 ID 카드(SLATE) 없이 BOT → 뒤집어 TOP, 12장
 QUICK_SHOTLIST: tuple[Step, ...] = _build_mvp(slate=False)
-SHOTLISTS: dict[str, tuple[Step, ...]] = {"mvp": MVP_SHOTLIST, "full": DEFAULT_SHOTLIST}
+# 11/5 학습 촬영은 mvp(위·아래) → kb(노트북마다) → side(마지막에 몰아서) 순서. 목록을 바꿀 땐 하던 촬영을 끝내고 서버를 다시 켠다.
+SHOTLISTS: dict[str, tuple[Step, ...]] = {
+    "mvp": MVP_SHOTLIST,
+    "full": DEFAULT_SHOTLIST,
+    "kb": KB_SHOTLIST,
+    "side": SIDE_SHOTLIST,
+}
 
 
 def required_photo_count(steps: tuple[Step, ...] = DEFAULT_SHOTLIST) -> int:
