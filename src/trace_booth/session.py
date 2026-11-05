@@ -52,6 +52,7 @@ class SessionView:
     step: Step | None
     remaining_steps: int
     missing: list[str]
+    taken: bool = False  # 지금 단계를 이미 찍었는지(찍은 뒤 '다음'을 눌러야 넘어감)
 
 
 def _now() -> str:
@@ -122,7 +123,8 @@ class CaptureService:
         s = self.store.get_session(session_id)
         steps = self.steps_for(s)
         step = steps[s.current_step] if s.current_step < len(steps) else None
-        return SessionView(s, step, len(steps) - s.current_step, self.missing(session_id))
+        taken = step is not None and self._taken(s, step)
+        return SessionView(s, step, len(steps) - s.current_step, self.missing(session_id), taken)
 
     def shoot(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
@@ -130,12 +132,11 @@ class CaptureService:
             step = self._current(s)
             if not step.captures:
                 raise CaptureError("이 단계는 찍지 않는 안내 단계예요. '다음'을 누르세요")
-            shots = self._capture(s, step)
-            self.store.update_session(s.id, current_step=s.current_step + 1)
-            return shots
+            # 찍어도 단계는 그대로: 사진을 확인하고 '다음'을 눌러야 넘어간다(11/5, 조명을 바꾸기 전에 다음 단계 이름으로 찍히던 실수)
+            return self._capture(s, step)
 
     def retake(self, session_id: int) -> list[ShotRecord]:
-        """가장 최근에 찍은 단계를 새 번호로 다시 찍는다. 현재 단계는 그대로."""
+        """가장 최근에 찍은 단계(보통 지금 단계)를 새 번호로 다시 찍는다. 현재 단계는 그대로."""
         with self._lock:
             s = self.store.get_session(session_id)
             taken = self.store.shots(s.id)
@@ -146,20 +147,36 @@ class CaptureService:
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
             return self._capture(s, steps[taken[-1].step_index])
 
-    def acknowledge(self, session_id: int) -> None:
+    def advance(self, session_id: int, expected_step: int | None = None) -> None:
+        """다음 단계로. 찍는 단계는 그 단계의 카메라를 모두 찍은 뒤에만 넘어간다.
+
+        expected_step을 주면 지금 단계가 그 번호일 때만 넘어간다(두 번 눌러 안내 단계까지 건너뛰지 않게).
+        """
         with self._lock:
             s = self.store.get_session(session_id)
-            if self._current(s).kind is not StepKind.NOTICE:
-                raise CaptureError("안내 단계가 아니에요. 촬영 버튼을 누르세요")
+            step = self._current(s)
+            if expected_step is not None and expected_step != step.index:
+                raise CaptureError("이미 다음 단계로 넘어갔어요. 화면 안내를 확인하세요")
+            if step.captures and not self._taken(s, step):
+                raise CaptureError("이 단계를 아직 안 찍었어요. 촬영을 누르세요")
             self.store.update_session(s.id, current_step=s.current_step + 1)
+
+    def _taken(self, s: SessionRecord, step: Step) -> bool:
+        if not step.captures:
+            return False
+        have = {sh.camera for sh in self.store.shots(s.id) if sh.step_index == step.index}
+        return all(cam.value in have for cam in step.cameras)
 
     def skip_optional(self, session_id: int, reason: str) -> None:
         if not reason.strip():
             raise InvalidInput("건너뛰는 사유를 적어 주세요")
         with self._lock:
             s = self.store.get_session(session_id)
-            if not self._current(s).optional:
+            step = self._current(s)
+            if not step.optional:
                 raise CaptureError("건너뛸 수 있는 단계가 아니에요")
+            if any(sh.step_index == step.index for sh in self.store.shots(s.id)):
+                raise CaptureError("이 단계는 이미 찍었어요. '다음'을 누르세요")
             self.store.update_session(s.id, scr1_skip_reason=reason.strip(), current_step=s.current_step + 1)
 
     def missing(self, session_id: int) -> list[str]:

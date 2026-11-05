@@ -147,6 +147,7 @@ def test_detect_명령은_모델_클래스가_다르면_시작하지_않는다(s
 def test_다시_찍은_사진이_있으면_마지막_장만_탐지한다(service):
     s = service.start("MB02")
     service.shoot(s.id)  # SLATE
+    service.advance(s.id)
     service.shoot(s.id)  # TOP·L1 CAM1·CAM2
     service.retake(s.id)  # TOP·L1을 새 번호로
     image = np.zeros((1080, 1920), dtype=np.uint8)

@@ -71,7 +71,7 @@ def _state(app: App) -> dict:
             "index": v.step.index, "kind": v.step.kind.value, "instruction": v.step.instruction,
             "face": v.step.face.value if v.step.face else None,
             "light": v.step.light.value if v.step.light else None,
-            "cameras": [c.value for c in v.step.cameras], "optional": v.step.optional,
+            "cameras": [c.value for c in v.step.cameras], "optional": v.step.optional, "taken": v.taken,
         }
     return {
         "sessionId": v.session.public_id, "deviceId": v.session.device_id, "mode": v.session.mode,
@@ -191,7 +191,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 shots = svc.retake(app.current)
                 return self._json(201, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
             if action == "/next":
-                svc.acknowledge(app.current)
+                expected = self._body().get("step")
+                svc.advance(app.current, expected if isinstance(expected, int) else None)
                 return self._json(200, _state(app))
             if action == "/skip-scr1":
                 svc.skip_optional(app.current, str(self._body().get("reason", "")))

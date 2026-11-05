@@ -53,6 +53,8 @@ def test_시작_찍기_미리보기_완료_흐름(base):
     assert status == 201
     shot = json.loads(body)["shots"][0]
     assert shot["filename"] == "MB01_SLATE_CAM1_01.jpg"
+    step = json.loads(body)["state"]["step"]
+    assert step["kind"] == "SLATE" and step["taken"]  # 찍어도 단계는 그대로
     status, ctype, thumb = call(base, "GET", f"/api/shots/{shot['id']}/thumbnail")
     assert status == 200 and ctype == "image/jpeg" and thumb.startswith(b"\xff\xd8")
     status, ctype, _ = call(base, "GET", f"/api/shots/{shot['id']}/thumbnail?w=1600")  # 판정 화면 큰 사진
@@ -70,7 +72,9 @@ def test_시작_찍기_미리보기_완료_흐름(base):
         elif step["kind"] == "NOTICE":
             assert call(base, "POST", "/api/sessions/current/next")[0] == 200
         else:
-            assert call(base, "POST", "/api/sessions/current/shoot")[0] == 201
+            if not step["taken"]:
+                assert call(base, "POST", "/api/sessions/current/shoot")[0] == 201
+            assert call(base, "POST", "/api/sessions/current/next")[0] == 200
     status, _, body = call(base, "POST", "/api/sessions/current/complete")
     assert status == 200 and json.loads(body)["session"]["status"] == "COMPLETE"
     assert json.loads(call(base, "GET", "/api/queue")[2]) == {"pending": 29, "failed": 0, "conflict": 0}  # 필수 28 + SLATE 1
