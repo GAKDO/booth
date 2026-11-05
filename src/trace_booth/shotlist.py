@@ -127,7 +127,7 @@ def _build_side() -> tuple[Step, ...]:
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
         for light in (Light.L1, Light.L2):
             raw.append((StepKind.SHOT, f"{_POSE[face]} · {light_instruction(light)}", face, light, _SIDE_CAMS, False))
-    raw.append((StepKind.SHOT, _POSE[Face.SCR1], Face.SCR1, Light.OFF, _SIDE_CAMS, Face.SCR1 not in REQUIRED_FACES))
+    raw.append((StepKind.SHOT, f"{_POSE[Face.SCR1]} · {light_instruction(Light.OFF)}", Face.SCR1, Light.OFF, _SIDE_CAMS, Face.SCR1 not in REQUIRED_FACES))
     return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
 
 
