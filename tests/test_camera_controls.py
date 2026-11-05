@@ -65,3 +65,33 @@ def test_값이_없으면_아무것도_넣지_않는다() -> None:
     cam = FakeCamera()
     run_v4l2_ctl("/dev/video0", {}, run=cam)
     assert cam.sets == []
+
+
+class OffByCamera(FakeCamera):
+    """넣은 값과 조금 다르게 읽어 주는 카메라."""
+
+    def __init__(self, offsets: dict[str, int]) -> None:
+        super().__init__()
+        self.offsets = offsets
+
+    def __call__(self, args: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        r = super().__call__(args, **kw)
+        if args[3] == "-c":
+            name = args[4].split("=")[0]
+            if name in self.offsets:
+                self.values[name] += self.offsets[name]
+        return r
+
+
+def test_화이트밸런스를_20K_다르게_읽어도_통과한다() -> None:
+    run_v4l2_ctl("/dev/video0", WANT, run=OffByCamera({"white_balance_temperature": -20}))
+
+
+def test_화이트밸런스가_50K보다_다르면_실패한다() -> None:
+    with pytest.raises(ControlMismatch):
+        run_v4l2_ctl("/dev/video0", WANT, run=OffByCamera({"white_balance_temperature": -100}))
+
+
+def test_gain은_2_다르면_실패한다() -> None:
+    with pytest.raises(ControlMismatch):
+        run_v4l2_ctl("/dev/video0", WANT, run=OffByCamera({"gain": -2}))
