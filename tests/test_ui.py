@@ -130,6 +130,26 @@ def test_사진을_찍기_전에는_확인_없이_바로_목록으로_돌아간�
     expect(page.locator("#waiting")).to_be_visible()
 
 
+def test_다시_찍기를_누르면_촬영처럼_찍는_중이_보이고_끝나면_돌아온다(page):
+    pick(page, "TEST-0001")
+    page.locator("#shoot").click()
+    expect(page.locator("#next")).to_be_visible()
+    held = []
+    page.route("**/api/sessions/current/retake", lambda route: held.append(route))  # 응답을 잠시 붙잡아 둔다
+    page.locator("#retake").click()
+    expect(page.locator("#retake")).to_have_text("찍는 중…")
+    expect(page.locator("#retake")).to_be_disabled()
+    expect(page.locator("#next")).to_be_disabled()
+    expect(page.locator("#back")).to_be_disabled()
+    page.wait_for_function("1")  # 붙잡힌 요청을 처리할 틈
+    assert len(held) == 1
+    held[0].continue_()
+    expect(page.locator("#retake")).to_have_text("다시 찍기")
+    expect(page.locator("#retake")).to_be_enabled()
+    expect(page.locator("#next")).to_be_enabled()
+    expect(page.locator("#back")).to_be_enabled()
+
+
 def test_찍던_중_목록으로를_누르면_한_번_묻고_계속_찍기면_그대로_남는다(page):
     pick(page, "TEST-0001")
     shoot(page, 1)
