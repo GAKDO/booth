@@ -431,16 +431,18 @@ function render() {
   const s = state, step = s && s.step;
   const busy = !s || s.status !== "IN_PROGRESS";
   const notice = !!step && step.kind === "NOTICE";
+  const taken = !!step && step.taken;  // 찍은 단계는 사진을 확인하고 '다음'을 눌러야 넘어간다
+  const forward = notice || taken;
   $("shoot").disabled = busy || !step || notice;
-  $("next").disabled = busy || !step || !notice;
+  $("next").disabled = busy || !step || !forward;
   $("skip").disabled = busy || !step || !step.optional;
   $("retake").disabled = busy;
   $("complete").disabled = busy;
   if (!s) return;
-  // 주 버튼은 하나만: 안내 단계는 '다음', 목록 끝은 '완료', 그 밖은 '촬영'
+  // 주 버튼은 하나만: 안내 단계·찍은 단계는 '다음', 목록 끝은 '완료', 그 밖은 '촬영'
   const end = !busy && !step;
-  $("next").hidden = !notice;
-  $("shoot").hidden = notice || end || busy;
+  $("next").hidden = !forward;
+  $("shoot").hidden = forward || end || busy;
   $("complete").className = end ? "btn primary big" : "btn";
   $("complete").hidden = busy;
   $("retake").hidden = busy;
@@ -482,7 +484,10 @@ function renderStep(s, step) {
   $("missingNo").textContent = s.missing.length ? `빠진 사진 ${s.missing.length}장` : "빠진 사진 없음";
   $("stepCard").className = step && step.kind === "NOTICE" ? "step notice" : "step";
   if (step) {
-    setInstruction(step.instruction, step.kind === "NOTICE" ? "안내 · 준비되면 다음" : step.kind === "SLATE" ? "ID 카드" : "촬영");
+    const kind = step.kind === "NOTICE" ? "안내 · 준비되면 다음"
+      : step.taken ? "찍음 · 사진을 확인하고 다음 (잘못 찍었으면 다시 찍기)"
+      : step.kind === "SLATE" ? "ID 카드" : "촬영";
+    setInstruction(step.instruction, kind);
   } else {
     setInstruction("목록 끝. 완료를 누르세요", "끝");
   }
@@ -932,7 +937,11 @@ $("shoot").onclick = async () => {
 $("retake").onclick = async () => {
   const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); render();
 };
-$("next").onclick = async () => { state = await call("POST", "/api/sessions/current/next"); render(); };
+$("next").onclick = async () => {
+  state = await call("POST", "/api/sessions/current/next");
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true;  // 다음 단계에 앞 단계 사진이 남지 않게
+  render();
+};
 $("skip").onclick = async () => {
   const reason = prompt("SCR1을 건너뛰는 사유");
   if (reason) { state = await call("POST", "/api/sessions/current/skip-scr1", { reason }); render(); }

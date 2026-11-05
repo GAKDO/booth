@@ -33,7 +33,7 @@ def run_to_end(service: CaptureService, session_id: str, skip_scr1: str | None =
             return
         if step.optional and skip_scr1:
             service.skip_optional(session_id, skip_scr1)
-        elif step.captures:
-            service.shoot(session_id)
         else:
-            service.acknowledge(session_id)
+            if step.captures:
+                service.shoot(session_id)
+            service.advance(session_id)

@@ -99,6 +99,9 @@ def shoot(page: Page, times: int) -> None:
     for _ in range(times):
         before = page.locator("#stepNo").inner_text()
         page.locator("#shoot").click()
+        expect(page.locator("#next")).to_be_visible()  # 찍어도 단계는 그대로, '다음'이 뜬다
+        expect(page.locator("#stepNo")).to_have_text(before)
+        page.locator("#next").click()
         expect(page.locator("#stepNo")).not_to_have_text(before)  # 다음 단계로 넘어갈 때까지 기다림
 
 
@@ -255,7 +258,9 @@ def test_확인_시트가_열리면_Tab은_시트_안에서만_돌고_닫으면_
 def finish_quick(page: Page) -> None:
     pick(page, "TEST-0001")
     shoot(page, 3)
+    expect(page.locator("#stepCard")).to_have_class("step notice")
     page.locator("#next").click()
+    expect(page.locator(".phase.now")).to_contain_text("상판")
     shoot(page, 3)
     page.locator("#complete").click()
     expect(page.locator("#verdict")).to_have_text("문제 있음")
@@ -523,3 +528,18 @@ def test_학습_탭과_반납_탭에는_부스_코드_칸이_없다(page):
     expect(page.locator("#codeBox")).to_be_hidden()
     page.locator('#modes button[data-mode="RET"]').click()
     expect(page.locator("#codeBox")).to_be_hidden()
+
+
+def test_촬영을_누르면_같은_단계에_머물고_다음을_눌러야_다음_조명으로_넘어간다(page):
+    pick(page, "TEST-0001")
+    expect(page.locator("#chips")).to_contain_text("L1")
+    page.locator("#shoot").click()
+    expect(page.locator("#next")).to_be_visible()
+    expect(page.locator("#shoot")).to_be_hidden()
+    expect(page.locator("#stepKind")).to_contain_text("사진을 확인하고 다음")
+    expect(page.locator("#thumbs figure")).to_have_count(2)
+    expect(page.locator("#chips")).to_contain_text("L1")
+    page.locator("#next").click()
+    expect(page.locator("#chips")).to_contain_text("L2")
+    expect(page.locator("#shoot")).to_be_visible()
+    expect(page.locator("#lastShots")).to_be_hidden()

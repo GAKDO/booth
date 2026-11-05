@@ -23,6 +23,7 @@ def test_저장소에_닿지_않을_때_찍으면_촬영은_실패하지_않고_
     worker = UploadWorker(service.store, objects)
     sid = service.start("MB01").id
     service.shoot(sid)
+    service.advance(sid)
     service.shoot(sid)
     assert worker.run_once() == (0, 1)
     counts = service.store.upload_counts()
@@ -52,6 +53,7 @@ def test_도구를_다시_켜면_이전에_올리지_못한_사진을_계속_올
     first = CaptureService(Store(db), cams, presets, tmp_path / "data", min_free_bytes=0)
     sid = first.start("MB01").id
     first.shoot(sid)
+    first.advance(sid)
     first.shoot(sid)
     objects = FakeObjectStore()
     drain(UploadWorker(Store(db), objects))
@@ -98,6 +100,7 @@ def test_올리는_객체에_면_조명_카메라_해시_메타데이터를_붙�
     objects = FakeObjectStore()
     sid = service.start("MB01").id
     service.shoot(sid)
+    service.advance(sid)
     shot = service.shoot(sid)[1]
     UploadWorker(service.store, objects).upload(shot)
     meta = objects.objects["MB01/MB01_TOP_L1_CAM2_01.jpg"][1]

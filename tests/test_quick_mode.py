@@ -265,8 +265,9 @@ def test_태블릿에서_기기를_골라_찍고_완료하면_결과_API가_판�
     assert status == 200 and json.loads(body)["status"] == "SHOOTING"
 
     while (state := json.loads(call(quick_base, "GET", "/api/sessions/current")[2]))["step"]:
-        action = "/shoot" if state["step"]["kind"] == "SHOT" else "/next"
-        assert call(quick_base, "POST", "/api/sessions/current" + action)[0] in (200, 201)
+        if state["step"]["kind"] == "SHOT":
+            assert call(quick_base, "POST", "/api/sessions/current/shoot")[0] == 201
+        assert call(quick_base, "POST", "/api/sessions/current/next")[0] == 200
     assert call(quick_base, "POST", "/api/sessions/current/complete")[0] == 200
 
     status, _, body = call(quick_base, "GET", "/api/sessions/current/result")

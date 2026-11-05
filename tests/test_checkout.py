@@ -54,6 +54,7 @@ def test_출고_세트를_올리면_면_조명_카메라마다_한_장씩_서버
 def test_다시_찍은_사진이_있으면_마지막_장만_올린다(service):
     s = service.start("MB02")
     service.shoot(s.id)  # SLATE
+    service.advance(s.id)
     service.shoot(s.id)  # TOP·L1 CAM1·CAM2
     service.retake(s.id)  # TOP·L1을 새 번호로
     photos = select_photos(service.store.shots(s.id))
