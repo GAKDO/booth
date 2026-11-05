@@ -935,7 +935,17 @@ $("shoot").onclick = async () => {
   finally { $("shoot").textContent = "촬영"; render(); }
 };
 $("retake").onclick = async () => {
-  const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); render();
+  // 촬영 버튼과 똑같이 '찍는 중…'을 보이고, 찍는 동안 다른 버튼은 누르지 못하게 한다
+  const keep = ["shoot", "next", "back", "complete"].map((id) => [id, $(id).disabled]);
+  for (const [id] of keep) $(id).disabled = true;
+  $("retake").disabled = true;
+  $("retake").textContent = "찍는 중…";
+  try { const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); }
+  finally {
+    $("retake").textContent = "다시 찍기";
+    for (const [id, was] of keep) $(id).disabled = was;  // 실패해도 원래대로 돌려놓고 render()가 다시 정한다
+    render();
+  }
 };
 $("next").onclick = async () => {
   $("next").disabled = true;  // 두 번 눌러도 한 번만(서버도 단계 번호로 한 번 더 막는다)
