@@ -87,6 +87,17 @@ trace-booth serve --port 8320
 
 촬영 목록은 기본이 `mvp`(11/3 방향 전환)입니다. BOT은 L1 → L2 → L3, 뒤집어 TOP은 L3 → L2 → L1로 한 장씩, CAM1·CAM2로 찍어 한 대에 12장(+ID 카드 1장)입니다. 조명 값은 프리셋 파일의 L1·L2·L3를 씁니다. 보관한 28장 목록(9면×여러 조명)이 필요하면 `TRACE_BOOTH_SHOTLIST=full`을 넣습니다. 목록을 바꾸면 하던 촬영은 끝내고 새로 시작합니다.
 
+**옆면 전용 카메라(11/6):** 옆면(`side`) 목록은 CAM1을 책상으로 내리는 대신 책상 높이에 따로 단 카메라로 찍을 수 있습니다. 모델이 달라도(Logitech Brio 등) MJPG 1920x1080을 내면 됩니다. 넣지 않으면 예전처럼 CAM1로 찍습니다.
+
+```bash
+export TRACE_BOOTH_SIDE_CAM=<옆면 카메라 by-path 경로>   # 예: ...-usb-0:1.4:1.0-video-index0
+export TRACE_BOOTH_SIDE_ROTATE=180                      # 뒤집어 달았으면 180(기본). 바로 달았으면 0
+export TRACE_BOOTH_SIDE_PRESETS=~/trace-booth-presets.side.json   # 선택. 없으면 위 카메라 프리셋(L1·L2·OFF)을 그대로 넣음
+```
+
+- 옆면 목록의 CAM1 사진(SLATE 포함)만 이 카메라로 찍고, 파일 이름은 `..._CAM1_...` 그대로입니다(카메라 코드 계약을 바꾸지 않음). 어느 카메라였는지는 날짜·`camera_settings`로 구분합니다.
+- 실시간 보기에 `옆면` 화면이 생기고, 저장 사진과 같은 방향(회전 적용 뒤)으로 보입니다.
+
 `MINIO_ENDPOINT`를 넣지 않으면 업로드 없이 로컬에만 남습니다. 업로드까지 볼 때는 `MINIO_ENDPOINT`·`MINIO_ACCESS_KEY`·`MINIO_SECRET_KEY`를 환경 변수로 넣습니다.
 
 - 주소는 S3 API `http://storage.java21.net:8000`입니다. `https://storage.java21.net/`은 웹 관리 화면이라 업로드가 안 됩니다. HTTP지만 S3 요청은 SigV4 서명이라 secret key 자체는 전송되지 않습니다(Access Key ID와 서명만). 다만 사진 내용은 같은 망에서 보일 수 있고 가로챈 요청은 약 15분 안에 다시 보낼 수 있어, 부스는 학교 내부망에서만 올립니다. trace-capture 키는 trace-raw에 올리기·확인만 되고 지우기는 안 되며, trace-raw는 버전 관리가 켜져 있습니다. HTTPS는 학교 관리자만 열 수 있어 MVP는 이대로 갑니다(A 11/2).

@@ -177,9 +177,9 @@
   .live-size { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:15px; font-weight:700; }
   .live-size input { width:180px; accent-color:var(--accent); height:44px; }
   /* 크기 막대(--live-w, 화면 폭의 %)만큼 본문 폭을 넘어서도 가운데로 넓힌다 */
-  .live-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  /* 고른 카메라 수(--cols)만큼 칸이 늘어난다: 1대면 크게, 2대면 반씩, 3대면 셋으로 */
+  .live-grid { display:grid; grid-template-columns:repeat(var(--cols, 2), 1fr); gap:12px;
     width:max(100%, min(calc(100vw - 32px), calc(var(--live-w, 0) * 1vw))); position:relative; left:50%; transform:translateX(-50%); }
-  .live-grid.one { grid-template-columns:1fr; }
   #live figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   #live img { display:block; width:100%; aspect-ratio:16/9; background:#000; cursor:zoom-in; }
   #live img:fullscreen { object-fit:contain; cursor:zoom-out; }
@@ -286,13 +286,14 @@
     <div class="live-bar">
       <span class="title">실시간 카메라</span>
       <div class="seg" id="liveLayout" role="group" aria-label="보일 카메라">
-        <button data-v="both" aria-pressed="true">둘 다</button><button data-v="CAM1" aria-pressed="false">CAM1</button><button data-v="CAM2" aria-pressed="false">CAM2</button>
+        <button data-v="all" aria-pressed="true">모두</button><button data-v="CAM1" aria-pressed="false">CAM1</button><button data-v="CAM2" aria-pressed="false">CAM2</button><button data-v="SIDE" aria-pressed="false" hidden>옆면</button>
       </div>
       <label class="live-size">크기<input type="range" id="liveSize" min="0" max="100" step="5" value="0" aria-label="실시간 화면 크기"></label>
     </div>
     <div class="live-grid" id="liveGrid">
       <figure id="liveFigCAM1"><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
       <figure id="liveFigCAM2"><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+      <figure id="liveFigSIDE" hidden><img id="liveSIDE" alt="옆면 카메라 실시간"><figcaption>옆면 카메라 (책상 높이, 뒤집어 단 것을 바로 세워 보임 · 저장 사진도 이 방향) · 옆면 목록의 CAM1 사진은 이 카메라로 찍어요</figcaption></figure>
     </div>
   </div>
 
@@ -770,18 +771,34 @@ function showShots(shots) {
     `<figcaption>${esc(x.filename)}</figcaption></figure>`).join("");
 }
 
-// 실시간 보기: 보일 카메라(둘 다·CAM1·CAM2)와 크기(0=본문 폭 ~ 100=화면 끝까지). 고른 값은 이 태블릿에만 기억한다
-const liveView = { layout: "both", size: 0 };
-try { Object.assign(liveView, JSON.parse(localStorage.getItem("trace.booth.live") || "{}")); } catch (e) { /* 기억 못 해도 기본값 */ }
+// 실시간 보기: 보일 카메라와 크기(0=본문 폭 ~ 100=화면 끝까지). 고른 값은 이 태블릿에만 기억한다
+// 카메라는 여러 대를 골라 켜고 끈다(11/6). cams=null이면 '모두', 아니면 고른 카메라만 고른 수만큼 칸을 나눠 보인다
+const liveView = { cams: null, size: 0 };
+let liveCams = ["CAM1", "CAM2"];  // 서버에 있는 카메라. 옆면 카메라(SIDE)는 TRACE_BOOTH_SIDE_CAM을 넣었을 때만
+try {
+  const saved = JSON.parse(localStorage.getItem("trace.booth.live") || "{}");
+  if (typeof saved.size === "number") liveView.size = saved.size;
+  if (Array.isArray(saved.cams)) liveView.cams = saved.cams;
+  else if (saved.layout && saved.layout !== "both") liveView.cams = [saved.layout];  // 예전 한 대 고르기 기억
+} catch (e) { /* 기억 못 해도 기본값 */ }
+function shownCams() {
+  const picked = (liveView.cams || []).filter(c => liveCams.includes(c));
+  return picked.length ? picked : liveCams;  // 고른 게 없으면(또는 없는 카메라뿐이면) 모두
+}
 function saveLive() { try { localStorage.setItem("trace.booth.live", JSON.stringify(liveView)); } catch (e) { /* 무시 */ } }
 function applyLive() {
   const on = !$("live").hidden;
-  for (const b of document.querySelectorAll("#liveLayout button")) b.setAttribute("aria-pressed", String(b.dataset.v === liveView.layout));
+  const shown = shownCams();
+  const all = !(liveView.cams || []).some(c => liveCams.includes(c));
+  for (const b of document.querySelectorAll("#liveLayout button")) {
+    const pressed = b.dataset.v === "all" ? all : !all && shown.includes(b.dataset.v);
+    b.setAttribute("aria-pressed", String(pressed));
+  }
   $("liveSize").value = liveView.size;
   $("liveGrid").style.setProperty("--live-w", liveView.size);
-  $("liveGrid").classList.toggle("one", liveView.layout !== "both");
-  for (const cam of ["CAM1", "CAM2"]) {
-    const show = liveView.layout === "both" || liveView.layout === cam;
+  $("liveGrid").style.setProperty("--cols", String(Math.min(shown.length, 3)));
+  for (const cam of ["CAM1", "CAM2", "SIDE"]) {
+    const show = shown.includes(cam);
     $("liveFig" + cam).hidden = !show;
     // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
     const want = on && show;
@@ -798,11 +815,26 @@ $("liveToggle").onclick = () => {
   applyLive();
 };
 for (const b of document.querySelectorAll("#liveLayout button")) {
-  b.onclick = () => { liveView.layout = b.dataset.v; saveLive(); applyLive(); };
+  b.onclick = () => {
+    const v = b.dataset.v;
+    if (v === "all") liveView.cams = null;
+    else if (!liveView.cams) liveView.cams = [v];  // '모두'에서 하나를 누르면 그 하나만 크게
+    else if (liveView.cams.includes(v)) liveView.cams = liveView.cams.filter(c => c !== v);  // 다시 누르면 뺀다
+    else liveView.cams = liveView.cams.concat(v);  // 다른 카메라를 누르면 칸이 하나 늘어난다
+    if (liveView.cams && !liveView.cams.filter(c => liveCams.includes(c)).length) liveView.cams = null;  // 다 빼면 모두
+    saveLive(); applyLive();
+  };
 }
 $("liveSize").oninput = () => { liveView.size = Number($("liveSize").value); saveLive(); applyLive(); };
 applyLive();
-for (const cam of ["CAM1", "CAM2"]) {
+fetch("/api/live").then(r => r.ok ? r.json() : null).then(j => {
+  if (!j || !Array.isArray(j.cameras)) return;
+  liveCams = ["CAM1", "CAM2"].concat(j.cameras.includes("SIDE") ? ["SIDE"] : []);  // 위 카메라 두 대는 늘 보인다
+  const sideBtn = document.querySelector('#liveLayout button[data-v="SIDE"]');
+  sideBtn.hidden = !liveCams.includes("SIDE");
+  applyLive();
+}).catch(() => { /* 목록을 못 받아도 CAM1·CAM2는 보인다 */ });
+for (const cam of ["CAM1", "CAM2", "SIDE"]) {
   $("live" + cam).onclick = (e) => {
     if (document.fullscreenElement) document.exitFullscreen(); else e.target.requestFullscreen();
   };
@@ -1005,7 +1037,7 @@ const LIST_LABEL = {};
 const LIST_CARD = {
   mvp: ["위·아래", "바닥 → 뒤집어 상판. 어제와 같은 자리"],
   kb: ["펼친 상태", "100° 가이드에 맞추고, LED 바 #2를 앞(L4)으로"],
-  side: ["옆면", "CAM1을 책상 높이로 내리고, 배경판을 뒤 30cm에"],
+  side: ["옆면", "책상 높이 옆면 카메라(없으면 CAM1을 내려서)로, 배경판은 뒤 30cm에"],
 };
 let shotlistValue = "";
 function pickShotlist(name) {

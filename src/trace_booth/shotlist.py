@@ -40,11 +40,11 @@ _POSE = {
     Face.TOP: "TOP: 닫아서 상판이 위",
     Face.BOT: "BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기)",
     Face.KB: "KB: 펼쳐서 100° 가이드에 맞춤",
-    Face.SF: "SF 면이 CAM1 쪽을 향하게",
-    Face.SB: "SB 면이 CAM1 쪽을 향하게",
-    Face.SL: "SL 면이 CAM1 쪽을 향하게",
-    Face.SR: "SR 면이 CAM1 쪽을 향하게",
-    Face.SCR0: "SCR0: 화면을 끈 채 화면 쪽이 CAM1 쪽을 향하게",
+    Face.SF: "SF(앞 모서리)가 옆면 카메라 쪽을 향하게",
+    Face.SB: "SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게",
+    Face.SL: "SL(왼쪽 면)이 옆면 카메라 쪽을 향하게",
+    Face.SR: "SR(오른쪽 면)이 옆면 카메라 쪽을 향하게",
+    Face.SCR0: "SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게",
     Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기)",
 }
 _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
@@ -122,7 +122,10 @@ def _build_kb() -> tuple[Step, ...]:
 
 
 def _build_side() -> tuple[Step, ...]:
-    """옆면만(11/5): CAM1을 하루에 한 번만 책상에 내리고 여러 대를 몰아서 찍는다(CAM1, 10장 + SCR1 선택)."""
+    """옆면만(11/5): 책상 높이 카메라로 여러 대를 몰아서 찍는다(CAM1 이름, 10장 + SCR1 선택).
+
+    TRACE_BOOTH_SIDE_CAM이 있으면 그 카메라(11/6 Brio)로, 없으면 CAM1을 책상에 내려 찍는다.
+    """
     raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS, False)]
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
         for light in (Light.L1, Light.L2):
@@ -150,7 +153,7 @@ SHOTLISTS: dict[str, tuple[Step, ...]] = {
 SHOTLIST_LABELS: dict[str, str] = {
     "mvp": "위·아래(BOT·TOP)",
     "kb": "펼친 상태(키보드)",
-    "side": "옆면(CAM1을 책상 높이로)",
+    "side": "옆면(책상 높이 카메라)",
     "full": "전체(보관용)",
 }
 
