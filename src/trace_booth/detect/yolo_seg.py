@@ -100,22 +100,36 @@ def decode(output0: np.ndarray, output1: np.ndarray, box: Letterbox, min_confide
     offset = cls[:, None].astype(np.float32) * (size * 4)  # 클래스마다 떨어뜨려 클래스별 NMS
     keep = nms(boxes + offset, conf, iou)[:MAX_DETECTIONS]
 
+    # 마스크는 상자 안쪽만 계산한다(11/6 추론 시간 줄이기). 예전에는 잡힌 것마다 160×160 마스크 전체를 640×640으로
+    # 늘려 상자 밖을 버렸는데, 덜 학습된 모델이 상자를 많이 내면 이 후처리가 엔진 실행보다 오래 걸렸다.
     proto_h, proto_w = protos.shape[1:]
-    coeffs = preds[keep, 4 + num_classes:]
-    masks = 1 / (1 + np.exp(-(coeffs @ protos.reshape(MASK_COEFFS, -1))))
-    masks = masks.reshape(-1, proto_h, proto_w)
-    ratio = proto_w / size
-    ys, xs = np.arange(proto_h)[:, None], np.arange(proto_w)[None, :]
+    flat = protos.reshape(MASK_COEFFS, proto_h, proto_w)
+    ratio = proto_w / size  # 입력 px × ratio = 원형 px
     out: list[RawDetection] = []
-    for n, i in enumerate(keep):
-        x0, y0, x1, y1 = boxes[i] * ratio
-        inside = (xs >= x0) & (xs < x1) & (ys >= y0) & (ys < y1)  # 상자 밖 마스크는 버린다
-        full = cv2.resize(masks[n] * inside, (size, size), interpolation=cv2.INTER_LINEAR) > 0.5
-        poly = _polygon(full)
+    for i in keep:
+        x0, y0, x1, y1 = (float(v) for v in np.clip(boxes[i], 0, size))
+        if x1 - x0 < 1 or y1 - y0 < 1:
+            continue
+        px0, py0 = int(np.floor(x0 * ratio)), int(np.floor(y0 * ratio))
+        px1, py1 = min(proto_w, int(np.ceil(x1 * ratio))), min(proto_h, int(np.ceil(y1 * ratio)))
+        if px1 <= px0 or py1 <= py0:
+            continue
+        coeffs = preds[i, 4 + num_classes:]
+        crop = flat[:, py0:py1, px0:px1]
+        logits = (coeffs @ crop.reshape(MASK_COEFFS, -1)).reshape(py1 - py0, px1 - px0)
+        left, top = px0 / ratio, py0 / ratio  # 잘라 낸 조각의 입력 px 왼쪽 위
+        width, height = round((px1 - px0) / ratio), round((py1 - py0) / ratio)
+        # sigmoid(x) > 0.5 ⇔ x > 0 이라 늘린 로짓을 0으로 자른다(exp 계산 생략)
+        up = cv2.resize(logits, (width, height), interpolation=cv2.INTER_LINEAR) > 0
+        bx0, by0 = max(0, round(x0 - left)), max(0, round(y0 - top))
+        bx1, by1 = min(width, round(x1 - left)), min(height, round(y1 - top))
+        mask = np.zeros_like(up)
+        mask[by0:by1, bx0:bx1] = up[by0:by1, bx0:bx1]  # 상자 밖 마스크는 버린다
+        poly = _polygon(mask)
         if poly is None:
             continue
-        px = np.clip((poly[:, 0] - box.pad_x) / box.scale, 0, box.width)
-        py = np.clip((poly[:, 1] - box.pad_y) / box.scale, 0, box.height)
+        px = np.clip((poly[:, 0] + left - box.pad_x) / box.scale, 0, box.width)
+        py = np.clip((poly[:, 1] + top - box.pad_y) / box.scale, 0, box.height)
         out.append(RawDetection(int(cls[i]), float(conf[i]),
                                 [(round(float(x), 1), round(float(y), 1)) for x, y in zip(px, py)]))
     return out

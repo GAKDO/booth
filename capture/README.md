@@ -221,6 +221,8 @@ set -a; . ~/.config/trace-booth.env; set +a
 # 엔진 만들기·의존성(tensorrt, Jetson 시스템 패키지)은 specs/002-jetson-detection/quickstart.md
 export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine   # 같은 폴더에 model.json
 # 엔진이 오기 전 흐름만 시험: TRACE_BOOTH_ENGINE 대신 export TRACE_BOOTH_DETECTOR=none (늘 "문제 없음" + 시험 표시)
+# 판정 시간 줄이기(11/6): 찍을 때마다 미리 탐지는 기본으로 켜져 있음(끄려면 TRACE_BOOTH_PREDETECT=0)
+# 그래도 1분을 넘으면 가장 선명한 L3 사진만 판정: export TRACE_BOOTH_DETECT_LIGHTS=L3 (12장 → 4장)
 trace-booth serve
 ```
 
@@ -228,4 +230,4 @@ trace-booth serve
 - 목록이 비어 있으면 관리자 화면에서 렌탈을 열고 출고(OUT) 시점을 시작했는지 봅니다. 부스는 진행 중(OPEN) 렌탈 가운데 지금 시점이 OPEN인 것만 받습니다. MVP는 렌탈당 출고 검사 1번입니다.
 - 사진은 서버가 준 `https://gakdo.site/trace-captures/...` 주소로 바로 올라갑니다(한 장 64MB까지, 부스 JPEG는 훨씬 작음).
 - 엔진을 못 부르면 "판정 못 함"과 이유가 나오고, 고친 뒤 **다시 탐지**를 누르면 같은 사진으로 다시 돌립니다.
-- 화면의 "완료→판정 N초"가 11/6 실측값입니다(목표 30초, 기준 60초, 11/5 민서 결정).
+- 화면의 "완료→판정 N초"가 11/6 실측값입니다(목표 30초, 기준 60초, 11/5 민서 결정). 찍는 동안 미리 탐지한 사진은 빠지므로, 완료를 누른 뒤 실제로 기다린 시간입니다(BOT 6장은 뒤집는 사이 끝남).

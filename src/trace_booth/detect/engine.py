@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -19,6 +20,19 @@ class RawDetection:
     class_index: int
     confidence: float
     polygon: list[tuple[float, float]]  # 타일 px
+
+
+@dataclass
+class Stats:
+    """탐지기 안 구간 시간(초) 누적. bench가 어디가 느린지(입력 만들기·엔진·후처리) 보여 줄 때 쓴다."""
+
+    tiles: int = 0
+    prep: float = 0.0
+    run: float = 0.0
+    post: float = 0.0
+
+    def reset(self) -> None:
+        self.tiles, self.prep, self.run, self.post = 0, 0.0, 0.0, 0.0
 
 
 class Detector(Protocol):
@@ -137,6 +151,7 @@ class TensorRTDetector:
         self.size = int(self._host[self._input].shape[-1])
         self._conf = min_confidence
         self._iou = iou
+        self.stats = Stats()
 
     def raw(self, blob: Any) -> tuple[Any, Any]:
         np = self._np
@@ -154,9 +169,14 @@ class TensorRTDetector:
     def infer(self, tile: Any) -> list[RawDetection]:
         from .yolo_seg import decode, letterbox
 
+        t0 = time.perf_counter()
         blob, box = letterbox(tile, self.size)
+        t1 = time.perf_counter()
         out0, out1 = self.raw(blob)
-        return decode(out0, out1, box, self._conf, self._iou, self.size)
+        t2 = time.perf_counter()
+        found = decode(out0, out1, box, self._conf, self._iou, self.size)
+        _add(self.stats, t0, t1, t2, time.perf_counter())
+        return found
 
 
 class OnnxRuntimeDetector:
@@ -174,13 +194,26 @@ class OnnxRuntimeDetector:
         self.size = int(self._session.get_inputs()[0].shape[-1])
         self._conf = min_confidence
         self._iou = iou
+        self.stats = Stats()
 
     def infer(self, tile: Any) -> list[RawDetection]:
         from .yolo_seg import decode, letterbox
 
+        t0 = time.perf_counter()
         blob, box = letterbox(tile, self.size)
+        t1 = time.perf_counter()
         out0, out1 = sorted(self._session.run(None, {self._input: blob}), key=lambda a: a.ndim)
-        return decode(out0, out1, box, self._conf, self._iou, self.size)
+        t2 = time.perf_counter()
+        found = decode(out0, out1, box, self._conf, self._iou, self.size)
+        _add(self.stats, t0, t1, t2, time.perf_counter())
+        return found
+
+
+def _add(stats: Stats, t0: float, t1: float, t2: float, t3: float) -> None:
+    stats.tiles += 1
+    stats.prep += t1 - t0
+    stats.run += t2 - t1
+    stats.post += t3 - t2
 
 
 def open_detector(path: Path) -> Detector:

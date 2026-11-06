@@ -107,16 +107,30 @@ def detect_photo(image: Any, detector: Detector, info: ModelInfo, size: int = 64
     return dedupe(found)
 
 
+def judged_shots(shots: list[ShotRecord], lights: frozenset[str] | None = None) -> list[ShotRecord]:
+    """판정에 넣는 사진: 올리는 세트와 같은 마지막 장 중에서 lights(예: L3만)에 든 것. lights가 없으면 전부."""
+    return [s for s in latest_shots(shots) if not lights or s.light in lights]
+
+
+def detect_shot(shot: ShotRecord, detector: Detector, info: ModelInfo, load: ImageLoader) -> PhotoResult:
+    image = load(shot.local_path)
+    found = detect_photo(image, detector, info)
+    height, width = image.shape[:2]
+    return PhotoResult(shot.face or "", shot.light or "", shot.camera, shot.filename, found, int(width), int(height))
+
+
 def detect_set(shots: list[ShotRecord], detector: Detector, info: ModelInfo, load: ImageLoader,
-               clock: Callable[[], float] = time.perf_counter) -> SetResult:
-    """면 사진만(SLATE 제외), 다시 찍은 면은 마지막 장만 탐지한다(올리는 세트와 같은 사진). 원본 파일은 읽기만 한다."""
+               clock: Callable[[], float] = time.perf_counter, lights: frozenset[str] | None = None,
+               done: dict[str, PhotoResult] | None = None) -> SetResult:
+    """면 사진만(SLATE 제외), 다시 찍은 면은 마지막 장만 탐지한다(올리는 세트와 같은 사진). 원본 파일은 읽기만 한다.
+
+    lights를 주면 그 조명 사진만 판정한다. done(사진 경로 → 결과)은 찍는 동안 미리 탐지해 둔 것으로, 있으면 다시 돌리지
+    않는다(같은 모델로 돌린 것만 넘긴다). seconds는 이 함수 안에서 걸린 시간(미리 한 몫은 빠진다).
+    """
     start = clock()
     result = SetResult(info.model_version)
-    for shot in latest_shots(shots):
-        image = load(shot.local_path)
-        found = detect_photo(image, detector, info)
-        height, width = image.shape[:2]
-        result.photos.append(PhotoResult(shot.face or "", shot.light or "", shot.camera, shot.filename, found,
-                                         int(width), int(height)))
+    for shot in judged_shots(shots, lights):
+        ready = done.get(shot.local_path) if done else None
+        result.photos.append(ready if ready is not None else detect_shot(shot, detector, info, load))
     result.seconds = round(clock() - start, 3)
     return result

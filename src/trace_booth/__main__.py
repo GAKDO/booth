@@ -14,7 +14,7 @@ from .camera import OpenCvCamera, check_rotate
 from .camera_presets import Presets
 from .capture_client import ApiError, BoothAuth, CaptureClient
 from .checkout import submit_session
-from .codes import Camera
+from .codes import Camera, Light
 from .detect.build import build_engine
 from .detect.engine import DetectError, Detector, ModelInfo, open_detector
 from .detect.runner import Photo, detect_photos, detect_set
@@ -80,6 +80,18 @@ def _detector_source() -> DetectorSource | None:
     if os.environ.get("TRACE_BOOTH_DETECTOR") == "none":
         return no_engine_source
     return None
+
+
+def _judge_lights(raw: str | None = None) -> frozenset[str] | None:
+    """TRACE_BOOTH_DETECT_LIGHTS(예: L3 또는 L1,L3). 비우면 전부. 판정 시간을 줄이려 L3(가장 선명)만 볼 때 쓴다."""
+    value = os.environ.get("TRACE_BOOTH_DETECT_LIGHTS", "") if raw is None else raw
+    names = {v.strip().upper() for v in value.split(",") if v.strip()}
+    if not names:
+        return None
+    known = {light.value for light in Light}
+    if not names <= known:
+        raise SystemExit(f"TRACE_BOOTH_DETECT_LIGHTS는 {', '.join(sorted(known))} 중에서 쉼표로 골라요: {value}")
+    return frozenset(names)
 
 
 def _submitter(store: Store) -> Submitter | None:
@@ -155,7 +167,14 @@ def serve(host: str, port: int) -> int:
     if source is None:
         print("경고: TRACE_BOOTH_ENGINE이 없어 빠른 검사를 쓸 수 없어요(엔진 없이 시험은 TRACE_BOOTH_DETECTOR=none)")
     else:
-        quick = QuickInspector(store, source, _imread, _now)
+        lights = _judge_lights()
+        quick_lights = {s.light.value for s in QUICK_SHOTLIST if s.captures and s.light is not None}
+        if lights and not lights & quick_lights:
+            raise SystemExit(f"TRACE_BOOTH_DETECT_LIGHTS에 빠른 검사 사진의 조명({', '.join(sorted(quick_lights))})이 없어요")
+        predetect = os.environ.get("TRACE_BOOTH_PREDETECT", "1") != "0"
+        quick = QuickInspector(store, source, _imread, _now, lights=lights, predetect=predetect)
+        print(f"빠른 검사 판정 조명 {', '.join(sorted(lights)) if lights else '전부(12장)'}, "
+              f"찍는 동안 미리 탐지 {'켬' if predetect else '끔'}")
         threading.Thread(target=quick.warm, daemon=True, name="engine-warm").start()
     if client is None:
         if quick is not None:
@@ -278,10 +297,11 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
 
 def bench(engine: str | None, images: list[str], session_public_id: str | None, runs: int,
           make_detector: Callable[[Path], Detector] | None = None, load: Callable[[str], object] = _imread,
-          clock: Callable[[], float] | None = None) -> int:
+          clock: Callable[[], float] | None = None, lights: str | None = None) -> int:
     """탐지 시간 재기(Jetson): 엔진 올리기 1번, 첫 실행(데우기) 1번, 이어서 runs번. 중간값으로 목표·기준을 본다.
 
     사진은 파일로 주거나(--images) 찍은 세션(--session, 올리는 세트와 같은 마지막 장)으로 준다. 종료 코드: 기준 초과 2.
+    --lights L3이면 세션 사진 중 L3만 잰다(판정 조명 옵션과 같음). 탐지기가 구간 시간을 모으면 어디가 느린지도 보인다.
     """
     import statistics
     import time
@@ -295,7 +315,9 @@ def bench(engine: str | None, images: list[str], session_public_id: str | None, 
             raise SystemExit(f"세션이 없어요: {session_public_id}")
         from .store import latest_shots
 
-        sources = [(s.face or "", s.light or "", s.camera, s.local_path) for s in latest_shots(store.shots(session.id))]
+        only = _judge_lights(lights or "")
+        sources = [(s.face or "", s.light or "", s.camera, s.local_path) for s in latest_shots(store.shots(session.id))
+                   if not only or s.light in only]
     else:
         sources = [("", "", "", path) for path in images]
     if not sources:
@@ -313,6 +335,9 @@ def bench(engine: str | None, images: list[str], session_public_id: str | None, 
     print(f"엔진 올리기 {loaded:.2f}초(서버를 띄울 때 한 번), 사진 {len(photos)}장 읽기 {read:.2f}초")
     first = detect_photos(photos, detector, info, clock=tick)
     print(f"첫 실행(데우기) {first.seconds:.2f}초, 흠집 {first.count}개")
+    stats = getattr(detector, "stats", None)
+    if stats is not None:
+        stats.reset()
     times = []
     for i in range(runs):
         result = detect_photos(photos, detector, info, clock=tick)
@@ -321,6 +346,10 @@ def bench(engine: str | None, images: list[str], session_public_id: str | None, 
     median = statistics.median(times or [first.seconds])
     print(f"탐지 중간값 {median:.2f}초(장당 {median / len(photos):.2f}초), 최대 {max(times or [first.seconds]):.2f}초 → "
           f"{grade(median)} (목표 {TARGET_SECONDS:.0f}초, 기준 {LIMIT_SECONDS:.0f}초, 버튼→판정에는 촬영 시간이 더해짐)")
+    if stats is not None and stats.tiles:
+        n = stats.tiles
+        print(f"타일 {n // max(runs, 1)}개/회, 타일당 입력 만들기 {stats.prep / n * 1000:.0f}ms · 엔진 {stats.run / n * 1000:.0f}ms · "
+              f"후처리 {stats.post / n * 1000:.0f}ms (나머지는 타일 자르기·중복 제거)")
     return 2 if median > LIMIT_SECONDS else 0
 
 
@@ -348,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
     p_bench.add_argument("--images", nargs="*", default=[], help="사진 파일들(MVP는 4장)")
     p_bench.add_argument("--session", help="찍은 세션 publicId(사진 대신)")
     p_bench.add_argument("--runs", type=int, default=5)
+    p_bench.add_argument("--lights", help="세션 사진 중 이 조명만(예: L3). 판정 조명 옵션과 같은 조건으로 잴 때")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "serve":
         return serve(args.host, args.port)
@@ -365,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"엔진을 만들지 못했어요: {e}") from e
         return 0
     if args.command == "bench":
-        return bench(args.engine, args.images, args.session, args.runs)
+        return bench(args.engine, args.images, args.session, args.runs, lights=args.lights)
     print(f"trace-booth {__version__}")
     return 0
 

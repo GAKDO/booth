@@ -41,9 +41,13 @@ jetson2(11/3 확인): L4T R39, Python 3.12, TensorRT 10.16(시스템 파이썬),
    export TRACE_BOOTH_ENGINE=~/trace-models/v001/best.engine
    ~/trace-venv/bin/python -m trace_booth bench --images bot1.jpg bot2.jpg top1.jpg top2.jpg --runs 5
    ~/trace-venv/bin/python -m trace_booth bench --session <sessionId>   # 찍은 세션의 마지막 장들로
+   ~/trace-venv/bin/python -m trace_booth bench --session <sessionId> --lights L3   # L3만 판정할 때 시간
    ```
 
-   bench는 탐지만 잰다. 버튼→판정 전체는 빠른 검사 모드가 `Timeline`으로 잰다(아래).
+   bench는 탐지만 잰다. 끝에 타일당 "입력 만들기·엔진·후처리" ms가 나와 어디가 느린지 보인다(11/6). 완료 뒤 기다린 탐지 시간은 결과의 `seconds`(서버에는 `inferenceMs`), 촬영 시작→판정 전체는 `boothTotalMs`로 남는다. 아래 `Timeline`은 손으로 구간을 잴 때 쓰는 예시다.
+
+   1분을 넘을 때 순서(11/6 강사님 피드백 1): ① 찍는 동안 미리 탐지(기본 켬, `TRACE_BOOTH_PREDETECT=0`이면 끔) → ② `TRACE_BOOTH_DETECT_LIGHTS=L3`(12장 → 4장) → ③ 엔진 ms가 크면 yolo11s-seg로 다시 학습·내보내기, 후처리 ms가 크면 `min_confidence`를 올림 → ④ INT8(보정 사진 필요).
+
 4. 찍은 세션 하나를 탐지해 로컬 JSON으로 남기고, 올라간 세트가 있으면 결과도 올린다.
 
    ```bash
