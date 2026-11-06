@@ -79,6 +79,8 @@ class CaptureService:
         now: Callable[[], str] = _now,
         min_free_bytes: int = MIN_FREE_BYTES,
         mode_steps: dict[str, tuple[Step, ...]] | None = None,
+        training_lists: dict[str, tuple[Step, ...]] | None = None,
+        default_list: str | None = None,
     ) -> None:
         self.store = store
         self.cameras = cameras
@@ -87,12 +89,16 @@ class CaptureService:
         data_dir.mkdir(parents=True, exist_ok=True)
         self.steps = steps  # 학습·출고·반납 목록
         self.mode_steps = {"QUICK": QUICK_SHOTLIST} if mode_steps is None else mode_steps  # 모드마다 다른 목록
+        # 학습 모드에서 화면이 고를 수 있는 목록(11/6). 서버를 다시 켜지 않고 위·아래·펼친·옆면을 바꿔 찍는다
+        self.training_lists = dict(training_lists or {})
+        self.default_list = default_list
         self._now = now
         self._min_free = min_free_bytes
         self._lock = threading.Lock()
 
     def start(
-        self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None
+        self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None,
+        shotlist: str | None = None,
     ) -> SessionRecord:
         """세션을 열거나 이어 간다. 출고·반납(OUT·RET)·빠른 검사(QUICK)는 렌탈·시점 publicId가 필요하다."""
         if not is_valid_device_id(device_id) or (mode == "TRAINING" and not BOOTH_CODE_RE.match(device_id)):
@@ -100,23 +106,30 @@ class CaptureService:
             raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01, 빠른 검사는 목록의 기기)")
         if mode not in MODES:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")
+        if mode != "TRAINING" or not shotlist or shotlist == self.default_list:
+            shotlist = None  # 기본 목록은 비워 둔다(예전 세션과 같게)
+        elif shotlist not in self.training_lists:
+            raise InvalidInput(f"촬영 목록은 {', '.join(self.training_lists) or '기본'} 중 하나")
         if mode != "TRAINING":
             for name, value in (("렌탈", rental_id), ("시점", checkpoint_id)):
                 if not value or not PUBLIC_ID_RE.match(value):
                     raise InvalidInput(f"{name} ID는 관리자 화면에 나온 21자 그대로 넣어 주세요")
         with self._lock:
-            s = self.store.find_open_session(device_id, mode)
+            # 학습은 같은 목록의 열린 세션만 이어 간다. 다른 목록으로 찍던 세션은 그대로 두고 새로 연다
+            s = self.store.find_open_session(device_id, mode, shotlist)
             if s is not None and mode != "TRAINING":
                 c = self.store.get_checkout(s.id)
                 if c is None or (c.rental_id, c.checkpoint_id) != (rental_id, checkpoint_id):
                     raise CaptureError("이 기기에 다른 렌탈·시점의 촬영이 진행 중이에요")
             if s is None:
-                s = self.store.create_session(device_id, mode, self._now())
+                s = self.store.create_session(device_id, mode, self._now(), shotlist)
                 if mode != "TRAINING":
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
             return s
 
     def steps_for(self, s: SessionRecord) -> tuple[Step, ...]:
+        if s.mode == "TRAINING" and s.shotlist in self.training_lists:
+            return self.training_lists[s.shotlist]
         return self.mode_steps.get(s.mode, self.steps)
 
     def view(self, session_id: int) -> SessionView:

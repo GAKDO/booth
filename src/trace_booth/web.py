@@ -20,6 +20,7 @@ from .quick import result_json as _quick_result
 from .quick_upload import upload_json
 from .rentals import BOOTH_CODE_RE, WaitingDevice, redeem_message
 from .session import CaptureError, CaptureService, Incomplete, InvalidInput
+from .shotlist import SHOTLIST_LABELS, required_photo_count
 from .store import CheckoutRecord, ShotRecord
 
 Submitter = Callable[[int], CheckoutRecord]
@@ -77,6 +78,7 @@ def _state(app: App) -> dict:
         "sessionId": v.session.public_id, "deviceId": v.session.device_id, "mode": v.session.mode,
         "status": v.session.status, "step": step, "remainingSteps": v.remaining_steps,
         "missing": v.missing, "scr1SkipReason": v.session.scr1_skip_reason,
+        "shotlist": v.session.shotlist or app.service.default_list,
         "queue": app.service.store.upload_counts(), "presetsConfigured": app.service.presets.configured,
         "checkout": _checkout_json(app.service.store.get_checkout(v.session.id)),
         "checkoutEnabled": app.submitter is not None,
@@ -125,6 +127,13 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, body, "text/html; charset=utf-8")
             if method == "GET" and path == "/api/queue":
                 return self._json(200, svc.store.upload_counts())
+            if method == "GET" and path == "/api/shotlists":
+                # 학습 화면의 '촬영 목록' 고르기. 기본은 서버를 켤 때 TRACE_BOOTH_SHOTLIST로 고른 것
+                lists = [
+                    {"name": name, "label": SHOTLIST_LABELS.get(name, name), "photos": required_photo_count(steps)}
+                    for name, steps in svc.training_lists.items()
+                ]
+                return self._json(200, {"default": svc.default_list, "lists": lists})
             if method == "GET" and path.startswith("/api/shots/") and path.endswith("/thumbnail"):
                 shot = svc.store.get_shot(path.split("/")[3])
                 if shot is None:
@@ -165,9 +174,11 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     raise InvalidInput("서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 출고·반납 모드를 쓸 수 없어요")
                 rental, checkpoint = body.get("rentalId"), body.get("checkpointId")
                 with app.lock:
+                    shotlist = body.get("shotlist")
                     app.current = svc.start(
                         str(body.get("deviceId", "")), mode,
                         str(rental) if rental else None, str(checkpoint) if checkpoint else None,
+                        str(shotlist) if shotlist else None,
                     ).id
                 return self._json(201, _state(app))
             if not path.startswith("/api/sessions/current"):

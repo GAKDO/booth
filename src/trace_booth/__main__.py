@@ -112,7 +112,8 @@ def serve(host: str, port: int) -> int:
     # kb·side는 학습 촬영 전용: 출고·반납은 위·아래(mvp) 목록을 그대로 쓴다
     checkout = steps if shotlist_name in ("mvp", "full") else MVP_SHOTLIST
     mode_steps = {"QUICK": QUICK_SHOTLIST, "OUT": checkout, "RET": checkout}
-    service = CaptureService(store, cameras, presets, data_dir, steps=steps, mode_steps=mode_steps)
+    service = CaptureService(store, cameras, presets, data_dir, steps=steps, mode_steps=mode_steps,
+                             training_lists=SHOTLISTS, default_list=shotlist_name)
     objects = _object_store()
     if objects is None:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")

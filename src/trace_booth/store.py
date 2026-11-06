@@ -57,6 +57,7 @@ class SessionRecord:
     status: str
     started_at: str
     completed_at: str | None
+    shotlist: str | None = None  # 학습 촬영 목록 이름(mvp·kb·side…). 비면 서버를 켤 때 고른 기본 목록
 
 
 @dataclass
@@ -142,22 +143,36 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # 11/6: 학습 목록을 세션마다 고르게 되면서 더한 칸. 예전 부스 DB에도 칸만 더한다(행은 그대로)
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(session)")}
+            if "shotlist" not in cols:
+                self._conn.execute("ALTER TABLE session ADD COLUMN shotlist TEXT")
 
-    def create_session(self, device_id: str, mode: str, now: str) -> SessionRecord:
+    def create_session(self, device_id: str, mode: str, now: str, shotlist: str | None = None) -> SessionRecord:
         public_id = new_public_id()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO session (public_id, device_id, mode, started_at) VALUES (?, ?, ?, ?)",
-                (public_id, device_id, mode, now),
+                "INSERT INTO session (public_id, device_id, mode, started_at, shotlist) VALUES (?, ?, ?, ?, ?)",
+                (public_id, device_id, mode, now, shotlist),
             )
-        return SessionRecord(int(cur.lastrowid or 0), public_id, device_id, mode, 0, None, "IN_PROGRESS", now, None)
-
-    def find_open_session(self, device_id: str, mode: str) -> SessionRecord | None:
-        row = self._one(
-            "SELECT * FROM session WHERE device_id = ? AND mode = ? AND status = 'IN_PROGRESS' "
-            "ORDER BY started_at DESC LIMIT 1",
-            (device_id, mode),
+        return SessionRecord(
+            int(cur.lastrowid or 0), public_id, device_id, mode, 0, None, "IN_PROGRESS", now, None, shotlist
         )
+
+    def find_open_session(self, device_id: str, mode: str, shotlist: str | None = None) -> SessionRecord | None:
+        """열린 세션. 학습(TRAINING)은 같은 촬영 목록끼리만 이어 찍는다(IS는 NULL끼리도 같다고 봄)."""
+        if mode == "TRAINING":
+            row = self._one(
+                "SELECT * FROM session WHERE device_id = ? AND mode = ? AND shotlist IS ? AND status = 'IN_PROGRESS' "
+                "ORDER BY started_at DESC LIMIT 1",
+                (device_id, mode, shotlist),
+            )
+        else:
+            row = self._one(
+                "SELECT * FROM session WHERE device_id = ? AND mode = ? AND status = 'IN_PROGRESS' "
+                "ORDER BY started_at DESC LIMIT 1",
+                (device_id, mode),
+            )
         return SessionRecord(**dict(row)) if row else None
 
     def get_session(self, session_id: int) -> SessionRecord:
