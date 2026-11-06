@@ -341,6 +341,9 @@ def test_실시간_화면은_카메라를_골라_보고_크기를_키울_수_있
     expect(page.locator("#live")).to_be_visible()
     expect(page.locator("#liveFigCAM1")).to_be_visible()
     expect(page.locator("#liveFigCAM2")).to_be_visible()
+    # 옆면 카메라(TRACE_BOOTH_SIDE_CAM)가 없으면 옆면 버튼·화면을 숨긴다
+    expect(page.locator('#liveLayout button[data-v="SIDE"]')).to_be_hidden()
+    expect(page.locator("#liveFigSIDE")).to_be_hidden()
     narrow = page.locator("#liveGrid").bounding_box()["width"]
     page.locator('#liveLayout button[data-v="CAM1"]').click()
     expect(page.locator("#liveFigCAM2")).to_be_hidden()

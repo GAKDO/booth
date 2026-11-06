@@ -806,7 +806,7 @@ $("liveSize").oninput = () => { liveView.size = Number($("liveSize").value); sav
 applyLive();
 fetch("/api/live").then(r => r.ok ? r.json() : null).then(j => {
   if (!j || !Array.isArray(j.cameras)) return;
-  liveCams = j.cameras;
+  liveCams = ["CAM1", "CAM2"].concat(j.cameras.includes("SIDE") ? ["SIDE"] : []);  // 위 카메라 두 대는 늘 보인다
   const sideBtn = document.querySelector('#liveLayout button[data-v="SIDE"]');
   sideBtn.hidden = !liveCams.includes("SIDE");
   if (!liveCams.includes(liveView.layout) && liveView.layout !== "both") liveView.layout = "both";
