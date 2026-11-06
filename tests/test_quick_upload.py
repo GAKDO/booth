@@ -11,7 +11,7 @@ from test_quick_mode import INFO, _inspector, _shoot_quick
 
 from trace_booth.capture_client import BoothAuth, CaptureClient
 from trace_booth.detect.engine import DetectError
-from trace_booth.quick_upload import QuickRetryWorker, upload_json, upload_quick
+from trace_booth.quick_upload import QuickRetryWorker, booth_total_ms, upload_json, upload_quick
 
 
 @pytest.fixture
@@ -49,11 +49,23 @@ def test_탐지가_끝나면_QUICK_세트로_12장을_올리고_탐지를_분석
 
 def test_탐지_시간을_밀리초로_함께_보내_성능_그래프에_쓰이게_한다(service, server, upload):
     done, _ = _detected(service)
+    # 시험 탐지기는 판정 시각이 NOW(10:00:00) 고정이라, 촬영 시작을 91초 전으로 맞춘다
+    service.store._conn.execute("UPDATE session SET started_at = ? WHERE id = ?", ("2026-11-05T09:58:29+09:00", done.id))
 
     upload(done.id)
 
     (s,) = server.sets.values()
     assert isinstance(s["inferenceMs"], int) and s["inferenceMs"] >= 0
+    assert s["boothTotalMs"] == 91_000
+
+
+def test_부스_전체_시간은_촬영_시작부터_판정까지_ms이고_못_읽거나_거꾸로면_보내지_않는다():
+    assert booth_total_ms("2026-11-09T14:02:10+09:00", "2026-11-09T14:03:41+09:00") == 91_000
+    assert booth_total_ms("2026-11-09T14:02:10+09:00", "2026-11-09T05:02:20+00:00") == 10_000
+    assert booth_total_ms("2026-11-09T14:00:00+09:00", "2026-11-09T16:00:00+09:00") == 3_600_000
+    assert booth_total_ms("2026-11-09T14:03:41+09:00", "2026-11-09T14:02:10+09:00") is None
+    assert booth_total_ms("시각 아님", "2026-11-09T14:02:10+09:00") is None
+    assert booth_total_ms("2026-11-09T14:02:10", "2026-11-09T14:03:41+09:00") is None
 
 
 def test_서버가_안_되면_로컬_큐에_남고_다시_되면_재시도가_올린다(service, server, upload):

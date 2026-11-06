@@ -103,6 +103,7 @@ class FakeCapture:
             s["analyzed"] = sorted(analyzed)
         self.detections[set_id] = list(found)
         s["inferenceMs"] = data.get("inferenceMs")
+        s["boothTotalMs"] = data.get("boothTotalMs")
         return self._json(201, {"accepted": len(found)})
 
     def _put(self, url: str, headers: dict[str, str], body: bytes) -> Response:
