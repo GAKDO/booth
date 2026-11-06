@@ -345,9 +345,20 @@ def test_실시간_화면은_카메라를_골라_보고_크기를_키울_수_있
     expect(page.locator('#liveLayout button[data-v="SIDE"]')).to_be_hidden()
     expect(page.locator("#liveFigSIDE")).to_be_hidden()
     narrow = page.locator("#liveGrid").bounding_box()["width"]
+    # 모두에서 하나를 누르면 그 하나만 크게
     page.locator('#liveLayout button[data-v="CAM1"]').click()
     expect(page.locator("#liveFigCAM2")).to_be_hidden()
     expect(page.locator("#liveCAM2")).not_to_have_attribute("src", re.compile("."))  # 안 보이는 카메라는 스트림을 끊음
+    one = page.locator("#liveFigCAM1").bounding_box()["width"]
+    # 다른 카메라를 더 누르면 칸이 늘어나 둘만 보인다
+    page.locator('#liveLayout button[data-v="CAM2"]').click()
+    expect(page.locator("#liveFigCAM2")).to_be_visible()
+    expect(page.locator('#liveLayout button[data-v="all"]')).to_have_attribute("aria-pressed", "false")
+    assert page.locator("#liveFigCAM1").bounding_box()["width"] < one * 0.7
+    # 다시 누르면 그 카메라만 빠진다
+    page.locator('#liveLayout button[data-v="CAM2"]').click()
+    expect(page.locator("#liveFigCAM2")).to_be_hidden()
+    expect(page.locator("#liveFigCAM1")).to_be_visible()
     page.locator("#liveSize").fill("100")
     wide = page.locator("#liveGrid").bounding_box()["width"]
     assert wide > narrow, (narrow, wide)
