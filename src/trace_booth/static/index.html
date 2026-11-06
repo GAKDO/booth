@@ -317,6 +317,10 @@
         <p class="form-error" id="codeError" role="alert"></p>
         <div class="or"><span>또는 세 ID를 직접 넣기</span></div>
       </div>
+      <!-- 학습 촬영 목록(11/6): 서버를 다시 켜지 않고 위·아래·펼친·옆면을 고른다 -->
+      <label class="training" for="shotlist" hidden><span class="lab">촬영 목록</span>
+        <select id="shotlist"></select>
+        <small class="help">펼친 상태는 LED 바 #2를 앞 자리(L4)로, 옆면은 CAM1을 책상 높이로 옮긴 뒤 찍어요. 기기 이름은 위·아래 때와 같게 넣어요</small></label>
       <label for="device"><span id="deviceLabel">기기 ID</span>
         <input id="device" autocomplete="off" spellcheck="false" aria-describedby="deviceHelp">
         <small class="help" id="deviceHelp"></small></label>
@@ -465,7 +469,7 @@ function render() {
     $("stepKind").textContent = "끝";
   }
   const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
-  $("meta").innerHTML = esc(`${MODE_NAME[s.mode]} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`)
+  $("meta").innerHTML = esc(`${MODE_NAME[s.mode]}${s.mode === "TRAINING" && s.shotlist ? " · " + (LIST_LABEL[s.shotlist] || s.shotlist) : ""} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`)
     + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>');
   renderQueue(s.queue);
 }
@@ -800,6 +804,7 @@ function setMode(m) {
 function applyMode() {
   const m = mode;
   for (const el of document.querySelectorAll(".checkout")) el.hidden = m === "TRAINING" || m === "QUICK";
+  for (const el of document.querySelectorAll(".training")) el.hidden = m !== "TRAINING" || !$("shotlist").options.length;
   $("skip").hidden = m === "QUICK";
   $("result").hidden = true;
   if (m === "QUICK") { resetQuick(); return; }
@@ -916,6 +921,7 @@ $("start").onclick = async () => {
   const raw = $("device").value.trim();
   // 학습 이름만 대문자로 바꾼다. 21자 ID는 대소문자가 달라지면 다른 기기가 된다
   const body = { deviceId: mode === "TRAINING" ? raw.toUpperCase() : raw, mode };
+  if (mode === "TRAINING" && $("shotlist").value) body.shotlist = $("shotlist").value;
   if (body.mode !== "TRAINING") {
     body.rentalId = $("rental").value.trim(); body.checkpointId = $("checkpoint").value.trim();
   }
@@ -981,7 +987,23 @@ async function restore() {
     if (s.status === "COMPLETE") pollResult();
   } catch (e) { applyMode(); }
 }
-restore();
+// 학습 촬영 목록을 불러와 고르기 칸을 채운다(못 불러오면 칸을 숨기고 서버 기본 목록으로 찍는다)
+const LIST_LABEL = {};
+async function loadShotlists() {
+  try {
+    const res = await fetch("/api/shotlists");
+    if (!res.ok) return;
+    const data = await res.json();
+    $("shotlist").innerHTML = "";
+    for (const l of data.lists) {
+      LIST_LABEL[l.name] = l.label;
+      const o = document.createElement("option");
+      o.value = l.name; o.textContent = `${l.label} · ${l.photos}장`; o.selected = l.name === data.default;
+      $("shotlist").append(o);
+    }
+  } catch (e) { /* 칸 없이 기본 목록 */ }
+}
+loadShotlists().then(restore);
 setInterval(async () => {
   if (!state) return;
   try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }

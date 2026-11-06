@@ -146,5 +146,14 @@ SHOTLISTS: dict[str, tuple[Step, ...]] = {
 }
 
 
+# 학습 화면에서 고를 때 보이는 이름(11/6)
+SHOTLIST_LABELS: dict[str, str] = {
+    "mvp": "위·아래(BOT·TOP)",
+    "kb": "펼친 상태(키보드)",
+    "side": "옆면(CAM1을 책상 높이로)",
+    "full": "전체(보관용)",
+}
+
+
 def required_photo_count(steps: tuple[Step, ...] = DEFAULT_SHOTLIST) -> int:
     return sum(len(s.cameras) for s in steps if s.kind is StepKind.SHOT and not s.optional)
