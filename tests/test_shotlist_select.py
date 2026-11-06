@@ -24,7 +24,21 @@ def faces(svc: CaptureService, sid: int) -> set[str]:
 
 def test_목록을_고르지_않으면_서버를_켤_때_고른_기본_목록으로_찍는다(svc) -> None:
     s = svc.start("MB05")
-    assert s.shotlist is None and faces(svc, s.id) == {"BOT", "TOP"}
+    assert s.shotlist == "mvp" and faces(svc, s.id) == {"BOT", "TOP"}
+
+
+def test_기본_목록을_바꿔_서버를_다시_켜도_예전_세션은_새_목록으로_이어지지_않는다(tmp_path, cams, presets) -> None:
+    def server(default: str) -> CaptureService:
+        return CaptureService(
+            Store(tmp_path / "booth.db"), cams, presets, tmp_path / "data", steps=SHOTLISTS[default],
+            min_free_bytes=0, training_lists=SHOTLISTS, default_list=default,
+        )
+
+    kb = server("kb").start("MB05")
+    side = server("side")
+    s = side.start("MB05")
+    assert s.id != kb.id and s.shotlist == "side"
+    assert faces(side, kb.id) == {"KB"}  # 예전 세션은 자기 목록 그대로
 
 
 def test_학습에서_kb를_고르면_펼친_목록으로_side를_고르면_옆면_목록으로_찍는다(svc) -> None:

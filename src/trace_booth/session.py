@@ -106,10 +106,14 @@ class CaptureService:
             raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01, 빠른 검사는 목록의 기기)")
         if mode not in MODES:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")
-        if mode != "TRAINING" or not shotlist or shotlist == self.default_list:
-            shotlist = None  # 기본 목록은 비워 둔다(예전 세션과 같게)
-        elif shotlist not in self.training_lists:
-            raise InvalidInput(f"촬영 목록은 {', '.join(self.training_lists) or '기본'} 중 하나")
+        # 학습 세션에는 기본 목록이어도 실제 이름을 남긴다. 서버를 다른 기본 목록으로 다시 켜도
+        # 예전 세션(이름 없음·다른 목록)이 새 목록의 단계로 이어지지 않게 하려고
+        if mode != "TRAINING" or not self.training_lists:
+            shotlist = None
+        else:
+            shotlist = shotlist or self.default_list
+            if shotlist not in self.training_lists:
+                raise InvalidInput(f"촬영 목록은 {', '.join(self.training_lists)} 중 하나")
         if mode != "TRAINING":
             for name, value in (("렌탈", rental_id), ("시점", checkpoint_id)):
                 if not value or not PUBLIC_ID_RE.match(value):
