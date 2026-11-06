@@ -234,7 +234,8 @@ def detect(session_public_id: str, engine: str | None, make_detector: Callable[[
         print("TRACE_API_URL이 없어 탐지 결과는 로컬에만 남겨요")
         return code
     try:
-        accepted = client.save_detections(record.capture_set_id, info.model_version, result.detections())
+        accepted = client.save_detections(record.capture_set_id, info.model_version, result.detections(),
+                                          inference_ms=min(round(result.seconds * 1000), 600_000))
     except ApiError as e:
         if e.code == "CAPTURE_SET_CLOSED":
             print(f"세트 {record.capture_set_id}는 이미 등급이 매겨져 탐지를 바꿀 수 없어요(로컬 JSON은 남음)")

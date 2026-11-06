@@ -168,6 +168,7 @@ class CaptureClient:
 
     def save_detections(
         self, set_id: str, model_version: str, detections: list[dict], analyzed_photos: list[dict] | None = None,
+        inference_ms: int | None = None,
     ) -> int:
         """`POST /captures/sets/{setId}/detections`: 부스 탐지 결과(원본 사진 px). 받아들인 개수를 돌려준다.
 
@@ -175,6 +176,8 @@ class CaptureClient:
         body: dict = {"modelVersion": model_version, "detections": detections}
         if analyzed_photos is not None:  # QUICK 세트는 필수: 분석한 사진 전부(흠집 없는 사진 포함, contracts 1.1.0)
             body["analyzedPhotos"] = analyzed_photos
+        if inference_ms is not None:  # 선택(contracts #29): 관리자 성능 그래프에 그대로 나간다
+            body["inferenceMs"] = inference_ms
         return int(self._post("탐지 결과 저장", f"{self._base}/{set_id}/detections", body, (201,)).json()["accepted"])
 
     def complete(self, set_id: str, skipped: dict[str, str], idempotency_key: str) -> dict:
