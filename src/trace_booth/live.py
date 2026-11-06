@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Protocol
 
-from .camera import CameraError
+from .camera import CameraError, check_rotate, rotate_frame
 from .codes import Camera
 
 
@@ -67,10 +67,11 @@ class FrameSource(Protocol):
 class OpenCvLiveSource:
     """작은 해상도로 장치를 열어 JPEG 프레임을 돌려준다."""
 
-    def __init__(self, code: Camera, device: str, width: int = 1280, height: int = 720) -> None:
+    def __init__(self, code: Camera, device: str, width: int = 1280, height: int = 720, rotate: int = 0) -> None:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
 
         self._cv2 = cv2
+        self._rotate = check_rotate(rotate)  # 저장 사진과 같은 방향으로 보여 준다
         self._cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
         if not self._cap.isOpened():
             raise CameraError(code, f"장치를 열 수 없음 ({device})")
@@ -82,6 +83,7 @@ class OpenCvLiveSource:
         ok, frame = self._cap.read()
         if not ok:
             return None
+        frame = rotate_frame(frame, self._rotate)
         ok, buf = self._cv2.imencode(".jpg", frame, [self._cv2.IMWRITE_JPEG_QUALITY, 70])
         return buf.tobytes() if ok else None
 

@@ -150,7 +150,7 @@ SHOTLISTS: dict[str, tuple[Step, ...]] = {
 SHOTLIST_LABELS: dict[str, str] = {
     "mvp": "위·아래(BOT·TOP)",
     "kb": "펼친 상태(키보드)",
-    "side": "옆면(CAM1을 책상 높이로)",
+    "side": "옆면(책상 높이 카메라)",
     "full": "전체(보관용)",
 }
 

@@ -48,7 +48,7 @@ class App:
         redeem: CodeRedeemer | None = None,
     ) -> None:
         self.service = service
-        self.live = live or {}  # 카메라 코드(CAM1·CAM2) → 실시간 보기
+        self.live = live or {}  # 카메라 코드(CAM1·CAM2, 옆면 카메라는 SIDE) → 실시간 보기
         self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
         self.quick = quick  # 빠른 검사 탐지. 없으면 QUICK 모드를 막음
         self.waiting = waiting  # 렌탈 목록. 서버 설정이 없으면 None
@@ -160,6 +160,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 except (OSError, ValueError, KeyError, TypeError) as e:
                     return self._problem(502, f"부스 코드를 확인하지 못했어요: {type(e).__name__}: {e}")
                 return self._json(200, target.to_json())
+            if method == "GET" and path == "/api/live":
+                return self._json(200, {"cameras": list(app.live)})  # 화면이 보일 카메라(옆면 Brio는 SIDE)
             if method == "GET" and path.startswith("/api/live/"):
                 feed = app.live.get(path[len("/api/live/"):])
                 if feed is None:

@@ -81,6 +81,8 @@ class CaptureService:
         mode_steps: dict[str, tuple[Step, ...]] | None = None,
         training_lists: dict[str, tuple[Step, ...]] | None = None,
         default_list: str | None = None,
+        list_cameras: dict[str, dict[Camera, CameraDevice]] | None = None,
+        list_presets: dict[str, Presets] | None = None,
     ) -> None:
         self.store = store
         self.cameras = cameras
@@ -92,6 +94,10 @@ class CaptureService:
         # 학습 모드에서 화면이 고를 수 있는 목록(11/6). 서버를 다시 켜지 않고 위·아래·펼친·옆면을 바꿔 찍는다
         self.training_lists = dict(training_lists or {})
         self.default_list = default_list
+        # 목록마다 바꿔 끼울 카메라·프리셋(11/6). 옆면(side)은 책상 높이의 Brio가 CAM1 자리를 맡는다.
+        # 파일 이름의 카메라 코드는 그대로(CAM1) 두어 계약(codes.yaml)을 바꾸지 않는다
+        self.list_cameras = dict(list_cameras or {})
+        self.list_presets = dict(list_presets or {})
         self._now = now
         self._min_free = min_free_bytes
         self._lock = threading.Lock()
@@ -229,10 +235,12 @@ class CaptureService:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
             raise DiskFull("디스크 공간이 부족해요. 찍지 않았어요")
         light = step.light or Light.L1
-        settings = self.presets.for_light(light)
+        swap = self.list_cameras.get(s.shotlist or "", {}) if s.mode == "TRAINING" else {}
+        presets = self.list_presets.get(s.shotlist or "", self.presets) if swap else self.presets
+        settings = presets.for_light(light)
         shots = []
         for cam in step.cameras:
-            data = self.cameras[cam].capture(settings)
+            data = swap.get(cam, self.cameras[cam]).capture(settings)
             kind = step.kind.value
             face = step.face.value if step.face else None
             seq = self.store.next_seq(s.device_id, kind, face, step.light.value if step.light else None, cam.value)
