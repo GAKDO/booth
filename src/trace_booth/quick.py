@@ -113,6 +113,8 @@ class QuickInspector:
                 done = self._done.pop(session_id, {})
                 result = detect_set(self.store.shots(session_id), detector, info, self._load, self._clock,
                                     lights=self.lights, done=done)
+                if not result.photos:  # 판정 조명과 맞는 사진이 없으면 "문제 없음"이 아니라 실패로 남긴다
+                    raise DetectError(f"판정할 사진이 없음(판정 조명 {sorted(self.lights or [])})")
                 ahead = sum(1 for p in result.photos if any(p is d for d in done.values()))
         except Exception as e:  # noqa: BLE001 — 백그라운드 스레드: 엔진·사진 실패를 모두 화면에 남겨 다시 돌리게
             self.store.put_quick_result(session_id, "FAILED", self._now(), error=f"{type(e).__name__}: {e}"[:300])

@@ -154,3 +154,11 @@ def test_bench는_탐지기가_모은_구간_시간을_타일당_ms로_보여_�
 
     out = capsys.readouterr().out
     assert code == 0 and "타일 16개/회" in out and "엔진 50ms" in out and "후처리 10ms" in out
+
+
+def test_판정_조명에_맞는_사진이_없으면_문제_없음이_아니라_실패로_남긴다(service):
+    inspector = _inspector(service, CountingDetector(), lights=frozenset({"L4"}))
+    sid = _shoot_all(service, inspector)
+    inspector.start(sid)
+    r = result_json(service.store, sid, shooting=False)
+    assert r["status"] == "FAILED" and r["verdict"] is None and "판정할 사진이 없음" in r["error"]

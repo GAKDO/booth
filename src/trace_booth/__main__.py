@@ -168,6 +168,9 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_BOOTH_ENGINE이 없어 빠른 검사를 쓸 수 없어요(엔진 없이 시험은 TRACE_BOOTH_DETECTOR=none)")
     else:
         lights = _judge_lights()
+        quick_lights = {s.light.value for s in QUICK_SHOTLIST if s.captures and s.light is not None}
+        if lights and not lights & quick_lights:
+            raise SystemExit(f"TRACE_BOOTH_DETECT_LIGHTS에 빠른 검사 사진의 조명({', '.join(sorted(quick_lights))})이 없어요")
         predetect = os.environ.get("TRACE_BOOTH_PREDETECT", "1") != "0"
         quick = QuickInspector(store, source, _imread, _now, lights=lights, predetect=predetect)
         print(f"빠른 검사 판정 조명 {', '.join(sorted(lights)) if lights else '전부(12장)'}, "
