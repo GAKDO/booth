@@ -13,6 +13,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 
 from .capture_client import ApiError, CaptureClient, HttpCall, http_call
 from .checkout import submit_session
@@ -48,7 +49,8 @@ def upload_quick(
     seconds = data.get("seconds")
     inference_ms = min(round(seconds * 1000), 600_000) if isinstance(seconds, (int, float)) and seconds >= 0 else None
     try:
-        client.save_detections(record.capture_set_id, data["modelVersion"], detections, analyzed, inference_ms)
+        client.save_detections(record.capture_set_id, data["modelVersion"], detections, analyzed, inference_ms,
+                               booth_total_ms(store.get_session(session_id).started_at, result.updated_at))
     except ApiError as e:
         status = "CLOSED" if e.code == "CAPTURE_SET_CLOSED" else "FAILED"
         store.mark_quick_upload(session_id, status, now(), error=str(e)[:300])
@@ -56,6 +58,15 @@ def upload_quick(
         store.mark_quick_upload(session_id, "FAILED", now(), error=f"{type(e).__name__}: {e}"[:300])
     else:
         store.mark_quick_upload(session_id, "SENT", now(), sent_result_at=result.updated_at)
+
+
+def booth_total_ms(started_at: str, judged_at: str) -> int | None:
+    """촬영 시작 버튼(세션 시작)부터 부스 판정(탐지 DONE)까지 ms. 시각을 못 읽거나 거꾸로면 None(보내지 않음)."""
+    try:
+        ms = round((datetime.fromisoformat(judged_at) - datetime.fromisoformat(started_at)).total_seconds() * 1000)
+    except (TypeError, ValueError):
+        return None
+    return min(ms, 3_600_000) if ms >= 0 else None
 
 
 def upload_json(store: Store, session_id: int) -> dict:
