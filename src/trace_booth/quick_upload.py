@@ -45,8 +45,10 @@ def upload_quick(
         for p in data["photos"] for d in p["detections"]
     ]
     analyzed = [{"face": p["face"], "light": p["light"], "camera": p["camera"]} for p in data["photos"]]
+    seconds = data.get("seconds")
+    inference_ms = min(round(seconds * 1000), 600_000) if isinstance(seconds, (int, float)) and seconds >= 0 else None
     try:
-        client.save_detections(record.capture_set_id, data["modelVersion"], detections, analyzed)
+        client.save_detections(record.capture_set_id, data["modelVersion"], detections, analyzed, inference_ms)
     except ApiError as e:
         status = "CLOSED" if e.code == "CAPTURE_SET_CLOSED" else "FAILED"
         store.mark_quick_upload(session_id, status, now(), error=str(e)[:300])

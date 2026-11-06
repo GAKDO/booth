@@ -47,6 +47,15 @@ def test_탐지가_끝나면_QUICK_세트로_12장을_올리고_탐지를_분석
     assert service.store.quick_sessions_to_upload() == []
 
 
+def test_탐지_시간을_밀리초로_함께_보내_성능_그래프에_쓰이게_한다(service, server, upload):
+    done, _ = _detected(service)
+
+    upload(done.id)
+
+    (s,) = server.sets.values()
+    assert isinstance(s["inferenceMs"], int) and s["inferenceMs"] >= 0
+
+
 def test_서버가_안_되면_로컬_큐에_남고_다시_되면_재시도가_올린다(service, server, upload):
     done, _ = _detected(service)
     server.fail_puts = 100
