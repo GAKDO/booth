@@ -195,11 +195,10 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._json(200, result_json(svc.store, session.id, session.status == "IN_PROGRESS"))
             if method != "POST":
                 return self._problem(405, "허용하지 않는 메서드")
-            if action == "/shoot":
-                shots = svc.shoot(app.current)
-                return self._json(201, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
-            if action == "/retake":
-                shots = svc.retake(app.current)
+            if action in ("/shoot", "/retake"):
+                shots = svc.shoot(app.current) if action == "/shoot" else svc.retake(app.current)
+                if app.quick is not None and svc.store.get_session(app.current).mode == "QUICK":
+                    app.quick.prefetch(app.current)  # 찍는 동안 미리 탐지(완료 때는 남은 사진만)
                 return self._json(201, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
             if action == "/next":
                 expected = self._body().get("step")
