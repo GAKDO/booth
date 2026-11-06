@@ -97,6 +97,25 @@ def run_v4l2_ctl(device: str, controls: dict[str, int], run: Runner = subprocess
     raise ControlMismatch(f"카메라 값이 들어가지 않음: {bad} (원하는 값 {controls})")
 
 
+ROTATIONS = (0, 90, 180, 270)
+
+
+def check_rotate(degrees: int) -> int:
+    if degrees not in ROTATIONS:
+        raise ValueError(f"회전은 {', '.join(map(str, ROTATIONS))} 중 하나(받은 값 {degrees})")
+    return degrees
+
+
+def rotate_frame(frame, degrees: int):  # frame은 numpy 배열(Jetson 시스템 OpenCV)
+    """시계 방향으로 degrees만큼 돌린다. 0이면 그대로."""
+    if degrees == 0:
+        return frame
+    import cv2
+
+    code = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}[degrees]
+    return cv2.rotate(frame, code)
+
+
 class OpenCvCamera:
     """장치를 열고 프레임 몇 장을 버린 뒤 한 장 찍고 닫는다(두 대를 동시에 열지 않음)."""
 
@@ -109,6 +128,7 @@ class OpenCvCamera:
         warmup_frames: int = 10,
         set_controls: Callable[[str, dict[str, int]], None] = run_v4l2_ctl,
         gate: CameraGate | None = None,
+        rotate: int = 0,
     ) -> None:
         self.code = code
         self.device = device
@@ -117,6 +137,7 @@ class OpenCvCamera:
         self.warmup_frames = warmup_frames
         self._set_controls = set_controls
         self._gate = gate  # 실시간 보기와 장치를 나눠 쓸 때. 찍는 동안 실시간 보기를 멈춘다
+        self.rotate = check_rotate(rotate)  # 카메라를 뒤집어 달았을 때 저장 전에 바로 세운다(11/6 옆면 Brio)
 
     def capture(self, settings: dict[str, int]) -> bytes:
         with self._gate.exclusive() if self._gate is not None else nullcontext():
@@ -143,6 +164,7 @@ class OpenCvCamera:
             ok, frame = cap.read()
             if not ok:
                 raise CameraError(self.code, "프레임을 받지 못함")
+            frame = rotate_frame(frame, self.rotate)
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if not ok:
                 raise CameraError(self.code, "JPEG 인코딩 실패")
