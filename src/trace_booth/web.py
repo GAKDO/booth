@@ -184,7 +184,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return False
-            self._problem(401, "부스 화면 접속 비밀이 필요해요. 부스 콘솔에 보이는 주소(/?token=...)로 여세요")
+            self._problem(401, "부스 화면 접속 비밀이 필요해요. /?token=<TRACE_BOOTH_UI_TOKEN 값> 으로 한 번 여세요")
             return False
 
         def _has_token(self, token: str) -> bool:
