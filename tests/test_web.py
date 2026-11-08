@@ -170,6 +170,8 @@ def test_접속_비밀로_첫_화면을_열면_쿠키를_심고_쿠키로_API를
         cookie = e.headers["Set-Cookie"]
     assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
     pair = cookie.split(";", 1)[0]
+    assert "s3cret-test" not in pair  # 쿠키에 비밀 원문을 두지 않는다
     assert _raw(guarded, "GET", "/api/queue", headers={"Cookie": pair})[0] == 200
+    assert _raw(guarded, "GET", "/api/queue", headers={"Cookie": "trace_booth_ui=s3cret-test"})[0] == 401
     assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "s3cret-test"})[0] == 200
     assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "wrong"})[0] == 401

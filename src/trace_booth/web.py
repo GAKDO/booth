@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import threading
@@ -116,6 +117,11 @@ def _checkout_json(c: CheckoutRecord | None) -> dict | None:
 _UI_COOKIE = "trace_booth_ui"
 
 
+def _cookie_value(token: str) -> str:
+    """접속 비밀을 쿠키에 담을 값(SHA-256 hex)으로 바꾼다."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _cookie(header: str | None, name: str) -> str | None:
     """Cookie 헤더에서 이름 하나의 값을 찾는다(없으면 None)."""
     for part in (header or "").split(";"):
@@ -179,7 +185,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     # 주소창에서 비밀을 지우고 쿠키로 다시 연다
                     self.send_response(303)
                     self.send_header("Location", "/")
-                    self.send_header("Set-Cookie", f"{_UI_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict")
+                    self.send_header("Set-Cookie", f"{_UI_COOKIE}={_cookie_value(token)}; Path=/; HttpOnly; SameSite=Strict")
                     self.send_header("Cache-Control", "no-store")
                     self.send_header("Content-Length", "0")
                     self.end_headers()
@@ -188,8 +194,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             return False
 
         def _has_token(self, token: str) -> bool:
-            given = self.headers.get("X-Booth-Token") or _cookie(self.headers.get("Cookie"), _UI_COOKIE) or ""
-            return bool(given) and hmac.compare_digest(given.encode(), token.encode())
+            header = self.headers.get("X-Booth-Token") or ""
+            if header:
+                return hmac.compare_digest(header.encode(), token.encode())
+            # 쿠키에는 비밀 원문 대신 SHA-256 hex를 둔다(;·공백 같은 글자가 있어도 깨지지 않고, 원문이 쿠키에 남지 않음)
+            given = _cookie(self.headers.get("Cookie"), _UI_COOKIE) or ""
+            return bool(given) and hmac.compare_digest(given.encode(), _cookie_value(token).encode())
 
         def _route(self, method: str, path: str) -> None:
             svc = app.service
