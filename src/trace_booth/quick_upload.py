@@ -1,8 +1,11 @@
-"""빠른 검사 세트·탐지를 capture-server에 올리고, 실패하면 로컬 큐에서 다시 시도한다(contracts 1.1.0).
+"""검사 세트·탐지를 capture-server에 올리고, 실패하면 로컬 큐에서 다시 시도한다(contracts 1.1.0).
 
-1. 세트: `profile: QUICK`로 만들고 12장을 올린 뒤 완료(checkout.submit_session). 올린 세트는 다시 만들지 않는다.
+1. 세트: 빠른 검사는 `profile: QUICK`(12장), 전체 검사는 `profile: FULL`(28장, SCR1을 건너뛰면 skippedFaces에 사유)로
+   만들고 올린 뒤 완료(checkout.submit_session). 올린 세트는 다시 만들지 않는다.
 2. 탐지: 세트가 올라가고 탐지가 끝나면 `analyzedPhotos`(분석한 사진 전부)와 함께 올린다. 다시 탐지하면 다시 보내고,
    서버는 그 세트의 부스 탐지를 통째로 바꾼다. 등급이 매겨진 세트(409 CAPTURE_SET_CLOSED)는 더 보내지 않는다.
+   analyzedPhotos는 QUICK에 필수이고 FULL에는 선택이지만, 늘 세트 전체를 분석한 결과라 둘 다 보낸다.
+   FULL 세트의 서버 등급은 inspect-worker 정합(INSPECTED)과 이 부스 탐지가 둘 다 와야 매겨진다.
 
 사진·탐지 결과는 로컬에 남으므로 몇 번 실패해도 잃지 않는다.
 """
@@ -17,9 +20,9 @@ from datetime import datetime
 
 from .capture_client import ApiError, CaptureClient, HttpCall, http_call
 from .checkout import submit_session
+from .shotlist import inspection_profile
 from .store import Store
 
-PROFILE = "QUICK"
 RETRY_SECONDS = 30.0
 
 
@@ -28,7 +31,8 @@ def upload_quick(
     http: HttpCall = http_call, sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """할 수 있는 단계까지 올린다. 실패는 기록에 남기고 예외를 올리지 않는다(재시도 큐가 다시 부른다)."""
-    record = submit_session(store, session_id, client, now, http, sleep, profile=PROFILE)
+    profile = inspection_profile(store.get_session(session_id).shotlist)
+    record = submit_session(store, session_id, client, now, http, sleep, profile=profile)
     if record.status != "SUBMITTED" or record.capture_set_id is None:
         return
     result = store.get_quick_result(session_id)

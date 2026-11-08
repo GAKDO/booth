@@ -104,7 +104,9 @@
   .lists button .n { font-size:14px; color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
   .lists button[aria-checked="true"] { border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent); }
   .lists button[aria-checked="true"] .n { color:#fca5a5; }
-  @media (max-width:560px) { .lists { grid-template-columns:minmax(0,1fr); } .lists button { min-height:0; } }
+  .lists.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .profilepick { margin-bottom:18px; }
+  @media (max-width:560px) { .lists, .lists.two { grid-template-columns:minmax(0,1fr); } .lists button { min-height:0; } }
   .form input { width:100%; min-width:0; }
   .form label { display:grid; gap:8px; font-size:16px; color:var(--muted); font-weight:600; }
   .form input { min-height:var(--tap); padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--bg);
@@ -303,6 +305,12 @@
       <div><h1>검사할 기기를 고르세요</h1><p class="sub">부스에 올린 노트북과 같은 기기를 누르면 촬영을 시작해요</p></div>
       <button id="reload" class="btn ghost">새로고침</button>
     </div>
+    <!-- 검사 범위(11/8): 기본은 빠른 검사(위·아래). 전체 검사는 키보드·옆면까지 28장(SCR1 선택). 못 불러오면 숨기고 빠른 검사 -->
+    <div class="listpick profilepick" id="profilePick" hidden>
+      <span class="lab" id="profileLab">검사 범위</span>
+      <div class="lists two" id="profiles" role="radiogroup" aria-labelledby="profileLab"></div>
+      <small class="help" id="profileHelp"></small>
+    </div>
     <div class="devices" id="waitingList"></div>
   </section>
 
@@ -352,10 +360,10 @@
   <section id="capture" hidden>
     <div class="who"><button id="back" class="iconbtn back" hidden>← 목록으로</button><span class="tag" id="modeTag"></span><strong id="who"></strong></div>
     <div class="phases" id="phases" hidden>
-      <div class="phase" data-phase="0"><b>1</b>바닥면 촬영</div>
-      <div class="phase" data-phase="1"><b>2</b>뒤집기</div>
-      <div class="phase" data-phase="2"><b>3</b>상판 촬영</div>
-      <div class="phase" data-phase="3"><b>4</b>완료 · 판정</div>
+      <div class="phase" data-phase="0"><b>1</b><span>바닥면 촬영</span></div>
+      <div class="phase" data-phase="1"><b>2</b><span>뒤집기</span></div>
+      <div class="phase" data-phase="2"><b>3</b><span>상판 촬영</span></div>
+      <div class="phase" data-phase="3"><b>4</b><span>완료 · 판정</span></div>
     </div>
     <div class="progress"><span id="stepNo"></span><div class="bar"><i id="barFill"></i></div><span id="missingNo"></span></div>
     <div class="step" id="stepCard">
@@ -418,6 +426,17 @@
 const $ = (id) => document.getElementById(id);
 let state = null, result = null, completedAt = 0, waitMs = null, label = "", mode = "QUICK";
 let openDevice = null;  // 목록으로 돌아오며 멈춘 기기(서버에 열린 세션이 남아 있음)
+let openProfile = null;  // 멈춘 기기의 검사 범위(이어 찍을 때 화면에서 고른 범위가 달라도 그 범위로 잇는다)
+let profile = "QUICK";  // 검사 범위(QUICK·FULL). 서버 기본값(TRACE_BOOTH_INSPECTION)으로 시작
+const PROFILE_CARD = {
+  QUICK: ["빠른 검사", "위·아래 2면. 바닥 → 뒤집어 상판"],
+  FULL: ["전체 검사", "위·아래 → 펼친 키보드(바 #2를 앞 L4로) → 닫아서 옆면 5면, SCR1은 선택"],
+};
+// 진행 칸 이름: 빠른 검사는 바닥·뒤집기·상판·판정, 전체 검사는 위·아래·키보드·옆면 다음 판정
+const PHASES = {
+  QUICK: ["바닥면 촬영", "뒤집기", "상판 촬영", "완료 · 판정"],
+  FULL: ["바닥 · 상판", "펼친 키보드", "옆면", "완료 · 판정"],
+};
 const MODE_NAME = { TRAINING: "학습", OUT: "출고", RET: "반납", QUICK: "빠른 검사" };
 const KIND = { OUT: "출고", RCV: "수령", RET: "반납" };
 const FACE = { BOT: "바닥면", TOP: "상판", KB: "키보드", SF: "앞면", SB: "뒷면", SL: "왼쪽", SR: "오른쪽", SCR0: "화면(꺼짐)", SCR1: "화면(켜짐)" };
@@ -494,7 +513,7 @@ function setInstruction(text, kind) {
 
 // 단계 카드·진행 막대·칩(면·조명·카메라)
 function renderStep(s, step) {
-  $("modeTag").textContent = MODE_NAME[s.mode];
+  $("modeTag").textContent = s.mode === "QUICK" && s.profile === "FULL" ? "전체 검사" : MODE_NAME[s.mode];
   $("who").textContent = s.mode === "QUICK" ? label : s.deviceId;
   const total = step ? step.index + s.remainingSteps : null;
   const at = step ? step.index + 1 : total;
@@ -519,7 +538,17 @@ function renderStep(s, step) {
   const quick = s.mode === "QUICK";
   $("phases").hidden = !quick;
   if (quick) {
-    const now = !step ? 3 : step.kind === "NOTICE" ? 1 : step.face === "TOP" ? 2 : 0;
+    const full = s.profile === "FULL";
+    const names = PHASES[full ? "FULL" : "QUICK"];
+    for (const el of document.querySelectorAll(".phase")) el.querySelector("span").textContent = names[Number(el.dataset.phase)];
+    const sideFace = (f) => ["SF", "SB", "SL", "SR", "SCR0", "SCR1"].includes(f);
+    // 전체 검사: 안내 단계는 다음에 찍을 면의 칸으로 본다(펼치기 안내는 키보드 칸, 옆면 준비는 옆면 칸, 끝 안내는 판정 칸)
+    const fullPhase = () => {
+      const face = step && (step.face || step.nextFace);
+      if (!face) return 3;
+      return face === "KB" ? 1 : sideFace(face) ? 2 : 0;
+    };
+    const now = full ? fullPhase() : !step ? 3 : step.kind === "NOTICE" ? 1 : step.face === "TOP" ? 2 : 0;
     for (const el of document.querySelectorAll(".phase")) {
       const p = Number(el.dataset.phase);
       el.className = "phase" + (p === now ? " now" : p < now ? " passed" : "");
@@ -538,10 +567,11 @@ function renderQuick(s, step) {
   const shooting = s.status === "IN_PROGRESS";
   show(shooting ? "capture" : "result");
   $("meta").innerHTML = shooting
-    ? esc(`빠른 검사 · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + step.cameras.join("·") : ""}`
+    ? esc(`${(PROFILE_CARD[s.profile] || PROFILE_CARD.QUICK)[0]} · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + step.cameras.join("·") : ""}`
       + ` · 빠진 사진 ${s.missing.length}`) + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>')
     : "";
-  $("skip").hidden = true;
+  // 전체 검사의 SCR1(선택)만 건너뛸 수 있다. 빠른 검사에는 선택 단계가 없다
+  $("skip").hidden = !(shooting && step && step.optional);
   $("submit").hidden = true;
   $("nextDevice").hidden = shooting;
   if (shooting) $("redetect").hidden = true;
@@ -571,7 +601,7 @@ function renderResult() {
   const review = marks.length ? `확인할 곳 ${marks.length}곳(흠집 의심 ${suspect} · 확인 필요 ${marks.length - suspect}) · 관리자 검수 뒤 확정 · ` : "";
   const time = waitMs != null ? ` · 완료→판정 ${(waitMs / 1000).toFixed(1)}초` : "";
   $("verdictMeta").textContent = r.status === "FAILED" ? (r.error || "")
-    : r.status === "DONE" ? `${review}${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
+    : r.status === "DONE" ? `${review}${r.profile === "FULL" ? "전체 검사 · " : ""}${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
       + (r.testOnly ? " · ⚠ 엔진 없는 시험(판정 아님)" : "")
     : label;
   const u = r.upload || {};
@@ -692,11 +722,12 @@ async function loadWaiting() {
   } catch (e) { emptyList("목록을 못 불러왔어요"); }
 }
 
-async function startQuick(w) {
+async function startQuick(w, resume) {
   label = `${w.modelCode} · ${w.serial}`;
+  const p = resume && openProfile ? openProfile : profile;
   state = await call("POST", "/api/sessions",
-    { mode: "QUICK", deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
-  if (openDevice === w.deviceId) openDevice = null;  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
+    { mode: "QUICK", profile: p, deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
+  if (openDevice === w.deviceId) { openDevice = null; openProfile = null; }  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
   result = null; waitMs = null; completedAt = 0;
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; photosKey = ""; photos = []; selShot = null; render();
 }
@@ -704,14 +735,16 @@ async function startQuick(w) {
 // 기기를 누르면 바로 시작하지 않고 한 번 확인한다(잘못 누름 방지). 찍던 기기는 이어 찍는다고 알려 준다
 async function pickDevice(w, resume) {
   const kind = KIND[w.checkpointType] || w.checkpointType;
+  const p = resume && openProfile ? openProfile : profile;
+  const range = p === "FULL" ? "전체 검사(28장)" : "빠른 검사";
   const ok = await ask({
-    title: resume ? "찍던 기기를 이어 찍을까요?" : `${kind} 검사를 시작할까요?`,
+    title: resume ? "찍던 기기를 이어 찍을까요?" : `${kind} ${range}를 시작할까요?`,
     lead: `${w.modelCode} · ${w.serial}`,
     body: resume ? "앞에서 찍은 사진은 그대로 두고 멈춘 단계부터 이어서 찍어요."
       : "부스에 올린 노트북 바닥 라벨의 시리얼과 같은지 확인하세요.",
     yes: resume ? "이어 찍기" : "촬영 시작", no: "다시 고르기",
   });
-  if (ok) startQuick(w);
+  if (ok) startQuick(w, resume);
 }
 
 // 확인 시트. 누른 버튼이 '확인'이면 true. 바깥이나 Esc는 취소
@@ -757,6 +790,7 @@ async function leaveCapture() {
     if (!ok) return false;
   }
   openDevice = state.deviceId;
+  openProfile = state.profile || null;
   return true;
 }
 $("back").onclick = async () => {
@@ -1038,6 +1072,30 @@ async function restore() {
     if (s.status === "COMPLETE") pollResult();
   } catch (e) { applyMode(); }
 }
+// 검사 범위(빠른·전체)를 불러와 카드로 보인다. 못 불러오면 칸을 숨기고 빠른 검사로 찍는다
+function pickProfile(name) {
+  profile = name;
+  for (const b of $("profiles").children) b.setAttribute("aria-checked", String(b.dataset.name === name));
+  $("profileHelp").textContent = (PROFILE_CARD[name] || ["", ""])[1];
+}
+async function loadProfiles() {
+  try {
+    const res = await fetch("/api/inspection-profiles");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.profiles || data.profiles.length < 2) return;
+    $("profiles").innerHTML = "";
+    for (const p of data.profiles) {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.name = p.name; b.setAttribute("role", "radio");
+      b.innerHTML = `<span class="t">${esc((PROFILE_CARD[p.name] || [p.label])[0])}</span><span class="n">${p.photos}장</span>`;
+      b.onclick = () => pickProfile(p.name);
+      $("profiles").append(b);
+    }
+    pickProfile(data.default);
+    $("profilePick").hidden = false;
+  } catch (e) { /* 칸 없이 빠른 검사 */ }
+}
 // 학습 촬영 목록을 불러와 카드로 보인다(못 불러오면 칸을 숨기고 서버 기본 목록으로 찍는다)
 const LIST_LABEL = {};
 // 카드에 보일 짧은 이름과 준비할 것. 서버 목록에 없는 이름은 서버가 준 이름 그대로
@@ -1070,7 +1128,7 @@ async function loadShotlists() {
     pickShotlist(data.default);
   } catch (e) { /* 칸 없이 기본 목록 */ }
 }
-loadShotlists().then(restore);
+Promise.all([loadShotlists(), loadProfiles()]).then(restore);
 setInterval(async () => {
   if (!state) return;
   try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }

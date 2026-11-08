@@ -160,8 +160,9 @@ class Store:
         )
 
     def find_open_session(self, device_id: str, mode: str, shotlist: str | None = None) -> SessionRecord | None:
-        """열린 세션. 학습(TRAINING)은 같은 촬영 목록끼리만 이어 찍는다(IS는 NULL끼리도 같다고 봄)."""
-        if mode == "TRAINING":
+        """열린 세션. 학습(TRAINING)은 같은 촬영 목록끼리, 검사(QUICK)는 같은 세트 범위(빈 칸 = 빠른 검사, full = 전체 검사)
+        끼리만 이어 찍는다(IS는 NULL끼리도 같다고 봄)."""
+        if mode in ("TRAINING", "QUICK"):
             row = self._one(
                 "SELECT * FROM session WHERE device_id = ? AND mode = ? AND shotlist IS ? AND status = 'IN_PROGRESS' "
                 "ORDER BY started_at DESC LIMIT 1",

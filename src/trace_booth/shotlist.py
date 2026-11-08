@@ -3,6 +3,7 @@
 - mvp(기본, 11/3 방향 전환): BOT → 뒤집어 TOP, 면마다 L1·L2·L3, CAM1·CAM2 = 12장
 - quick(빠른 검사 모드): mvp에서 ID 카드만 뺀 것
 - full(보관): GAKDO/docs booth/README.md 순서와 11/2 결정(패스 2 L1·L2, SCR1 선택), 28장
+- 전체 검사(FULL, 11/8): 검사 모드에서 고르는 28장 목록. ID 카드 없이 BOT → TOP → 펼친 KB → 옆면(SCR1 선택)
 """
 
 from __future__ import annotations
@@ -147,6 +148,77 @@ SHOTLISTS: dict[str, tuple[Step, ...]] = {
     "kb": KB_SHOTLIST,
     "side": SIDE_SHOTLIST,
 }
+
+
+# 전체 검사(FULL, 11/8 문서 감사 "부스는 QUICK 세트만 지원" 공백 메우기). 검사 모드(QUICK 흐름: 목록에서 기기 고르기 →
+# 탐지 → 올리기)에서 세트 범위만 FULL로 바꾼다. 세션 기록의 shotlist 칸에 이 이름을 남기고, 비어 있으면 빠른 검사다.
+FULL_INSPECTION = "full"
+# codes.yaml capture.profile 값. 세트 생성의 profile로 그대로 보낸다
+PROFILE_QUICK = "QUICK"
+PROFILE_FULL = "FULL"
+# 옆면 카메라(책상 높이)로 찍는 면. 위·아래·KB는 위 카메라 두 대
+SIDE_FACES = (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0, Face.SCR1)
+
+# 전체 검사의 자세 안내. 옆면은 노트북을 닫은 채 세워 그 면이 카메라를 향하게 돌린다
+_FULL_POSE = {
+    Face.KB: "KB: 노트북을 펼쳐 화면을 100° 가이드에 맞추고 키보드가 위 카메라를 보게",
+    Face.SF: "SF: 닫은 채 앞 모서리(트랙패드 쪽)가 옆면 카메라를 향하게",
+    Face.SB: "SB: 닫은 채 뒤 힌지 쪽이 옆면 카메라를 향하게",
+    Face.SL: "SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게",
+    Face.SR: "SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게",
+    Face.SCR0: "SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게",
+    Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기)",
+}
+
+
+def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
+    """전체 검사(FULL) 28장 + SCR1 선택 1장.
+
+    BOT·TOP은 빠른 검사와 같은 순서(BOT L1→L2→L3, 뒤집어 TOP L3→L2→L1)라 앞 12장은 빠른 검사와 같다. 이어서 펼친 KB를
+    L1·L2·L4로(CAM1·CAM2), 옆면 5면을 L1·L2로, SCR1을 조명 없이 찍는다(옆면은 CAM1 코드 한 장씩, 계약 그대로).
+    side_camera면 옆면을 책상 높이 옆면 카메라(TRACE_BOOTH_SIDE_CAM)로 찍고, 없으면 CAM1을 책상에 내려 찍는다.
+    마지막 안내로 바 #2를 뒤쪽(L3) 자리로 되돌려 다음 빠른 검사가 같은 조명으로 찍히게 한다.
+    """
+    raw: list[tuple] = []
+
+    def notice(text: str) -> None:
+        raw.append((StepKind.NOTICE, text, None, None, (), False))
+
+    def shots(face: Face, lights: tuple[Light, ...], cams: tuple[Camera, ...], optional: bool = False) -> None:
+        pose = _FULL_POSE.get(face, _POSE[face])
+        for light in lights:
+            raw.append((StepKind.SHOT, f"{pose} · {light_instruction(light)}", face, light, cams, optional))
+
+    shots(Face.BOT, MVP_LIGHTS, _TOP_CAMS)
+    notice("노트북을 다시 뒤집어 상판이 위로 오게 놓으세요")
+    shots(Face.TOP, tuple(reversed(MVP_LIGHTS)), _TOP_CAMS)
+    notice("노트북을 펼쳐 화면을 100° 가이드에 맞추고, 바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮기세요")
+    shots(Face.KB, (Light.L1, Light.L2, Light.L4), _TOP_CAMS)
+    if side_camera:
+        notice("노트북을 닫아 책상 높이 옆면 카메라 앞에 세우세요(배경판은 노트북 뒤 30cm). 옆면은 L1·L2만 써요")
+    else:
+        notice("노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요")
+    for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
+        shots(face, (Light.L1, Light.L2), _SIDE_CAMS)
+    shots(Face.SCR1, (Light.OFF,), _SIDE_CAMS, optional=Face.SCR1 not in REQUIRED_FACES)
+    if side_camera:
+        notice("바 #2를 뒤쪽(L3) 자리로 되돌리세요(다음 빠른 검사 준비)")
+    else:
+        notice("CAM1을 다시 끼워 볼헤드 감시선을 맞추고, 바 #2를 뒤쪽(L3) 자리로 되돌리세요(다음 빠른 검사 준비)")
+    return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
+
+
+FULL_INSPECTION_SHOTLIST: tuple[Step, ...] = full_inspection_shotlist()
+
+
+def inspection_profile(shotlist: str | None) -> str:
+    """검사 세션의 shotlist 칸 → 세트 범위(codes.yaml capture.profile). 비어 있으면 빠른 검사."""
+    return PROFILE_FULL if shotlist == FULL_INSPECTION else PROFILE_QUICK
+
+
+def lights_used(steps: tuple[Step, ...]) -> set[Light]:
+    """목록이 쓰는 조명(프리셋 파일에 있어야 하는 것)."""
+    return {s.light for s in steps if s.captures and s.light is not None}
 
 
 # 학습 화면에서 고를 때 보이는 이름(11/6)

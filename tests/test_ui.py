@@ -580,3 +580,39 @@ def test_촬영을_누르면_같은_단계에_머물고_다음을_눌러야_다�
     expect(page.locator("#chips")).to_contain_text("L2")
     expect(page.locator("#shoot")).to_be_visible()
     expect(page.locator("#lastShots")).to_be_hidden()
+
+
+def test_검사_범위는_빠른_검사가_기본이고_고르지_않으면_지금처럼_빠른_검사로_찍는다(page):
+    expect(page.locator("#profilePick")).to_be_visible()
+    expect(page.locator('#profiles [data-name="QUICK"]')).to_have_attribute("aria-checked", "true")
+    expect(page.locator('#profiles [data-name="FULL"]')).to_contain_text("28장")
+    pick(page, "TEST-0001")
+    expect(page.locator("#modeTag")).to_have_text("빠른 검사")
+    expect(page.locator(".phase").first).to_contain_text("바닥면 촬영")
+    expect(page.locator("#stepNo")).to_have_text("단계 1 / 7")
+
+
+def test_전체_검사를_고르면_확인_시트에_범위가_보이고_SCR1에서만_건너뛰기가_뜬다(page):
+    page.locator('#profiles [data-name="FULL"]').click()
+    device(page, "TEST-0001").click()
+    expect(page.locator("#sheetTitle")).to_contain_text("전체 검사")
+    page.locator("#sheetYes").click()
+    expect(page.locator("#modeTag")).to_have_text("전체 검사")
+    expect(page.locator(".phase").nth(1)).to_contain_text("펼친 키보드")
+    seen = set()
+    while "SCR1" not in page.locator("#instruction").inner_text():
+        expect(page.locator("#skip")).to_be_hidden()
+        text = page.locator("#instruction").inner_text()
+        if "펼쳐" in text and "가이드에 맞추고, 바 #2" in text:
+            expect(page.locator(".phase.now")).to_contain_text("펼친 키보드")  # 펼치기 안내는 키보드 칸
+            seen.add("KB")
+        before = page.locator("#stepNo").inner_text()
+        if page.locator("#shoot").is_visible():
+            shoot(page, 1)
+        else:
+            page.locator("#next").click()
+            expect(page.locator("#stepNo")).not_to_have_text(before)
+    assert seen == {"KB"}
+    expect(page.locator(".phase.now")).to_contain_text("옆면")
+    expect(page.locator("#skip")).to_be_visible()
+    expect(page.locator("#skip")).to_be_enabled()
