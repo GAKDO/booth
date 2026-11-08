@@ -18,6 +18,7 @@ from typing import Any
 from .codes import DEFECT_CLASSES
 from .detect.engine import DetectError, Detector, ModelInfo, RawDetection
 from .detect.runner import ImageLoader, PhotoResult, detect_set, detect_shot, judged_shots
+from .shotlist import PROFILE_QUICK, inspection_profile
 from .store import ShotRecord, Store
 
 DetectorSource = Callable[[], tuple[Detector, ModelInfo]]  # 엔진을 불러 (탐지기, 모델 정보). 못 부르면 DetectError
@@ -59,7 +60,7 @@ class QuickInspector:
         self._clock = clock
         self._detector: tuple[Detector, ModelInfo] | None = None
         self._lock = threading.Lock()  # 엔진은 하나라 한 번에 한 세트(또는 미리 탐지 한 장)만 돌린다
-        self.lights = lights  # 판정 조명(None이면 전부)
+        self.lights = lights  # 빠른 검사의 판정 조명(None이면 전부). 전체 검사는 늘 전부
         self.predetect = predetect
         self._done: dict[int, dict[str, PhotoResult]] = {}  # 세션 → 사진 경로 → 미리 탐지한 결과
 
@@ -92,9 +93,15 @@ class QuickInspector:
         else:
             self._prefetch(session_id)
 
+    def lights_for(self, session_id: int) -> frozenset[str] | None:
+        """세션의 판정 조명. 전체 검사(FULL)는 KB(L4)·옆면(L1·L2)·SCR1(OFF)까지 세트 사진 전부를 본다."""
+        if inspection_profile(self.store.get_session(session_id).shotlist) != PROFILE_QUICK:
+            return None
+        return self.lights
+
     def _prefetch(self, session_id: int) -> None:
         try:
-            for shot in judged_shots(self.store.shots(session_id), self.lights):
+            for shot in judged_shots(self.store.shots(session_id), self.lights_for(session_id)):
                 with self._lock:  # 한 장씩 잡았다 놓아 완료 탐지가 오래 기다리지 않게
                     if self.store.get_session(session_id).status != "IN_PROGRESS":
                         return  # 이미 완료(판정이 남은 사진을 돌림)
@@ -111,10 +118,11 @@ class QuickInspector:
             with self._lock:
                 detector, info = self._get()
                 done = self._done.pop(session_id, {})
+                lights = self.lights_for(session_id)
                 result = detect_set(self.store.shots(session_id), detector, info, self._load, self._clock,
-                                    lights=self.lights, done=done)
+                                    lights=lights, done=done)
                 if not result.photos:  # 판정 조명과 맞는 사진이 없으면 "문제 없음"이 아니라 실패로 남긴다
-                    raise DetectError(f"판정할 사진이 없음(판정 조명 {sorted(self.lights or [])})")
+                    raise DetectError(f"판정할 사진이 없음(판정 조명 {sorted(lights or [])})")
                 ahead = sum(1 for p in result.photos if any(p is d for d in done.values()))
         except Exception as e:  # noqa: BLE001 — 백그라운드 스레드: 엔진·사진 실패를 모두 화면에 남겨 다시 돌리게
             self.store.put_quick_result(session_id, "FAILED", self._now(), error=f"{type(e).__name__}: {e}"[:300])
@@ -122,7 +130,7 @@ class QuickInspector:
             verdict = "DEFECT" if result.has_problem else "CLEAN"  # 오염만 잡히면 CLEAN(서버 등급 A와 같게)
             data = result.to_json()
             data["predetected"] = ahead  # 찍는 동안 미리 끝낸 장수(seconds에는 남은 몫만 들어 있다)
-            data["lights"] = sorted(self.lights) if self.lights else None
+            data["lights"] = sorted(lights) if lights else None
             # 엔진 없는 시험·시험용 기본 모델(model.json testOnly)은 화면에만 보이고 서버에 올리지 않는다
             data["testOnly"] = info.model_version == NO_ENGINE_VERSION or bool(getattr(info, "test_only", False))
             self.store.put_quick_result(session_id, "DONE", self._now(), verdict=verdict,
@@ -141,7 +149,8 @@ def result_json(store: Store, session_id: int, shooting: bool) -> dict[str, Any]
     session = store.get_session(session_id)
     record = store.get_quick_result(session_id)
     out: dict[str, Any] = {
-        "sessionId": session.public_id, "deviceId": session.device_id, "status": "SHOOTING" if shooting else "WAITING",
+        "sessionId": session.public_id, "deviceId": session.device_id, "profile": inspection_profile(session.shotlist),
+        "status": "SHOOTING" if shooting else "WAITING",
         "verdict": None, "count": 0, "faces": {}, "seconds": None, "modelVersion": None, "testOnly": False,
         "error": None, "photos": [],
     }

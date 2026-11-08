@@ -20,7 +20,16 @@ from .quick import result_json as _quick_result
 from .quick_upload import upload_json
 from .rentals import BOOTH_CODE_RE, WaitingDevice, redeem_message
 from .session import CaptureError, CaptureService, Incomplete, InvalidInput
-from .shotlist import SHOTLIST_LABELS, required_photo_count
+from .shotlist import (
+    FULL_INSPECTION,
+    PROFILE_FULL,
+    PROFILE_QUICK,
+    QUICK_SHOTLIST,
+    SHOTLIST_LABELS,
+    StepKind,
+    inspection_profile,
+    required_photo_count,
+)
 from .store import CheckoutRecord, ShotRecord
 
 Submitter = Callable[[int], CheckoutRecord]
@@ -73,12 +82,16 @@ def _state(app: App) -> dict:
             "face": v.step.face.value if v.step.face else None,
             "light": v.step.light.value if v.step.light else None,
             "cameras": [c.value for c in v.step.cameras], "optional": v.step.optional, "taken": v.taken,
+            # 안내 단계 다음에 찍을 면(화면 진행 칸 표시용). 뒤에 찍을 단계가 없으면 None
+            "nextFace": next((st.face.value for st in app.service.steps_for(v.session)[v.step.index:]
+                              if st.kind is StepKind.SHOT and st.face is not None), None),
         }
     return {
         "sessionId": v.session.public_id, "deviceId": v.session.device_id, "mode": v.session.mode,
         "status": v.session.status, "step": step, "remainingSteps": v.remaining_steps,
         "missing": v.missing, "scr1SkipReason": v.session.scr1_skip_reason,
         "shotlist": v.session.shotlist or app.service.default_list,
+        "profile": inspection_profile(v.session.shotlist) if v.session.mode == "QUICK" else None,
         "queue": app.service.store.upload_counts(), "presetsConfigured": app.service.presets.configured,
         "checkout": _checkout_json(app.service.store.get_checkout(v.session.id)),
         "checkoutEnabled": app.submitter is not None,
@@ -134,6 +147,14 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     for name, steps in svc.training_lists.items()
                 ]
                 return self._json(200, {"default": svc.default_list, "lists": lists})
+            if method == "GET" and path == "/api/inspection-profiles":
+                # 검사 모드의 세트 범위 고르기(11/8). 기본은 서버를 켤 때 TRACE_BOOTH_INSPECTION으로 고른 것(없으면 빠른 검사)
+                profiles = [{"name": PROFILE_QUICK, "label": "빠른 검사(위·아래)",
+                             "photos": required_photo_count(svc.mode_steps.get("QUICK", QUICK_SHOTLIST))}]
+                if FULL_INSPECTION in svc.inspection_lists:
+                    profiles.append({"name": PROFILE_FULL, "label": "전체 검사(위·아래·키보드·옆면)",
+                                     "photos": required_photo_count(svc.inspection_lists[FULL_INSPECTION])})
+                return self._json(200, {"default": svc.default_profile, "profiles": profiles})
             if method == "GET" and path.startswith("/api/shots/") and path.endswith("/thumbnail"):
                 shot = svc.store.get_shot(path.split("/")[3])
                 if shot is None:
@@ -176,11 +197,11 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     raise InvalidInput("서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 출고·반납 모드를 쓸 수 없어요")
                 rental, checkpoint = body.get("rentalId"), body.get("checkpointId")
                 with app.lock:
-                    shotlist = body.get("shotlist")
+                    shotlist, profile = body.get("shotlist"), body.get("profile")
                     app.current = svc.start(
                         str(body.get("deviceId", "")), mode,
                         str(rental) if rental else None, str(checkpoint) if checkpoint else None,
-                        str(shotlist) if shotlist else None,
+                        str(shotlist) if shotlist else None, str(profile) if profile else None,
                     ).id
                 return self._json(201, _state(app))
             if not path.startswith("/api/sessions/current"):

@@ -24,7 +24,15 @@ from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
 from .session import CaptureService, _now
-from .shotlist import MVP_SHOTLIST, QUICK_SHOTLIST, SHOTLISTS
+from .shotlist import (
+    FULL_INSPECTION,
+    MVP_SHOTLIST,
+    PROFILE_FULL,
+    PROFILE_QUICK,
+    QUICK_SHOTLIST,
+    SHOTLISTS,
+    full_inspection_shotlist,
+)
 from .store import Store
 from .uploader import S3ObjectStore, UploadWorker, object_key
 from .web import App, CodeRedeemer, LiveFeed, Submitter, WaitingList, make_server
@@ -94,6 +102,15 @@ def _judge_lights(raw: str | None = None) -> frozenset[str] | None:
     return frozenset(names)
 
 
+def _inspection_profile(raw: str | None = None) -> str:
+    """TRACE_BOOTH_INSPECTION(quick·full): 검사 화면이 처음 고르는 세트 범위. 비우면 빠른 검사(시연 그대로).
+    화면에서 기기마다 바꿀 수 있고, 이 값은 처음 고른 칸만 정한다."""
+    value = (os.environ.get("TRACE_BOOTH_INSPECTION", "") if raw is None else raw).strip().upper() or PROFILE_QUICK
+    if value not in (PROFILE_QUICK, PROFILE_FULL):
+        raise SystemExit(f"TRACE_BOOTH_INSPECTION은 quick 또는 full이에요: {value}")
+    return value
+
+
 def _submitter(store: Store) -> Submitter | None:
     """출고·반납 모드용. 서버 설정이 없으면 None."""
     client = _client()
@@ -150,9 +167,13 @@ def serve(host: str, port: int) -> int:
     # kb·side는 학습 촬영 전용: 출고·반납은 위·아래(mvp) 목록을 그대로 쓴다
     checkout = steps if shotlist_name in ("mvp", "full") else MVP_SHOTLIST
     mode_steps = {"QUICK": QUICK_SHOTLIST, "OUT": checkout, "RET": checkout}
+    # 전체 검사(FULL, 11/8): 옆면은 옆면 카메라가 있으면 그것으로, 없으면 CAM1을 책상에 내려 찍는다
+    inspection = {FULL_INSPECTION: full_inspection_shotlist(side_camera=side is not None)}
+    profile = _inspection_profile()
     service = CaptureService(store, cameras, presets, data_dir, steps=steps, mode_steps=mode_steps,
                              training_lists=SHOTLISTS, default_list=shotlist_name,
-                             list_cameras=list_cameras, list_presets=list_presets)
+                             list_cameras=list_cameras, list_presets=list_presets,
+                             inspection_lists=inspection, default_profile=profile)
     objects = _object_store()
     if objects is None:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")
@@ -173,8 +194,8 @@ def serve(host: str, port: int) -> int:
             raise SystemExit(f"TRACE_BOOTH_DETECT_LIGHTS에 빠른 검사 사진의 조명({', '.join(sorted(quick_lights))})이 없어요")
         predetect = os.environ.get("TRACE_BOOTH_PREDETECT", "1") != "0"
         quick = QuickInspector(store, source, _imread, _now, lights=lights, predetect=predetect)
-        print(f"빠른 검사 판정 조명 {', '.join(sorted(lights)) if lights else '전부(12장)'}, "
-              f"찍는 동안 미리 탐지 {'켬' if predetect else '끔'}")
+        print(f"빠른 검사 판정 조명 {', '.join(sorted(lights)) if lights else '전부(12장)'}(전체 검사는 늘 전부), "
+              f"찍는 동안 미리 탐지 {'켬' if predetect else '끔'}, 처음 고른 검사 범위 {profile}")
         threading.Thread(target=quick.warm, daemon=True, name="engine-warm").start()
     if client is None:
         if quick is not None:
