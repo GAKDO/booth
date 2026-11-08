@@ -96,10 +96,12 @@ class FakeCapture:
         found = data.get("detections", [])
         if not data.get("modelVersion") or any(self._key(d) not in keys for d in found):
             return self._problem(400, "VALIDATION_FAILED")
-        if s["request"].get("profile") == "QUICK":  # 1.1.0: QUICK은 analyzedPhotos에 세트 사진 전부
-            analyzed = {self._key(p) for p in data.get("analyzedPhotos", [])}
-            if analyzed != keys:
-                return self._problem(400, "VALIDATION_FAILED")
+        analyzed = {self._key(p) for p in data.get("analyzedPhotos", [])}
+        if any(k not in keys for k in analyzed):  # 세트에 없는 사진은 범위와 상관없이 400
+            return self._problem(400, "VALIDATION_FAILED")
+        if s["request"].get("profile") == "QUICK" and analyzed != keys:  # 1.1.0: QUICK은 analyzedPhotos에 세트 사진 전부
+            return self._problem(400, "VALIDATION_FAILED")
+        if "analyzedPhotos" in data:  # FULL은 선택 필드
             s["analyzed"] = sorted(analyzed)
         self.detections[set_id] = list(found)
         s["inferenceMs"] = data.get("inferenceMs")

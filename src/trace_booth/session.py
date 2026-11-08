@@ -17,11 +17,23 @@ from .camera import CameraDevice
 from .camera_presets import Presets
 from .codes import Camera, Light
 from .naming import is_valid_device_id, shot_filename, slate_filename
-from .shotlist import DEFAULT_SHOTLIST, QUICK_SHOTLIST, Step, StepKind
+from .shotlist import (
+    DEFAULT_SHOTLIST,
+    FULL_INSPECTION,
+    FULL_INSPECTION_SHOTLIST,
+    PROFILE_FULL,
+    PROFILE_QUICK,
+    QUICK_SHOTLIST,
+    SIDE_FACES,
+    Step,
+    StepKind,
+    lights_used,
+)
 from .store import SessionRecord, ShotRecord, Store
 
 MIN_FREE_BYTES = 200 * 1024 * 1024
-MODES = ("TRAINING", "OUT", "RET", "QUICK")  # QUICK = 부스 빠른 검사(위·아래 2면, 11/3 MVP)
+MODES = ("TRAINING", "OUT", "RET", "QUICK")  # QUICK = 부스 검사(기본 위·아래 2면, 11/3 MVP. 전체 검사도 이 흐름)
+PROFILES = (PROFILE_QUICK, PROFILE_FULL)  # 검사 모드의 세트 범위(codes.yaml capture.profile)
 BOOTH_CODE_RE = re.compile(r"^[A-Z]{2,4}[0-9]{2}$")
 PUBLIC_ID_RE = re.compile(r"^[A-Za-z0-9_-]{21}$")  # 다른 서버의 publicId(NanoID 21자)
 
@@ -83,6 +95,8 @@ class CaptureService:
         default_list: str | None = None,
         list_cameras: dict[str, dict[Camera, CameraDevice]] | None = None,
         list_presets: dict[str, Presets] | None = None,
+        inspection_lists: dict[str, tuple[Step, ...]] | None = None,
+        default_profile: str = PROFILE_QUICK,
     ) -> None:
         self.store = store
         self.cameras = cameras
@@ -98,15 +112,25 @@ class CaptureService:
         # 파일 이름의 카메라 코드는 그대로(CAM1) 두어 계약(codes.yaml)을 바꾸지 않는다
         self.list_cameras = dict(list_cameras or {})
         self.list_presets = dict(list_presets or {})
+        # 검사 모드(QUICK 흐름)에서 고를 수 있는 다른 세트 범위(11/8): 이름 → 목록. 지금은 전체 검사(full)뿐
+        self.inspection_lists = (
+            {FULL_INSPECTION: FULL_INSPECTION_SHOTLIST} if inspection_lists is None else dict(inspection_lists)
+        )
+        if default_profile not in PROFILES:
+            raise ValueError(f"세트 범위는 {', '.join(PROFILES)} 중 하나: {default_profile}")
+        self.default_profile = default_profile  # 화면이 고르지 않으면 쓰는 범위. 기본은 빠른 검사(시연 그대로)
         self._now = now
         self._min_free = min_free_bytes
         self._lock = threading.Lock()
 
     def start(
         self, device_id: str, mode: str = "TRAINING", rental_id: str | None = None, checkpoint_id: str | None = None,
-        shotlist: str | None = None,
+        shotlist: str | None = None, profile: str | None = None,
     ) -> SessionRecord:
-        """세션을 열거나 이어 간다. 출고·반납(OUT·RET)·빠른 검사(QUICK)는 렌탈·시점 publicId가 필요하다."""
+        """세션을 열거나 이어 간다. 출고·반납(OUT·RET)·빠른 검사(QUICK)는 렌탈·시점 publicId가 필요하다.
+
+        profile은 검사 모드의 세트 범위(QUICK·FULL). 빼면 default_profile. 다른 모드에서는 무시한다.
+        """
         if not is_valid_device_id(device_id) or (mode == "TRAINING" and not BOOTH_CODE_RE.match(device_id)):
             # 학습 데이터는 ID 카드의 부스 코드만(trace-raw 키가 파일명 앞 `_`까지를 기기 ID로 씀)
             raise InvalidInput(f"기기 ID 형식이 아님: {device_id} (예: MB01, 빠른 검사는 목록의 기기)")
@@ -114,7 +138,9 @@ class CaptureService:
             raise InvalidInput(f"모드는 {', '.join(MODES)} 중 하나")
         # 학습 세션에는 기본 목록이어도 실제 이름을 남긴다. 서버를 다른 기본 목록으로 다시 켜도
         # 예전 세션(이름 없음·다른 목록)이 새 목록의 단계로 이어지지 않게 하려고
-        if mode != "TRAINING" or not self.training_lists:
+        if mode == "QUICK":
+            shotlist = self._inspection_list(profile)
+        elif mode != "TRAINING" or not self.training_lists:
             shotlist = None
         else:
             shotlist = shotlist or self.default_list
@@ -137,9 +163,31 @@ class CaptureService:
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
             return s
 
+    def _inspection_list(self, profile: str | None) -> str | None:
+        """검사 세트 범위 → 세션에 남길 목록 이름(빠른 검사는 None). 쓸 수 없는 범위면 400."""
+        profile = (profile or self.default_profile).upper()
+        if profile not in PROFILES:
+            raise InvalidInput(f"검사 범위는 {', '.join(PROFILES)} 중 하나예요")
+        if profile == PROFILE_QUICK:
+            return None
+        if FULL_INSPECTION not in self.inspection_lists:
+            raise InvalidInput("이 부스에는 전체 검사 목록이 없어요")
+        steps = self.inspection_lists[FULL_INSPECTION]
+        # 프리셋 파일에 KB(L4)·SCR1(OFF) 조명 값이 없으면 중간에 막히므로 시작 전에 알린다
+        missing = set()
+        for presets, side in ((self.presets, False), (self.list_presets.get("side", self.presets), True)):
+            if presets.configured:
+                need = lights_used(tuple(st for st in steps if (st.face in SIDE_FACES) is side))
+                missing |= {li.value for li in need if li.value not in presets.by_light}
+        if missing:
+            raise InvalidInput(f"프리셋 파일에 전체 검사 조명 {', '.join(sorted(missing))} 값이 없어요")
+        return FULL_INSPECTION
+
     def steps_for(self, s: SessionRecord) -> tuple[Step, ...]:
         if s.mode == "TRAINING" and s.shotlist in self.training_lists:
             return self.training_lists[s.shotlist]
+        if s.mode == "QUICK" and s.shotlist in self.inspection_lists:
+            return self.inspection_lists[s.shotlist]
         return self.mode_steps.get(s.mode, self.steps)
 
     def view(self, session_id: int) -> SessionView:
@@ -235,8 +283,14 @@ class CaptureService:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
             raise DiskFull("디스크 공간이 부족해요. 찍지 않았어요")
         light = step.light or Light.L1
-        swap = self.list_cameras.get(s.shotlist or "", {}) if s.mode == "TRAINING" else {}
-        presets = self.list_presets.get(s.shotlist or "", self.presets) if swap else self.presets
+        if s.mode == "TRAINING":
+            key = s.shotlist or ""
+        elif s.mode == "QUICK" and s.shotlist and step.face in SIDE_FACES:
+            key = "side"  # 전체 검사의 옆면은 옆면 카메라가 있으면 그것으로(없으면 CAM1을 내려서)
+        else:
+            key = ""
+        swap = self.list_cameras.get(key, {})
+        presets = self.list_presets.get(key, self.presets) if swap else self.presets
         settings = presets.for_light(light)
         shots = []
         for cam in step.cameras:
