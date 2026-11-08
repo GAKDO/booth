@@ -578,6 +578,9 @@ function renderQuick(s, step) {
   renderQueue(s.queue);
 }
 
+/** 이 신뢰도 이상은 "흠집 의심", 그 아래(부스 문턱 0.25까지)는 "확인 필요"(관리자 검수 화면과 같은 값) */
+const SUSPECT_CONFIDENCE = 0.4;
+
 function renderResult() {
   const r = result;
   if (!r) return;
@@ -592,9 +595,13 @@ function renderResult() {
     v.textContent = "판정 중…"; box.className = "verdict wait"; icon.textContent = "◌";
   }
   const faces = Object.entries(r.faces).map(([f, n]) => `${f} ${n}곳`).join(" · ");
+  // 사람 검수(11/8): AI는 넓게 잡고 관리자가 확정한다. 신뢰도 0.40 이상은 흠집 의심, 그 아래는 확인 필요(사진별로 셈, 오염 제외)
+  const marks = r.photos.flatMap((p) => p.detections).filter((d) => d.class !== "stain");
+  const suspect = marks.filter((d) => d.confidence >= SUSPECT_CONFIDENCE).length;
+  const review = marks.length ? `확인할 곳 ${marks.length}곳(흠집 의심 ${suspect} · 확인 필요 ${marks.length - suspect}) · 관리자 검수 뒤 확정 · ` : "";
   const time = waitMs != null ? ` · 완료→판정 ${(waitMs / 1000).toFixed(1)}초` : "";
   $("verdictMeta").textContent = r.status === "FAILED" ? (r.error || "")
-    : r.status === "DONE" ? `${r.profile === "FULL" ? "전체 검사 · " : ""}${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
+    : r.status === "DONE" ? `${review}${r.profile === "FULL" ? "전체 검사 · " : ""}${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
       + (r.testOnly ? " · ⚠ 엔진 없는 시험(판정 아님)" : "")
     : label;
   const u = r.upload || {};

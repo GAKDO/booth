@@ -206,6 +206,9 @@ def test_빠른_검사를_끝까지_찍으면_뒤집기_안내를_거쳐_판정�
     expect(page.locator("#complete")).to_have_class("btn primary big")
     page.locator("#complete").click()
     expect(page.locator("#verdict")).to_have_text("문제 있음")
+    # 사람 검수(11/8): 부스는 AI가 잡은 곳을 "확인할 곳"으로 알리고, 확정은 관리자 검수 뒤
+    expect(page.locator("#verdictMeta")).to_contain_text("확인할 곳 1곳")
+    expect(page.locator("#verdictMeta")).to_contain_text("관리자 검수 뒤 확정")
     expect(page.locator("#resultPhotos figure")).to_have_count(12)
     expect(page.locator("#resultPhotos figure.hit")).to_have_count(1)
     expect(page.locator("#back")).to_be_hidden()
