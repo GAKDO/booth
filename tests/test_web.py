@@ -111,3 +111,67 @@ def test_미리보기_크기는_선택이고_범위_밖이나_이상한_값은_�
     assert _thumb_width("/api/shots/x/thumbnail?w=10") == 160
     assert _thumb_width("/api/shots/x/thumbnail?w=-5") == 480
     assert _thumb_width("/api/shots/x/thumbnail?w=abc") == 480
+
+
+def _raw(base, method, path, data=b"{}", headers=None):
+    req = urllib.request.Request(base + path, data=data if method == "POST" else None, method=method,
+                                 headers=headers or {})
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+
+
+def test_JSON이_아닌_POST는_415로_막아_다른_사이트의_단순_요청을_받지_않는다(base):
+    status, _, _ = _raw(base, "POST", "/api/sessions", b'{"deviceId":"MB01"}', {"Content-Type": "text/plain"})
+    assert status == 415
+
+
+def test_다른_출처에서_온_POST는_403(base):
+    status, _, _ = _raw(base, "POST", "/api/sessions", b'{"deviceId":"MB01"}',
+                        {"Content-Type": "application/json", "Origin": "http://evil.example"})
+    assert status == 403
+
+
+def test_같은_출처의_POST는_그대로_받는다(base):
+    host = base.split("//", 1)[1]
+    status, _, _ = _raw(base, "POST", "/api/sessions", b'{"deviceId":"MB01"}',
+                        {"Content-Type": "application/json", "Origin": f"http://{host}"})
+    assert status == 201
+
+
+@pytest.fixture
+def guarded(service):
+    server = make_server(App(service, ui_token="s3cret-test"), "127.0.0.1", 0)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_접속_비밀이_있으면_비밀_없는_요청은_401(guarded):
+    assert _raw(guarded, "GET", "/api/queue")[0] == 401
+    assert _raw(guarded, "GET", "/")[0] == 401
+    assert _raw(guarded, "POST", "/api/sessions", b'{"deviceId":"MB01"}', {"Content-Type": "application/json"})[0] == 401
+
+
+def test_접속_비밀로_첫_화면을_열면_쿠키를_심고_쿠키로_API를_쓴다(guarded):
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        opener.open(guarded + "/?token=s3cret-test")
+        raise AssertionError("303이어야 함")
+    except urllib.error.HTTPError as e:
+        assert e.code == 303
+        cookie = e.headers["Set-Cookie"]
+    assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    pair = cookie.split(";", 1)[0]
+    assert "s3cret-test" not in pair  # 쿠키에 비밀 원문을 두지 않는다
+    assert _raw(guarded, "GET", "/api/queue", headers={"Cookie": pair})[0] == 200
+    assert _raw(guarded, "GET", "/api/queue", headers={"Cookie": "trace_booth_ui=s3cret-test"})[0] == 401
+    assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "s3cret-test"})[0] == 200
+    assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "wrong"})[0] == 401

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import threading
 from collections.abc import Callable, Iterator
@@ -55,8 +57,12 @@ class App:
         quick: QuickInspector | None = None,
         waiting: WaitingList | None = None,
         redeem: CodeRedeemer | None = None,
+        ui_token: str | None = None,
     ) -> None:
         self.service = service
+        # 운영 화면 접속 비밀(TRACE_BOOTH_UI_TOKEN). 있으면 쿠키나 X-Booth-Token 헤더가 맞아야 화면·API를 쓴다.
+        # 비우면 예전처럼 누구나 쓴다(같은 망만 믿는 경우). 부스 자격(BOOTH JWT)을 대신 쓰는 화면이라 켜 두는 것을 권한다
+        self.ui_token = ui_token or None
         self.live = live or {}  # 카메라 코드(CAM1·CAM2, 옆면 카메라는 SIDE) → 실시간 보기
         self.submitter = submitter  # 출고·반납 세트 올리기. 서버 설정이 없으면 None(출고·반납 모드를 막음)
         self.quick = quick  # 빠른 검사 탐지. 없으면 QUICK 모드를 막음
@@ -108,6 +114,23 @@ def _checkout_json(c: CheckoutRecord | None) -> dict | None:
     }
 
 
+_UI_COOKIE = "trace_booth_ui"
+
+
+def _cookie_value(token: str) -> str:
+    """접속 비밀을 쿠키에 담을 값(SHA-256 hex)으로 바꾼다."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _cookie(header: str | None, name: str) -> str | None:
+    """Cookie 헤더에서 이름 하나의 값을 찾는다(없으면 None)."""
+    for part in (header or "").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == name:
+            return value
+    return None
+
+
 def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:  # 요청 로그는 남기지 않음
@@ -121,7 +144,10 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 
         def _dispatch(self, method: str) -> None:
             try:
-                self._route(method, self.path.split("?", 1)[0])
+                path = self.path.split("?", 1)[0]
+                if not self._allowed(method, path):
+                    return
+                self._route(method, path)
             except Incomplete as e:
                 self._problem(409, str(e), missing=e.missing)
             except CaptureError as e:
@@ -132,6 +158,48 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 self._problem(500, str(e))
             except (ValueError, KeyError, TypeError) as e:
                 self._problem(400, f"잘못된 요청: {e}")
+
+        def _allowed(self, method: str, path: str) -> bool:
+            """요청을 받기 전 검사. 막았으면 응답을 쓰고 False를 돌려준다.
+
+            - POST는 JSON만 받는다. text/plain 같은 '단순 요청'은 브라우저가 사전 요청 없이 다른 사이트에서도 보낼 수 있어
+              (CSRF) 부스 자격으로 촬영 세트를 만들 수 있었다. JSON 요청은 다른 출처면 브라우저가 사전 요청을 먼저 보낸다.
+            - Origin이 있으면 이 화면 주소(Host)와 같아야 한다.
+            - 접속 비밀이 설정돼 있으면 쿠키나 헤더가 맞아야 한다. 첫 화면은 /?token=<비밀>로 열면 쿠키를 심는다.
+            """
+            if method == "POST":
+                ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+                if ctype != "application/json":
+                    self._problem(415, "JSON 요청만 받아요")
+                    return False
+                origin = self.headers.get("Origin")
+                if origin is not None and urlsplit(origin).netloc != (self.headers.get("Host") or ""):
+                    self._problem(403, "다른 주소에서 온 요청은 받지 않아요")
+                    return False
+            token = app.ui_token
+            if token is None or self._has_token(token):
+                return True
+            if method == "GET" and path == "/":
+                given = parse_qs(urlsplit(self.path).query).get("token", [""])[0]
+                if given and hmac.compare_digest(given.encode(), token.encode()):
+                    # 주소창에서 비밀을 지우고 쿠키로 다시 연다
+                    self.send_response(303)
+                    self.send_header("Location", "/")
+                    self.send_header("Set-Cookie", f"{_UI_COOKIE}={_cookie_value(token)}; Path=/; HttpOnly; SameSite=Strict")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return False
+            self._problem(401, "부스 화면 접속 비밀이 필요해요. /?token=<TRACE_BOOTH_UI_TOKEN 값> 으로 한 번 여세요")
+            return False
+
+        def _has_token(self, token: str) -> bool:
+            header = self.headers.get("X-Booth-Token") or ""
+            if header:
+                return hmac.compare_digest(header.encode(), token.encode())
+            # 쿠키에는 비밀 원문 대신 SHA-256 hex를 둔다(;·공백 같은 글자가 있어도 깨지지 않고, 원문이 쿠키에 남지 않음)
+            given = _cookie(self.headers.get("Cookie"), _UI_COOKIE) or ""
+            return bool(given) and hmac.compare_digest(given.encode(), _cookie_value(token).encode())
 
         def _route(self, method: str, path: str) -> None:
             svc = app.service
