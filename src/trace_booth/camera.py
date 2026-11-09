@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Protocol
@@ -138,14 +139,27 @@ class OpenCvCamera:
         self._set_controls = set_controls
         self._gate = gate  # 실시간 보기와 장치를 나눠 쓸 때. 찍는 동안 실시간 보기를 멈춘다
         self.rotate = check_rotate(rotate)  # 카메라를 뒤집어 달았을 때 저장 전에 바로 세운다(11/6 옆면 Brio)
+        self._marks: list[tuple[str, float]] = []  # 단계별 걸린 시간(촬영 기록 출력용)
 
     def capture(self, settings: dict[str, int]) -> bytes:
+        started = time.monotonic()
         with self._gate.exclusive() if self._gate is not None else nullcontext():
-            return self._capture(settings)
+            self._marks = [("대기", time.monotonic() - started)]
+            data = self._capture(settings)
+        # 어디서 시간이 드는지 보려고(11/9: 단계당 9초). 대기 = 실시간 보기가 장치를 놓을 때까지
+        print(f"  {self.code.value} " + " ".join(f"{k} {v:.1f}" for k, v in self._marks)
+              + f" = {time.monotonic() - started:.1f}초", flush=True)
+        return data
+
+    def _mark(self, name: str, since: float) -> float:
+        now = time.monotonic()
+        self._marks.append((name, now - since))
+        return now
 
     def _capture(self, settings: dict[str, int]) -> bytes:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
 
+        t = time.monotonic()
         cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
         if not cap.isOpened():
             raise CameraError(self.code, f"장치를 열 수 없음 ({self.device})")
@@ -154,14 +168,18 @@ class OpenCvCamera:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
             # 영상을 켠 뒤에 값을 넣는다. 켜기 전에 넣으면 카메라가 영상을 켜면서 자동으로 되돌린다
+            t = self._mark("열기", t)
             cap.read()
+            t = self._mark("첫프레임", t)
             try:
                 self._set_controls(self.device, settings)
             except (subprocess.SubprocessError, OSError) as e:
                 raise CameraError(self.code, f"설정 적용 실패: {e}") from e
+            t = self._mark("값", t)
             for _ in range(self.warmup_frames):
                 cap.read()
             ok, frame = cap.read()
+            t = self._mark("프레임", t)
             if not ok:
                 raise CameraError(self.code, "프레임을 받지 못함")
             frame = rotate_frame(frame, self.rotate)
