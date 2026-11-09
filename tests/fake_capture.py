@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 
 from trace_booth.capture_client import Response
 from trace_booth.codes import FACE_REQUIRED_BOOTH
@@ -14,6 +15,7 @@ SECRET = "test-only-secret"
 
 class FakeCapture:
     def __init__(self) -> None:
+        self._put_lock = threading.Lock()
         self.sets: dict[str, dict] = {}
         self.objects: dict[str, bytes] = {}
         self.calls: list[tuple[str, str]] = []
@@ -109,6 +111,10 @@ class FakeCapture:
         return self._json(201, {"accepted": len(found)})
 
     def _put(self, url: str, headers: dict[str, str], body: bytes) -> Response:
+        with self._put_lock:  # 부스가 여러 장을 동시에 올린다(11/9)
+            return self._put_locked(url, headers, body)
+
+    def _put_locked(self, url: str, headers: dict[str, str], body: bytes) -> Response:
         if self.fail_puts:
             self.fail_puts -= 1
             raise ConnectionResetError("가짜 연결 끊김")

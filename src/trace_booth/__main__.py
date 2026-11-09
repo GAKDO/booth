@@ -20,6 +20,7 @@ from .detect.engine import DetectError, Detector, ModelInfo, open_detector
 from .detect.runner import Photo, detect_photos, detect_set
 from .detect.timing import LIMIT_SECONDS, TARGET_SECONDS, grade
 from .live import CameraGate, OpenCvLiveSource, live_frames
+from .net import prefer_ipv4
 from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
@@ -205,6 +206,7 @@ def serve(host: str, port: int) -> int:
         worker = QuickRetryWorker(store, lambda sid: upload_quick(store, sid, client, _now))
         if quick is not None:
             quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
+            quick.on_start = worker.upload_soon  # 완료를 누르면 탐지와 동시에 사진 세트부터 올린다(11/9)
         worker.start()
     rentals = _rentals()
     waiting: WaitingList | None = rentals.waiting if rentals else None
@@ -380,6 +382,8 @@ def bench(engine: str | None, images: list[str], session_public_id: str | None, 
 
 
 def main(argv: list[str] | None = None) -> int:
+    if os.environ.get("TRACE_BOOTH_PREFER_IPV4", "1") != "0":
+        prefer_ipv4()  # 학교망 IPv6 함정(11/9): IPv6 연결 시도에서 장마다 30초를 쓰지 않게
     parser = argparse.ArgumentParser(prog="trace-booth")
     parser.add_argument("--version", action="store_true", help="버전만 출력")
     sub = parser.add_subparsers(dest="command")

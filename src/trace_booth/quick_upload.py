@@ -109,6 +109,19 @@ class QuickRetryWorker(threading.Thread):
         with self._lock:
             self.upload(session_id)
 
+    def upload_soon(self, session_id: int) -> None:
+        """완료 직후: 30초 차례를 기다리지 않고 뒤에서 바로 올린다(탐지와 동시에 사진 세트부터). 걸린 시간을 남긴다."""
+        def go() -> None:
+            started = time.monotonic()
+            try:
+                self.upload_now(session_id)
+            except Exception as e:  # noqa: BLE001 — 실패분은 재시도 큐가 다시
+                print(f"세트 올리기 실패(30초 뒤 다시): {type(e).__name__}")
+            else:
+                print(f"세트 올리기 끝: 세션 {session_id}, {time.monotonic() - started:.1f}초")
+
+        threading.Thread(target=go, daemon=True, name=f"upload-{session_id}").start()
+
     def run(self) -> None:
         while True:
             time.sleep(self.interval)

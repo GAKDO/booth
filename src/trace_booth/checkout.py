@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from .store import CheckoutRecord, ShotRecord, Store, latest_shots
 
 PUT_TRIES = 3
 MAX_REISSUE = 2  # URL 다시 받기 최대 횟수
+PUT_WORKERS = max(1, int(os.environ.get("TRACE_BOOTH_PUT_WORKERS", "4") or "4"))  # 동시에 올리는 사진 수
 
 
 class UploadFailed(Exception):
@@ -39,25 +42,46 @@ def select_photos(shots: list[ShotRecord]) -> list[PhotoSpec]:
             for s in latest_shots(shots)]
 
 
-def _put_all(http: HttpCall, pending: list[tuple[UploadTarget, PhotoSpec]], sleep: Callable[[float], None]) -> None:
-    """올린 사진은 pending에서 뺀다. URL이 만료되면 남은 것을 둔 채 _UrlExpired."""
-    while pending:
-        target, photo = pending[0]
-        for attempt in range(1, PUT_TRIES + 1):
-            try:
-                status = put_photo(target, photo, http)
-            except OSError as e:
-                status, error = 0, type(e).__name__
-            else:
-                error = f"HTTP {status}"
-            if 200 <= status < 300:
-                break
-            if status == 403:
-                raise _UrlExpired  # MinIO는 서명이 만료되면 403 AccessDenied
-            if attempt == PUT_TRIES:
-                raise UploadFailed(f"{photo.face}·{photo.light}·{photo.camera} 올리기 실패: {error}")
+def _put_one(http: HttpCall, target: UploadTarget, photo: PhotoSpec, sleep: Callable[[float], None]) -> str:
+    """한 장을 PUT_TRIES번까지 올린다. "OK"·"EXPIRED"(403, 서명 만료) 또는 실패 사유를 돌려준다."""
+    error = ""
+    for attempt in range(1, PUT_TRIES + 1):
+        try:
+            status = put_photo(target, photo, http)
+        except OSError as e:
+            status, error = 0, type(e).__name__
+        else:
+            error = f"HTTP {status}"
+        if 200 <= status < 300:
+            return "OK"
+        if status == 403:
+            return "EXPIRED"  # MinIO는 서명이 만료되면 403 AccessDenied
+        if attempt < PUT_TRIES:
             sleep(2.0 * attempt)
-        pending.pop(0)
+    return error
+
+
+def _put_all(http: HttpCall, pending: list[tuple[UploadTarget, PhotoSpec]], sleep: Callable[[float], None],
+             workers: int | None = None) -> None:
+    """여러 장을 동시에 올린다(11/9: 28장을 한 장씩 올리면 학교망에서 몇 분 걸림). 올린 사진은 pending에서 빼고,
+    URL이 만료된 사진이 있으면 남은 것을 둔 채 _UrlExpired, 그 밖의 실패가 있으면 UploadFailed."""
+    if not pending:
+        return
+    items = list(pending)
+    workers = PUT_WORKERS if workers is None else workers
+    if workers <= 1 or len(items) == 1:
+        outcomes = [_put_one(http, t, p, sleep) for t, p in items]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(items)), thread_name_prefix="put") as pool:
+            outcomes = list(pool.map(lambda tp: _put_one(http, tp[0], tp[1], sleep), items))
+    pending[:] = [tp for tp, outcome in zip(items, outcomes) if outcome != "OK"]
+    failed = [(tp[1], o) for tp, o in zip(items, outcomes) if o not in ("OK", "EXPIRED")]
+    if failed:
+        photo, error = failed[0]
+        raise UploadFailed(f"{photo.face}·{photo.light}·{photo.camera} 올리기 실패: {error}"
+                           + (f" 외 {len(failed) - 1}장" if len(failed) > 1 else ""))
+    if pending:
+        raise _UrlExpired
 
 
 def _reissue(client: CaptureClient, set_id: str, pending: list[tuple[UploadTarget, PhotoSpec]]) -> None:

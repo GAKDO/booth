@@ -56,6 +56,7 @@ class QuickInspector:
         self._load = load
         self._now = now
         self.after = after
+        self.on_start: AfterDetect | None = None  # 완료를 누른 순간 할 일(사진 세트 먼저 올리기, 11/9)
         self._background = background
         self._clock = clock
         self._detector: tuple[Detector, ModelInfo] | None = None
@@ -78,6 +79,8 @@ class QuickInspector:
         if current is not None and current.status == "DETECTING":
             return
         self.store.put_quick_result(session_id, "DETECTING", self._now())
+        if self.on_start is not None:
+            self.on_start(session_id)
         if self._background:
             threading.Thread(target=self.run, args=(session_id,), daemon=True, name=f"quick-{session_id}").start()
         else:
