@@ -12,14 +12,15 @@ from pathlib import Path
 from . import __version__
 from .camera import OpenCvCamera, check_rotate
 from .camera_presets import Presets
-from .capture_client import ApiError, BoothAuth, CaptureClient
-from .checkout import submit_session
+from .capture_client import ApiError, BoothAuth, CaptureClient, http_call
+from .checkout import submit_session, upload_workers
 from .codes import Camera, Light
 from .detect.build import build_engine
 from .detect.engine import DetectError, Detector, ModelInfo, open_detector
 from .detect.runner import Photo, detect_photos, detect_set
 from .detect.timing import LIMIT_SECONDS, TARGET_SECONDS, grade
 from .live import CameraGate, OpenCvLiveSource, live_frames
+from .netcheck import netcheck
 from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
@@ -224,7 +225,11 @@ def serve(host: str, port: int) -> int:
         worker = QuickRetryWorker(store, lambda sid: upload_quick(store, sid, client, _now))
         if quick is not None:
             quick.after = worker.upload_now  # 탐지가 끝나면 바로 올리고, 실패분은 30초마다 다시
+            # 다 찍자마자 세트 사진부터 올린다(탐지와 동시에). 판정이 끝나면 after가 탐지 결과만 보낸다
+            quick.on_complete = lambda sid: threading.Thread(
+                target=worker.upload_now, args=(sid,), daemon=True, name=f"early-upload-{sid}").start()
         worker.start()
+        print(f"사진은 {upload_workers()}장씩 동시에 올려요(TRACE_BOOTH_UPLOAD_WORKERS), 서버 연결은 IPv4 먼저")
     rentals = _rentals()
     waiting: WaitingList | None = rentals.waiting if rentals else None
     redeem: CodeRedeemer | None = rentals.redeem if rentals else None
@@ -409,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
     p_shots.add_argument("--device", required=True)
     p_shots.add_argument("--verify", action="store_true", help="저장소 해시와 비교")
     sub.add_parser("retry", help="올리지 못한 사진을 지금 올린다")
+    p_net = sub.add_parser("netcheck", help="서버 주소·연결 시간 확인(업로드가 느릴 때)")
+    p_net.add_argument("--url", help="확인할 주소(기본 TRACE_API_URL)")
     p_detect = sub.add_parser("detect", help="세션 하나의 면 사진을 탐지해 로컬 JSON으로 남긴다(Jetson)")
     p_detect.add_argument("--session", required=True, help="세션 publicId(운영 화면의 sessionId)")
     p_detect.add_argument("--engine", help="TensorRT 엔진(.engine). 같은 폴더에 model.json. 기본 TRACE_BOOTH_ENGINE")
@@ -430,6 +437,11 @@ def main(argv: list[str] | None = None) -> int:
         return shots(args.device, args.verify)
     if args.command == "retry":
         return retry()
+    if args.command == "netcheck":
+        url = args.url or os.environ.get("TRACE_API_URL")
+        if not url:
+            raise SystemExit("--url 또는 TRACE_API_URL이 필요해요")
+        return netcheck(url, http_call)
     if args.command == "detect":
         return detect(args.session, args.engine)
     if args.command == "build-engine":
