@@ -111,6 +111,22 @@ def _inspection_profile(raw: str | None = None) -> str:
     return value
 
 
+def _warmup_frames(raw: str | None = None) -> int:
+    """TRACE_BOOTH_WARMUP_FRAMES: 카메라 값을 넣은 뒤 버리는 프레임 수. 기본 4(11/9, 전에는 10)."""
+    value = (os.environ.get("TRACE_BOOTH_WARMUP_FRAMES", "") if raw is None else raw).strip() or "4"
+    if not value.isdigit() or not 0 <= int(value) <= 30:
+        raise SystemExit(f"TRACE_BOOTH_WARMUP_FRAMES는 0~30 사이 정수예요: {value}")
+    return int(value)
+
+
+def _parallel_capture(raw: str | None = None) -> bool:
+    """TRACE_BOOTH_PARALLEL_CAPTURE: 1(기본)이면 CAM1·CAM2를 동시에, 0이면 전처럼 한 대씩 찍는다."""
+    value = (os.environ.get("TRACE_BOOTH_PARALLEL_CAPTURE", "") if raw is None else raw).strip() or "1"
+    if value not in ("0", "1"):
+        raise SystemExit(f"TRACE_BOOTH_PARALLEL_CAPTURE는 0 또는 1이에요: {value}")
+    return value == "1"
+
+
 def _submitter(store: Store) -> Submitter | None:
     """출고·반납 모드용. 서버 설정이 없으면 None."""
     client = _client()
@@ -139,7 +155,7 @@ def _side_camera(gate: CameraGate, presets: Presets) -> tuple[OpenCvCamera, int,
     path = os.environ.get("TRACE_BOOTH_SIDE_PRESETS")
     side_presets = Presets.load(Path(path).expanduser()) if path else presets
     print(f"옆면 카메라 {device} (회전 {rotate}°, 프리셋 {side_presets.source or '없음'})")
-    return OpenCvCamera(Camera.CAM1, device, gate=gate, rotate=rotate), rotate, side_presets
+    return OpenCvCamera(Camera.CAM1, device, gate=gate, rotate=rotate, warmup_frames=_warmup_frames()), rotate, side_presets
 
 
 def serve(host: str, port: int) -> int:
@@ -150,7 +166,8 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_BOOTH_PRESETS가 없어 카메라 고정 설정 없이 찍어요")
     gate = CameraGate()  # 촬영과 실시간 보기가 장치를 나눠 쓴다
     devices = {Camera.CAM1: _env("TRACE_BOOTH_CAM1"), Camera.CAM2: _env("TRACE_BOOTH_CAM2")}
-    cameras = {code: OpenCvCamera(code, dev, gate=gate) for code, dev in devices.items()}
+    warmup = _warmup_frames()
+    cameras = {code: OpenCvCamera(code, dev, gate=gate, warmup_frames=warmup) for code, dev in devices.items()}
     live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
     side = _side_camera(gate, presets)
     list_cameras, list_presets = {}, {}
@@ -173,7 +190,9 @@ def serve(host: str, port: int) -> int:
     service = CaptureService(store, cameras, presets, data_dir, steps=steps, mode_steps=mode_steps,
                              training_lists=SHOTLISTS, default_list=shotlist_name,
                              list_cameras=list_cameras, list_presets=list_presets,
-                             inspection_lists=inspection, default_profile=profile)
+                             inspection_lists=inspection, default_profile=profile,
+                             parallel_capture=_parallel_capture())
+    print(f"촬영: 버리는 프레임 {warmup}장, 카메라 {'동시' if service.parallel_capture else '한 대씩'}")
     objects = _object_store()
     if objects is None:
         print("경고: MINIO_ENDPOINT가 없어 사진을 올리지 않고 로컬에만 남겨요")

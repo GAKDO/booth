@@ -119,7 +119,8 @@ def test_카메라_한_대가_실패하면_단계가_넘어가지_않고_실패�
     assert service.view(sid).step.face is Face.TOP and service.view(sid).step.light is Light.L1
     cams[Camera.CAM2].fail = False
     shots = service.shoot(sid)
-    assert [s.filename for s in shots] == ["MB01_TOP_L1_CAM1_02.jpg", "MB01_TOP_L1_CAM2_01.jpg"]
+    # 실패한 촬영은 CAM1도 남기지 않는다(짝 없는 사진 방지, 11/9) → 둘 다 01
+    assert [s.filename for s in shots] == ["MB01_TOP_L1_CAM1_01.jpg", "MB01_TOP_L1_CAM2_01.jpg"]
 
 
 def test_다시_찍으면_새_번호로_남고_이전_파일은_그대로다(service):

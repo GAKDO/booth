@@ -184,6 +184,13 @@ export TRACE_BOOTH_PRESETS=~/trace-booth-presets.json
 trace-booth serve --port 8320
 ```
 
+촬영 속도(11/9): 한 단계의 CAM1·CAM2를 **동시에** 찍고, 값을 넣은 뒤 버리는 프레임은 **4장**입니다(전에는 한 대씩, 10장). 한 대라도 실패하면 그 단계 사진은 하나도 남기지 않습니다(짝 없는 사진 방지). serve 창에 `촬영 N번 단계 2장 X.X초`가 찍힙니다.
+
+```bash
+export TRACE_BOOTH_PARALLEL_CAPTURE=0   # 카메라가 자주 빠지면: 전처럼 한 대씩
+export TRACE_BOOTH_WARMUP_FRAMES=10     # 사진 밝기가 들쭉날쭉하면: 전처럼 10장 (0~30)
+```
+
 ### 부스 화면 접속 비밀(선택, 권장)
 
 부스 화면(8320)은 부스 자격(BOOTH JWT)으로 렌탈 목록을 읽고 촬영 세트를 올립니다. 같은 망의 누구나 열 수 있으면 남의 출고·반납 사진을 대신 올릴 수 있으니, 학교 망에서는 접속 비밀을 켜 둡니다.
