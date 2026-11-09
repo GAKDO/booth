@@ -173,6 +173,7 @@ class OpenCvCamera:
         lap = marks.lap if marks is not None else (lambda _name: None)
         cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
         if not cap.isOpened():
+            lap("열기")
             raise CameraError(self.code, f"장치를 열 수 없음 ({self.device})")
         try:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
@@ -185,6 +186,7 @@ class OpenCvCamera:
             try:
                 self._set_controls(self.device, settings)
             except (subprocess.SubprocessError, OSError) as e:
+                lap("설정")  # 실패해도 설정에 든 시간을 닫기에 섞지 않는다
                 raise CameraError(self.code, f"설정 적용 실패: {e}") from e
             lap("설정")
             for _ in range(self.warmup_frames):
