@@ -31,6 +31,7 @@ class FakeCapture:
         self.max_parallel_puts = 0  # 동시에 들어온 PUT 수의 최댓값
         self._puts_in_flight = 0
         self.put_delay = 0.0  # PUT 하나가 걸리는 시간(동시 올리기 확인용)
+        self.always_fail_index: int | None = None  # 이 번호의 사진 PUT은 늘 연결 실패
 
     def __call__(self, method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
         if method == "PUT" and self.put_delay:
@@ -126,6 +127,8 @@ class FakeCapture:
         return self._json(201, {"accepted": len(found)})
 
     def _put(self, url: str, headers: dict[str, str], body: bytes) -> Response:
+        if self.always_fail_index is not None and url.split("?")[0].endswith(f"/{self.always_fail_index}"):
+            raise ConnectionResetError("가짜 연결 끊김(늘)")
         if self.fail_puts:
             self.fail_puts -= 1
             raise ConnectionResetError("가짜 연결 끊김")

@@ -182,16 +182,18 @@ def test_동시에_올리다_URL이_만료되면_남은_사진만_다시_받아_
 
 
 def test_동시에_올리다_한_장이_계속_끊겨도_나머지는_올려_두고_실패를_알린다(shots, client, server):
-    server.fail_puts = 3  # 처음 PUT 세 번 = 첫 사진의 세 번 시도가 모두 끊긴 셈(동시라 어느 사진일지는 모름)
+    server.always_fail_index = 5
 
     with pytest.raises(UploadFailed, match="올리기 실패"):
-        _submit(shots, client, server, workers=1)
-    server.fail_puts = 0
-    first = next(iter(server.sets))
-    server.fail_puts = 2  # 동시 올리기에서도 잠깐 끊긴 건 다시 시도해 넘어간다
-    result = submit(shots, RENTAL, CHECKPOINT, {"SCR1": "화면이 켜지지 않음"}, client, http=server,
-                    sleep=lambda _: None, existing_set_id=first, workers=4)
+        _submit(shots, client, server, workers=4)
+    set_id = next(iter(server.sets))
+    assert sorted(int(k.split("/")[1]) for k in server.objects) == [i for i in range(28) if i != 5]
+    assert server.sets[set_id]["status"] == "UPLOADING"
+
+    server.always_fail_index = None  # 다시 시도하면 남은 한 장만 올려 완료된다
+    result = _submit(shots, client, server, workers=4, existing_set_id=set_id)
     assert result.status == "UPLOADED"
+    assert server.put_ok[(set_id, 1)] == 1
 
 
 def test_TRACE_BOOTH_UPLOAD_WORKERS로_동시_장수를_정하고_이상한_값은_기본값(monkeypatch):
