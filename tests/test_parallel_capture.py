@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from fakes import FakeCamera
@@ -54,12 +55,10 @@ def test_동시_촬영을_켜면_두_카메라를_같이_찍고_끄면_한_대�
     sid = service.start("MB01").id
     _to_two_camera_step(service, sid)
     SlowCamera.peak = 0
-    started = time.monotonic()
     shots = service.shoot(sid)
-    took = time.monotonic() - started
     assert [s.camera for s in shots] == ["CAM1", "CAM2"]  # 저장 순서는 그대로
-    assert SlowCamera.peak == peak
-    assert (took < 0.55) if parallel else (took >= 0.6)
+    assert all(s.camera.encode() + b"-" in Path(s.local_path).read_bytes() for s in shots)  # 사진이 제 카메라 것
+    assert SlowCamera.peak == peak  # 동시에 찍는 중이던 카메라 수(시간 대신 세어 본다)
 
 
 def test_동시_촬영에서_한_대가_실패하면_다른_카메라_사진도_남기지_않는다(tmp_path, presets) -> None:
