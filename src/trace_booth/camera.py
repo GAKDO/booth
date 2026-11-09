@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Protocol
@@ -97,6 +98,23 @@ def run_v4l2_ctl(device: str, controls: dict[str, int], run: Runner = subprocess
     raise ControlMismatch(f"카메라 값이 들어가지 않음: {bad} (원하는 값 {controls})")
 
 
+class _Marks:
+    """구간별 걸린 초. str()은 `대기 0.0s 열기 1.2s …`."""
+
+    def __init__(self, clock: Callable[[], float] = time.perf_counter) -> None:
+        self._clock = clock
+        self._last = clock()
+        self.laps: list[tuple[str, float]] = []
+
+    def lap(self, name: str) -> None:
+        now = self._clock()
+        self.laps.append((name, now - self._last))
+        self._last = now
+
+    def __str__(self) -> str:
+        return " ".join(f"{n} {t:.1f}s" for n, t in self.laps)
+
+
 ROTATIONS = (0, 90, 180, 270)
 
 
@@ -140,12 +158,19 @@ class OpenCvCamera:
         self.rotate = check_rotate(rotate)  # 카메라를 뒤집어 달았을 때 저장 전에 바로 세운다(11/6 옆면 Brio)
 
     def capture(self, settings: dict[str, int]) -> bytes:
-        with self._gate.exclusive() if self._gate is not None else nullcontext():
-            return self._capture(settings)
+        marks = _Marks()
+        try:
+            with self._gate.exclusive() if self._gate is not None else nullcontext():
+                marks.lap("대기")  # 실시간 보기가 장치를 놓을 때까지
+                return self._capture(settings, marks)
+        finally:
+            # 단계마다 어디서 시간이 드는지 serve 창에 남긴다(11/9 한 단계 9초 원인 찾기)
+            print(f"  {self.code.value} {marks}", flush=True)
 
-    def _capture(self, settings: dict[str, int]) -> bytes:
+    def _capture(self, settings: dict[str, int], marks: _Marks | None = None) -> bytes:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
 
+        lap = marks.lap if marks is not None else (lambda _name: None)
         cap = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
         if not cap.isOpened():
             raise CameraError(self.code, f"장치를 열 수 없음 ({self.device})")
@@ -153,21 +178,27 @@ class OpenCvCamera:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            lap("열기")
             # 영상을 켠 뒤에 값을 넣는다. 켜기 전에 넣으면 카메라가 영상을 켜면서 자동으로 되돌린다
             cap.read()
+            lap("첫 프레임")
             try:
                 self._set_controls(self.device, settings)
             except (subprocess.SubprocessError, OSError) as e:
                 raise CameraError(self.code, f"설정 적용 실패: {e}") from e
+            lap("설정")
             for _ in range(self.warmup_frames):
                 cap.read()
             ok, frame = cap.read()
+            lap("버림+찍기")
             if not ok:
                 raise CameraError(self.code, "프레임을 받지 못함")
             frame = rotate_frame(frame, self.rotate)
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            lap("인코딩")
             if not ok:
                 raise CameraError(self.code, "JPEG 인코딩 실패")
             return buf.tobytes()
         finally:
             cap.release()
+            lap("닫기")
