@@ -56,6 +56,8 @@ class QuickInspector:
         self._load = load
         self._now = now
         self.after = after
+        # 다 찍은 순간 부른다(탐지와 함께 세트 사진을 올리기 시작해 판정 뒤 기다리는 시간을 줄인다). 바로 돌아와야 한다
+        self.on_complete: Callable[[int], None] | None = None
         self._background = background
         self._clock = clock
         self._detector: tuple[Detector, ModelInfo] | None = None
@@ -78,6 +80,11 @@ class QuickInspector:
         if current is not None and current.status == "DETECTING":
             return
         self.store.put_quick_result(session_id, "DETECTING", self._now())
+        if self.on_complete is not None:
+            try:
+                self.on_complete(session_id)
+            except Exception as e:  # noqa: BLE001 — 미리 올리기는 덤: 탐지가 끝나면 after가 다시 올린다
+                print(f"미리 올리기 시작 실패(판정 뒤 다시): {type(e).__name__}")
         if self._background:
             threading.Thread(target=self.run, args=(session_id,), daemon=True, name=f"quick-{session_id}").start()
         else:

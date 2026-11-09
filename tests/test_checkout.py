@@ -9,7 +9,7 @@ from conftest import run_to_end
 from fake_capture import BASE, SECRET, FakeCapture
 
 from trace_booth.capture_client import ApiError, BoothAuth, CaptureClient
-from trace_booth.checkout import UploadFailed, select_photos, submit
+from trace_booth.checkout import UPLOAD_WORKERS, UploadFailed, select_photos, submit, upload_workers
 from trace_booth.codes import FACE_REQUIRED_BOOTH
 
 RENTAL = "Ws0HLv6QRbDILPWOcz5I2"
@@ -34,6 +34,7 @@ def shots(service):
 
 
 def _submit(shots, client, server, **kw):
+    kw.setdefault("workers", 1)  # 만료·다시 받기 시험은 올리는 차례가 정해져 있어야 한다(동시 올리기는 따로 시험)
     return submit(shots, RENTAL, CHECKPOINT, {"SCR1": "화면이 켜지지 않음"}, client, http=server,
                   sleep=lambda _: None, **kw)
 
@@ -157,3 +158,46 @@ def test_서버가_준_URL_순서가_사진과_다르면_올리지_않는다(sho
     with pytest.raises(ApiError, match="순서"):
         _submit(shots, client, server)
     assert server.objects == {}
+
+
+def test_사진을_여러_장_동시에_올려도_28장이_모두_올라가고_완료된다(shots, client, server):
+    server.put_delay = 0.02
+
+    result = _submit(shots, client, server, workers=4)
+
+    assert result.status == "UPLOADED"
+    assert len(server.objects) == 28
+    assert server.max_parallel_puts > 1
+    assert result.put_bytes == sum(p.path.stat().st_size for p in select_photos(shots))
+
+
+def test_동시에_올리다_URL이_만료되면_남은_사진만_다시_받아_누락이_0건이다(shots, client, server):
+    server.url_budget = [10]
+
+    result = _submit(shots, client, server, workers=4)
+
+    assert result.reissued == 1
+    assert server.sets[result.capture_set_id]["status"] == "UPLOADED"
+    assert sum(k.startswith(result.capture_set_id) for k in server.objects) == 28
+
+
+def test_동시에_올리다_한_장이_계속_끊겨도_나머지는_올려_두고_실패를_알린다(shots, client, server):
+    server.fail_puts = 3  # 처음 PUT 세 번 = 첫 사진의 세 번 시도가 모두 끊긴 셈(동시라 어느 사진일지는 모름)
+
+    with pytest.raises(UploadFailed, match="올리기 실패"):
+        _submit(shots, client, server, workers=1)
+    server.fail_puts = 0
+    first = next(iter(server.sets))
+    server.fail_puts = 2  # 동시 올리기에서도 잠깐 끊긴 건 다시 시도해 넘어간다
+    result = submit(shots, RENTAL, CHECKPOINT, {"SCR1": "화면이 켜지지 않음"}, client, http=server,
+                    sleep=lambda _: None, existing_set_id=first, workers=4)
+    assert result.status == "UPLOADED"
+
+
+def test_TRACE_BOOTH_UPLOAD_WORKERS로_동시_장수를_정하고_이상한_값은_기본값(monkeypatch):
+    monkeypatch.setenv("TRACE_BOOTH_UPLOAD_WORKERS", "2")
+    assert upload_workers() == 2
+    monkeypatch.setenv("TRACE_BOOTH_UPLOAD_WORKERS", "99")
+    assert upload_workers() == 8
+    monkeypatch.setenv("TRACE_BOOTH_UPLOAD_WORKERS", "x")
+    assert upload_workers() == UPLOAD_WORKERS

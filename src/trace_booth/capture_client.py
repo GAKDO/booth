@@ -1,19 +1,31 @@
 """출고·반납 모드의 서버 호출: 부스 JWT, 촬영 세트 생성, 사전 서명 URL PUT·다시 받기, 완료, 탐지 결과 (contracts C1).
 
 HTTP는 `HttpCall` 함수 하나로 감싸 테스트에서 가짜 서버로 바꿔 끼운다. 사전 서명 URL과 비밀은 로그·오류 문구에 남기지 않는다.
+
+연결(11/9 업로드 속도 개선):
+- IPv4 주소부터 붙는다. 학교망 DNS64가 IPv6(64:ff9b::…)를 먼저 주는데 그 길이 막혀 연결마다 제한 시간을 다 쓰던 문제를
+  /etc/gai.conf 없이도 피한다. 주소마다 연결 제한은 CONNECT_SECONDS로 짧게 둔다.
+- 사전 서명 PUT은 스레드마다 연결을 다시 써서(keep-alive) 사진마다 TCP·TLS 연결을 새로 맺지 않는다.
+- HTTP 프록시 환경 변수가 있으면 예전처럼 urllib으로 보낸다.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 TIMEOUT_SECONDS = 30
+CONNECT_SECONDS = 5  # 주소 하나에 붙는 데 쓰는 최대 시간(막힌 IPv6에서 30초를 다 쓰지 않게)
+USER_AGENT = "trace-booth"
 TOKEN_MARGIN_SECONDS = 60  # 만료 1분 전에 다시 받는다
 
 
@@ -30,13 +42,87 @@ class Response:
 HttpCall = Callable[[str, str, dict[str, str], bytes | None], Response]
 
 
-def http_call(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
+def connect_ipv4_first(
+    address: tuple[str, int], timeout: object = socket._GLOBAL_DEFAULT_TIMEOUT,  # type: ignore[attr-defined]
+    source_address: tuple[str, int] | None = None, *_: object, **__: object,
+) -> socket.socket:
+    """socket.create_connection과 같지만 IPv4 주소를 먼저, 주소마다 CONNECT_SECONDS 안에 붙는다."""
+    host, port = address
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    infos.sort(key=lambda info: info[0] != socket.AF_INET)  # 같은 종류 안에서는 DNS 순서 그대로
+    io_timeout = timeout if isinstance(timeout, (int, float)) else None
+    connect_timeout = CONNECT_SECONDS if io_timeout is None else min(io_timeout, CONNECT_SECONDS)
+    last: OSError | None = None
+    for family, kind, proto, _, sockaddr in infos:
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(connect_timeout)
+            if source_address is not None:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            sock.settimeout(io_timeout)
+            return sock
+        except OSError as e:
+            last = e
+            sock.close()
+    raise last if last is not None else OSError(f"{host}의 주소를 찾지 못함")
+
+
+_pool = threading.local()  # 스레드마다 (scheme, host, port) → 다시 쓸 연결
+
+
+def _new_connection(scheme: str, host: str, port: int | None) -> http.client.HTTPConnection:
+    cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    conn = cls(host, port, timeout=TIMEOUT_SECONDS)
+    conn._create_connection = connect_ipv4_first  # type: ignore[attr-defined]  # http.client가 연결 때 부르는 훅
+    return conn
+
+
+def _uses_proxy(scheme: str, host: str) -> bool:
+    return scheme in urllib.request.getproxies() and not urllib.request.proxy_bypass(host)
+
+
+def _urllib_call(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as r:
             return Response(r.status, r.read())
     except urllib.error.HTTPError as e:
         return Response(e.code, e.read())
+
+
+def http_call(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme not in ("http", "https") or not host or _uses_proxy(parts.scheme, host):
+        return _urllib_call(method, url, headers, body)
+    target = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+    send = {"User-Agent": USER_AGENT, **headers}
+    reuse = method == "PUT"  # 사전 서명 PUT만 다시 쓴다(같은 PUT을 다시 보내도 안전). API POST는 늘 새 연결
+    key = (parts.scheme, host, parts.port)
+    conns: dict = _pool.__dict__.setdefault("conns", {})
+    for attempt in (1, 2):
+        conn = conns.pop(key, None) if reuse else None
+        fresh = conn is None
+        if conn is None:
+            conn = _new_connection(parts.scheme, host, parts.port)
+        try:
+            conn.request(method, target, body=body, headers=send)
+            r = conn.getresponse()
+            data = r.read()
+        except (OSError, http.client.HTTPException) as e:
+            conn.close()
+            if not fresh and attempt == 1:
+                continue  # 서버가 쉬던 연결을 먼저 닫았을 수 있다: 새 연결로 한 번 더
+            if isinstance(e, OSError):
+                raise
+            raise ConnectionError(type(e).__name__) from e  # 호출부는 연결 실패를 OSError로 받는다
+        if reuse and not r.will_close:
+            conns[key] = conn
+        else:
+            conn.close()
+        return Response(r.status, data)
+    raise AssertionError("도달하지 않음")
 
 
 class ApiError(Exception):
