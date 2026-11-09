@@ -8,7 +8,9 @@ import os
 import re
 import shutil
 import threading
+import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,8 +99,11 @@ class CaptureService:
         list_presets: dict[str, Presets] | None = None,
         inspection_lists: dict[str, tuple[Step, ...]] | None = None,
         default_profile: str = PROFILE_QUICK,
+        parallel_capture: bool = True,
     ) -> None:
         self.store = store
+        # 한 단계의 카메라들을 동시에 찍는다(11/9, 시간 절반). USB가 버거우면 False로 한 대씩
+        self.parallel_capture = parallel_capture
         self.cameras = cameras
         self.presets = presets
         self.data_dir = data_dir
@@ -279,6 +284,15 @@ class CaptureService:
             raise CaptureError("촬영 목록이 끝났어요. 완료를 누르세요")
         return steps[s.current_step]
 
+    def _grab(self, cams: tuple[Camera, ...], swap: dict[Camera, CameraDevice],
+              settings: dict[str, int]) -> list[bytes]:
+        devices = [swap.get(cam, self.cameras[cam]) for cam in cams]
+        if not self.parallel_capture or len(devices) < 2:
+            return [d.capture(settings) for d in devices]
+        with ThreadPoolExecutor(max_workers=len(devices)) as pool:
+            futures = [pool.submit(d.capture, settings) for d in devices]
+            return [f.result() for f in futures]  # 실패는 카메라 순서대로 처음 것을 올린다
+
     def _capture(self, s: SessionRecord, step: Step) -> list[ShotRecord]:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
             raise DiskFull("디스크 공간이 부족해요. 찍지 않았어요")
@@ -292,9 +306,11 @@ class CaptureService:
         swap = self.list_cameras.get(key, {})
         presets = self.list_presets.get(key, self.presets) if swap else self.presets
         settings = presets.for_light(light)
+        started = time.monotonic()
+        images = self._grab(step.cameras, swap, settings)  # 한 대라도 실패하면 아무것도 남기지 않는다(짝 없는 사진 방지)
+        print(f"촬영 {step.index}번 단계 {len(images)}장 {time.monotonic() - started:.1f}초", flush=True)
         shots = []
-        for cam in step.cameras:
-            data = swap.get(cam, self.cameras[cam]).capture(settings)
+        for cam, data in zip(step.cameras, images):
             kind = step.kind.value
             face = step.face.value if step.face else None
             seq = self.store.next_seq(s.device_id, kind, face, step.light.value if step.light else None, cam.value)
