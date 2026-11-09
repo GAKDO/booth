@@ -25,17 +25,20 @@ def probe(host: str, port: int, clock: Clock = time.perf_counter) -> list[tuple[
         if addr in seen:
             continue
         seen.add(addr)
-        sock = socket.socket(family, kind, proto)
-        sock.settimeout(CONNECT_SECONDS)
+        sock: socket.socket | None = None
         start = clock()
         try:
+            sock = socket.socket(family, kind, proto)
+            sock.settimeout(CONNECT_SECONDS)
+            start = clock()
             sock.connect(sockaddr)
         except OSError as e:
             out.append((addr, None, type(e).__name__))
         else:
             out.append((addr, clock() - start, ""))
         finally:
-            sock.close()
+            if sock is not None:
+                sock.close()
     return out
 
 

@@ -54,8 +54,9 @@ def connect_ipv4_first(
     connect_timeout = CONNECT_SECONDS if io_timeout is None else min(io_timeout, CONNECT_SECONDS)
     last: OSError | None = None
     for family, kind, proto, _, sockaddr in infos:
-        sock = socket.socket(family, kind, proto)
+        sock: socket.socket | None = None
         try:
+            sock = socket.socket(family, kind, proto)  # 커널에서 IPv6가 꺼져 있으면 여기서 실패: 다음 주소로
             sock.settimeout(connect_timeout)
             if source_address is not None:
                 sock.bind(source_address)
@@ -64,7 +65,8 @@ def connect_ipv4_first(
             return sock
         except OSError as e:
             last = e
-            sock.close()
+            if sock is not None:
+                sock.close()
     raise last if last is not None else OSError(f"{host}의 주소를 찾지 못함")
 
 
