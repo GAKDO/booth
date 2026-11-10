@@ -137,6 +137,61 @@ def test_다시_찍으면_새_번호로_남고_이전_파일은_그대로다(ser
     assert service.view(sid).step.light is Light.L2
 
 
+def test_잘못_찍고_다음을_눌렀으면_이전_단계로_돌아가_다시_찍고_마지막_장만_쓴다(service):
+    from trace_booth.store import latest_shots
+
+    sid = service.start("MB01").id
+    go_to(service, sid, Face.TOP, Light.L1)
+    first = service.shoot(sid)
+    service.advance(sid)
+    assert service.view(sid).step.light is Light.L2
+    shown = service.back(sid, expected_step=service.view(sid).step.index)
+    assert [s.filename for s in shown] == [s.filename for s in first]  # 돌아간 단계 사진을 다시 보여 준다
+    assert service.view(sid).step.light is Light.L1 and service.view(sid).taken
+    again = service.retake(sid)  # 돌아온 단계(L1)를 다시 찍는다
+    assert [s.filename for s in again] == ["MB01_TOP_L1_CAM1_02.jpg", "MB01_TOP_L1_CAM2_02.jpg"]
+    assert all(Path(s.local_path).is_file() for s in first)  # 앞 사진은 지우지 않는다
+    top_l1 = [s for s in latest_shots(service.store.shots(sid)) if s.face == "TOP" and s.light == "L1"]
+    assert [s.seq for s in top_l1] == [2, 2]
+    service.advance(sid)
+    assert service.view(sid).step.light is Light.L2
+
+
+def test_첫_단계에서는_이전_단계로_못_가고_단계_번호가_다르면_막는다(service):
+    sid = service.start("MB01").id
+    with pytest.raises(CaptureError):
+        service.back(sid)
+    service.shoot(sid)
+    service.advance(sid)
+    with pytest.raises(CaptureError):
+        service.back(sid, expected_step=5)
+    assert service.view(sid).step.index == 1
+
+
+def test_이전_단계로_돌아와_안내_단계에_있으면_뒤쪽_단계를_다시_찍지_않는다(service):
+    sid = service.start("MB01").id
+    go_to(service, sid, Face.KB, Light.L1)  # 바로 앞(7번)이 안내 단계
+    service.shoot(sid)
+    service.back(sid)
+    assert service.view(sid).step.kind is StepKind.NOTICE
+    with pytest.raises(CaptureError):
+        service.retake(sid)  # KB L1을 안내 단계 상태(조명·자세가 바뀐 채)로 다시 찍지 않는다
+    assert [s.seq for s in service.store.shots(sid) if s.face == "KB"] == [1, 1]
+
+
+def test_목록_끝에서_이전_단계로_가면_마지막_단계로_돌아가고_완료한_뒤에는_못_간다(service):
+    sid = service.start("MB01").id
+    run_to_end(service, sid)
+    assert service.view(sid).step is None
+    service.back(sid)
+    last = service.view(sid).step
+    assert last is not None and last.index == len(service.steps_for(service.store.get_session(sid))) - 1
+    service.advance(sid)
+    service.complete(sid)
+    with pytest.raises(CaptureError):
+        service.back(sid)
+
+
 def test_도구를_다시_켜면_그_기기의_마지막으로_끝난_단계_다음부터_이어_간다(tmp_path, cams, presets):
     db = tmp_path / "booth.db"
     a = CaptureService(Store(db), cams, presets, tmp_path / "data", min_free_bytes=0)

@@ -175,3 +175,15 @@ def test_접속_비밀로_첫_화면을_열면_쿠키를_심고_쿠키로_API를
     assert _raw(guarded, "GET", "/api/queue", headers={"Cookie": "trace_booth_ui=s3cret-test"})[0] == 401
     assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "s3cret-test"})[0] == 200
     assert _raw(guarded, "GET", "/api/queue", headers={"X-Booth-Token": "wrong"})[0] == 401
+
+
+def test_이전_단계를_누르면_돌아간_단계와_그_단계_사진을_돌려준다(base):
+    call(base, "POST", "/api/sessions", {"deviceId": "MB01"})
+    shot = json.loads(call(base, "POST", "/api/sessions/current/shoot")[2])["shots"]
+    assert call(base, "POST", "/api/sessions/current/next", {"step": 0})[0] == 200
+    status, _, body = call(base, "POST", "/api/sessions/current/prev", {"step": 1})
+    data = json.loads(body)
+    assert status == 200 and data["state"]["step"]["index"] == 0 and data["state"]["step"]["taken"]
+    assert [s["id"] for s in data["shots"]] == [s["id"] for s in shot]
+    status, ctype, _ = call(base, "POST", "/api/sessions/current/prev", {"step": 0})
+    assert status == 409 and ctype == "application/problem+json"

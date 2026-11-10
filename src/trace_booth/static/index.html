@@ -410,6 +410,7 @@
 
 <footer class="actions" id="actions" hidden>
   <div class="inner">
+    <button id="prev" class="btn" disabled hidden>← 이전 단계</button>
     <button id="retake" class="btn" disabled>다시 찍기</button>
     <button id="skip" class="btn" disabled hidden>SCR1 건너뛰기</button>
     <button id="submit" class="btn" hidden>다시 올리기</button>
@@ -474,6 +475,7 @@ function render() {
   $("next").disabled = busy || retaking || !step || !forward;
   $("skip").disabled = busy || !step || !step.optional;
   $("retake").disabled = busy || retaking;
+  $("prev").disabled = busy || retaking;
   $("complete").disabled = busy || retaking;
   $("back").disabled = retaking;
   if (!s) return;
@@ -484,6 +486,7 @@ function render() {
   $("complete").className = end ? "btn primary big" : "btn";
   $("complete").hidden = busy;
   $("retake").hidden = busy;
+  $("prev").hidden = busy || (!!step && step.index === 0);  // 잘못 찍고 넘어갔을 때 돌아가 다시 찍기(11/10)
   $("back").hidden = busy;
   renderStep(s, step);
   if (s.mode === "QUICK") return renderQuick(s, step);
@@ -801,7 +804,7 @@ $("back").onclick = async () => {
 function resetQuick() {
   state = null; result = null;
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("meta").textContent = "";
-  for (const id of ["shoot", "next", "retake", "complete"]) $(id).disabled = true;
+  for (const id of ["shoot", "next", "prev", "retake", "complete"]) $(id).disabled = true;
   show("waiting"); loadWaiting();
 }
 
@@ -1042,6 +1045,15 @@ $("next").onclick = async () => {
   finally { $("next").disabled = false; }
   $("thumbs").innerHTML = ""; $("lastShots").hidden = true;  // 다음 단계에 앞 단계 사진이 남지 않게
   render();
+};
+$("prev").onclick = async () => {
+  $("prev").disabled = true;  // 두 번 눌러도 한 단계만(서버도 단계 번호로 한 번 더 막는다)
+  try {
+    const r = await call("POST", "/api/sessions/current/prev", state.step ? { step: state.step.index } : {});
+    state = r.state; showShots(r.shots);  // 돌아간 단계에서 찍은 사진을 다시 보여 준다
+  } catch (e) {
+    if (!$("error").textContent) $("error").textContent = "이전 단계로 가지 못했어요. 잠시 뒤 다시 눌러 주세요";
+  } finally { render(); }
 };
 $("skip").onclick = async () => {
   const reason = prompt("SCR1을 건너뛰는 사유");
