@@ -465,10 +465,10 @@ function show(view) {
 
 let retaking = false;
 // 찍는 동안 실시간 보기 스트림을 끊어 장치를 바로 놓아 준다(11/10, 촬영이 실시간 보기를 기다리는 시간 줄이기)
-let livePaused = false;
+let livePaused = 0;  // 진행 중인 촬영 요청 수(촬영·다시 찍기가 겹쳐도 모두 끝난 뒤에 다시 켠다)
 async function withLivePaused(work) {
-  livePaused = true; applyLive();
-  try { return await work(); } finally { livePaused = false; applyLive(); }
+  livePaused += 1; applyLive();
+  try { return await work(); } finally { livePaused -= 1; applyLive(); }
 }  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
 function render() {
   const s = state, step = s && s.step;
@@ -848,7 +848,7 @@ function applyLive() {
     const show = shown.includes(cam);
     $("liveFig" + cam).hidden = !show;
     // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
-    const want = on && show && !livePaused;
+    const want = on && show && livePaused === 0;
     const img = $("live" + cam);
     if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
     if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
@@ -884,6 +884,13 @@ fetch("/api/live").then(r => r.ok ? r.json() : null).then(j => {
 for (const cam of ["CAM1", "CAM2", "SIDE"]) {
   $("live" + cam).onclick = (e) => {
     if (document.fullscreenElement) document.exitFullscreen(); else e.target.requestFullscreen();
+  };
+  // 서버가 막힌 연결을 끊었거나(쓰기 2초 제한) 스트림이 끊기면, 보고 있는 동안 1초 뒤 다시 연결한다
+  $("live" + cam).onerror = () => {
+    const img = $("live" + cam);
+    if (!img.dataset.on) return;
+    delete img.dataset.on;
+    setTimeout(applyLive, 1000);
   };
 }
 
