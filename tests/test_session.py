@@ -168,6 +168,17 @@ def test_첫_단계에서는_이전_단계로_못_가고_단계_번호가_다르
     assert service.view(sid).step.index == 1
 
 
+def test_이전_단계로_돌아와_안내_단계에_있으면_뒤쪽_단계를_다시_찍지_않는다(service):
+    sid = service.start("MB01").id
+    go_to(service, sid, Face.KB, Light.L1)  # 바로 앞(7번)이 안내 단계
+    service.shoot(sid)
+    service.back(sid)
+    assert service.view(sid).step.kind is StepKind.NOTICE
+    with pytest.raises(CaptureError):
+        service.retake(sid)  # KB L1을 안내 단계 상태(조명·자세가 바뀐 채)로 다시 찍지 않는다
+    assert [s.seq for s in service.store.shots(sid) if s.face == "KB"] == [1, 1]
+
+
 def test_목록_끝에서_이전_단계로_가면_마지막_단계로_돌아가고_완료한_뒤에는_못_간다(service):
     sid = service.start("MB01").id
     run_to_end(service, sid)

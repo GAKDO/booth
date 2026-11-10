@@ -226,6 +226,9 @@ class CaptureService:
                 return self._capture(s, steps[s.current_step])
             if taken[-1].step_index >= len(steps):
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
+            if s.status == "IN_PROGRESS" and taken[-1].step_index > s.current_step:
+                # 이전 단계로 돌아온 뒤 뒤쪽 단계를 지금 조명으로 다시 찍으면 사진이 엉뚱한 이름으로 남는다
+                raise CaptureError("이 단계는 아직 안 찍었어요. 촬영을 누르세요")
             return self._capture(s, steps[taken[-1].step_index])
 
     def advance(self, session_id: int, expected_step: int | None = None) -> None:

@@ -1051,6 +1051,8 @@ $("prev").onclick = async () => {
   try {
     const r = await call("POST", "/api/sessions/current/prev", state.step ? { step: state.step.index } : {});
     state = r.state; showShots(r.shots);  // 돌아간 단계에서 찍은 사진을 다시 보여 준다
+  } catch (e) {
+    if (!$("error").textContent) $("error").textContent = "이전 단계로 가지 못했어요. 잠시 뒤 다시 눌러 주세요";
   } finally { render(); }
 };
 $("skip").onclick = async () => {
