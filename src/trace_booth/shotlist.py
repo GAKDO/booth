@@ -49,7 +49,7 @@ _POSE = {
     Face.SL: f"SL(왼쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
     Face.SR: f"SR(오른쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
     Face.SCR0: f"SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게, {DOOR}",
-    Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기)",
+    Face.SCR1: f"SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기), {DOOR}",
 }
 _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
 _SIDE_CAMS = (Camera.CAM1,)
@@ -169,7 +169,7 @@ _FULL_POSE = {
     Face.SL: f"SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
     Face.SR: f"SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
     Face.SCR0: f"SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게, {DOOR}",
-    Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기)",
+    Face.SCR1: f"SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기), {DOOR}",
 }
 
 

@@ -106,12 +106,11 @@ def test_프리셋에_그_조명이_없으면_안내하고_멈춘다(tmp_path, m
 
 
 def test_새_부스_안내는_면을_찍을_때마다_앞문_닫기를_말한다() -> None:
-    from trace_booth.codes import Face
     from trace_booth.shotlist import DOOR, QUICK_SHOTLIST, SHOTLISTS, StepKind, full_inspection_shotlist
 
     lists = [QUICK_SHOTLIST, full_inspection_shotlist(True), full_inspection_shotlist(False), *SHOTLISTS.values()]
     for steps in lists:
-        shots = [s for s in steps if s.kind is StepKind.SHOT and s.face is not Face.SCR1]
+        shots = [s for s in steps if s.kind is StepKind.SHOT]
         assert shots and all(DOOR in s.instruction for s in shots)
 
 
