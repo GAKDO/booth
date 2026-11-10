@@ -179,7 +179,8 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
     BOT·TOP은 빠른 검사와 같은 순서(BOT L1→L2→L3, 뒤집어 TOP L3→L2→L1)라 앞 12장은 빠른 검사와 같다. 이어서 펼친 KB를
     L1·L2·L4로(CAM1·CAM2), 옆면 5면을 L1·L2로, SCR1을 조명 없이 찍는다(옆면은 CAM1 코드 한 장씩, 계약 그대로).
     side_camera면 옆면을 책상 높이 옆면 카메라(TRACE_BOOTH_SIDE_CAM)로 찍고, 없으면 CAM1을 책상에 내려 찍는다.
-    마지막 안내로 바 #2를 뒤쪽(L3) 자리로 되돌려 다음 빠른 검사가 같은 조명으로 찍히게 한다.
+    옆면 전에 바 #2를 뒤쪽(L3) 자리로 되돌린다. 앞(L4) 자리는 옆면 카메라와 노트북 사이라 면을 가리고,
+    되돌려 두면 다음 빠른 검사도 같은 조명으로 찍힌다.
     """
     raw: list[tuple] = []
 
@@ -196,17 +197,18 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
     shots(Face.TOP, tuple(reversed(MVP_LIGHTS)), _TOP_CAMS)
     notice(f"노트북을 펼쳐 화면을 100° 가이드에 맞추고, 바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮긴 뒤 {DOOR}")
     shots(Face.KB, (Light.L1, Light.L2, Light.L4), _TOP_CAMS)
+    # 새 부스(11/10): L4 자리는 노트북 앞~문 사이라 옆면 카메라와 노트북 사이에 놓여 찍을 면을 가린다.
+    # 옆면은 L1·L2만 쓰므로 바 #2를 옆면 전에 뒤쪽(L3) 자리로 되돌린다. 다음 빠른 검사 준비도 이걸로 끝난다.
+    back = "바 #2를 뒤쪽(L3) 자리로 되돌리고"
     if side_camera:
-        notice(f"노트북을 닫아 책상 높이 옆면 카메라 앞에 세우세요(배경판은 노트북 뒤 30cm). 옆면은 L1·L2만 써요. {DOOR}")
+        notice(f"노트북을 닫고, {back} 노트북을 옆면 카메라 앞 바닥 선에 세우세요. 옆면은 L1·L2만 써요. {DOOR}")
     else:
-        notice(f"노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요. {DOOR}")
+        notice(f"노트북을 닫고, {back} CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요. {DOOR}")
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
         shots(face, (Light.L1, Light.L2), _SIDE_CAMS)
     shots(Face.SCR1, (Light.OFF,), _SIDE_CAMS, optional=Face.SCR1 not in REQUIRED_FACES)
-    if side_camera:
-        notice("바 #2를 뒤쪽(L3) 자리로 되돌리세요(다음 빠른 검사 준비)")
-    else:
-        notice("CAM1을 다시 끼워 볼헤드 감시선을 맞추고, 바 #2를 뒤쪽(L3) 자리로 되돌리세요(다음 빠른 검사 준비)")
+    if not side_camera:
+        notice("CAM1을 다시 끼워 볼헤드 감시선을 맞추세요(다음 빠른 검사 준비)")
     return tuple(Step(i, k, text, f, li, cams, opt) for i, (k, text, f, li, cams, opt) in enumerate(raw))
 
 
