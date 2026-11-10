@@ -37,18 +37,18 @@ class Step:
 
 REQUIRED_FACES = FACE_REQUIRED_BOOTH
 
-# 새 부스(11/10 C 도면 v19)는 앞문을 닫아야 11/5 밝기가 나온다(밝기를 문 닫고 맞춤). 노트북을 만진 뒤 안내마다 붙인다
+# 새 부스(11/10 C 도면 v19)는 앞문을 닫아야 11/5 밝기가 나온다(밝기를 문 닫고 맞춤). 자세를 바꾸면 문을 열므로 면 자세 안내마다 붙인다
 DOOR = "앞문을 닫고 찍으세요"
 
 _POSE = {
-    Face.TOP: "TOP: 닫아서 상판이 위",
+    Face.TOP: f"TOP: 닫아서 상판이 위, {DOOR}",
     Face.BOT: f"BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기), {DOOR}",
-    Face.KB: "KB: 펼쳐서 100° 가이드에 맞춤",
-    Face.SF: "SF(앞 모서리)가 옆면 카메라 쪽을 향하게",
-    Face.SB: "SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게",
-    Face.SL: "SL(왼쪽 면)이 옆면 카메라 쪽을 향하게",
-    Face.SR: "SR(오른쪽 면)이 옆면 카메라 쪽을 향하게",
-    Face.SCR0: "SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게",
+    Face.KB: f"KB: 펼쳐서 100° 가이드에 맞춤, {DOOR}",
+    Face.SF: f"SF(앞 모서리)가 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SB: f"SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SL: f"SL(왼쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SR: f"SR(오른쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SCR0: f"SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게, {DOOR}",
     Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기)",
 }
 _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
@@ -163,12 +163,12 @@ SIDE_FACES = (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0, Face.SCR1)
 
 # 전체 검사의 자세 안내. 옆면은 노트북을 닫은 채 세워 그 면이 카메라를 향하게 돌린다
 _FULL_POSE = {
-    Face.KB: "KB: 노트북을 펼쳐 화면을 100° 가이드에 맞추고 키보드가 위 카메라를 보게",
-    Face.SF: "SF: 닫은 채 앞 모서리(트랙패드 쪽)가 옆면 카메라를 향하게",
-    Face.SB: "SB: 닫은 채 뒤 힌지 쪽이 옆면 카메라를 향하게",
-    Face.SL: "SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게",
-    Face.SR: "SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게",
-    Face.SCR0: "SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게",
+    Face.KB: f"KB: 노트북을 펼쳐 화면을 100° 가이드에 맞추고 키보드가 위 카메라를 보게, {DOOR}",
+    Face.SF: f"SF: 닫은 채 앞 모서리(트랙패드 쪽)가 옆면 카메라를 향하게, {DOOR}",
+    Face.SB: f"SB: 닫은 채 뒤 힌지 쪽이 옆면 카메라를 향하게, {DOOR}",
+    Face.SL: f"SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
+    Face.SR: f"SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
+    Face.SCR0: f"SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게, {DOOR}",
     Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기)",
 }
 
@@ -188,8 +188,6 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
 
     def shots(face: Face, lights: tuple[Light, ...], cams: tuple[Camera, ...], optional: bool = False) -> None:
         pose = _FULL_POSE.get(face, _POSE[face])
-        if face in SIDE_FACES:  # 옆면은 면마다 노트북을 돌리느라 문을 연다
-            pose = f"{pose}, {DOOR}"
         for light in lights:
             raw.append((StepKind.SHOT, f"{pose} · {light_instruction(light)}", face, light, cams, optional))
 

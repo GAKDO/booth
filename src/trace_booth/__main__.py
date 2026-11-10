@@ -456,7 +456,7 @@ def light_check(light: str | None, leak: bool, images: list[str], cameras: list[
     except (PresetError, ValueError, OSError) as e:  # JSONDecodeError는 ValueError
         raise SystemExit(f"프리셋을 쓸 수 없어요: {e}") from e
     if capture is None:
-        devices = {Camera.CAM1: _env("TRACE_BOOTH_CAM1"), Camera.CAM2: _env("TRACE_BOOTH_CAM2")}
+        devices = {Camera(c): _env(f"TRACE_BOOTH_{c}") for c in cameras}  # 고른 카메라만
 
         def capture(code: Camera, controls: dict[str, int]) -> bytes:
             return OpenCvCamera(code, devices[code], warmup_frames=_warmup_frames()).capture(controls)

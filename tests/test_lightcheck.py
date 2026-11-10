@@ -105,11 +105,36 @@ def test_프리셋에_그_조명이_없으면_안내하고_멈춘다(tmp_path, m
         light_check("L4", False, [], ["CAM1"], capture=lambda _c, _s: b"")
 
 
-def test_새_부스_안내는_BOT_촬영과_옆면_촬영마다_앞문_닫기를_말한다() -> None:
+def test_새_부스_안내는_면을_찍을_때마다_앞문_닫기를_말한다() -> None:
     from trace_booth.codes import Face
-    from trace_booth.shotlist import DOOR, QUICK_SHOTLIST, full_inspection_shotlist
+    from trace_booth.shotlist import DOOR, QUICK_SHOTLIST, SHOTLISTS, StepKind, full_inspection_shotlist
 
-    first_bot = next(s for s in QUICK_SHOTLIST if s.face is Face.BOT)
-    assert DOOR in first_bot.instruction
-    side = [s for s in full_inspection_shotlist(side_camera=True) if s.face is Face.SF]
-    assert side and all(DOOR in s.instruction for s in side)
+    lists = [QUICK_SHOTLIST, full_inspection_shotlist(True), full_inspection_shotlist(False), *SHOTLISTS.values()]
+    for steps in lists:
+        shots = [s for s in steps if s.kind is StepKind.SHOT and s.face is not Face.SCR1]
+        assert shots and all(DOOR in s.instruction for s in shots)
+
+
+def test_고른_카메라의_장치_이름만_읽는다(tmp_path, monkeypatch) -> None:
+    presets = tmp_path / "presets.json"
+    presets.write_text(json.dumps({"L1": {"exposure_time_absolute": 1250}}))
+    monkeypatch.setenv("TRACE_BOOTH_PRESETS", str(presets))
+    monkeypatch.setenv("TRACE_BOOTH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("TRACE_BOOTH_CAM1", "/dev/video-test")
+    monkeypatch.delenv("TRACE_BOOTH_CAM2", raising=False)
+    import trace_booth.__main__ as m
+
+    opened: list[str] = []
+
+    class FakeCamera:
+        def __init__(self, code, device, **_kw) -> None:
+            opened.append(device)
+
+        def capture(self, _settings):
+            import cv2
+
+            return cv2.imencode(".png", _photo(38))[1].tobytes()
+
+    monkeypatch.setattr(m, "OpenCvCamera", FakeCamera)
+    assert light_check("L1", False, [], ["CAM1"]) == 0
+    assert opened == ["/dev/video-test"]
