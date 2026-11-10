@@ -72,13 +72,16 @@ def test_전체_검사는_빠른_검사와_같은_BOT_TOP_12장_뒤에_펼친_KB
     assert faces.index(Face.KB) > faces.index(Face.TOP) and min(faces.index(f) for f in SIDE_FACES) > faces.index(Face.KB)
 
 
-def test_전체_검사는_펼치기_전에_바_2를_앞으로_옮기고_끝에_뒤쪽으로_되돌리라고_안내한다():
+def test_전체_검사는_펼치기_전에_바_2를_앞으로_옮기고_옆면_전에_뒤쪽으로_되돌리라고_안내한다():
     for side_camera in (False, True):
         steps = full_inspection_shotlist(side_camera)
         notices = [s.instruction for s in steps if s.kind is StepKind.NOTICE]
         first_kb = next(s.index for s in steps if s.face is Face.KB)
         assert "L4" in steps[first_kb - 1].instruction and steps[first_kb - 1].kind is StepKind.NOTICE
-        assert steps[-1].kind is StepKind.NOTICE and "되돌리" in steps[-1].instruction
+        first_side = next(s.index for s in steps if s.face in SIDE_FACES)
+        before_side = steps[first_side - 1]
+        assert before_side.kind is StepKind.NOTICE and "되돌리" in before_side.instruction  # L4 자리가 옆면을 가리지 않게
+        assert not any("되돌리" in s.instruction for s in steps[first_side:])
         cam1_down = any("CAM1을 삼각대에서 풀어" in n for n in notices)
         assert cam1_down is (not side_camera)  # 옆면 카메라가 있으면 CAM1을 내리지 않는다
 
