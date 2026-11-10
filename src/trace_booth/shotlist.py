@@ -37,9 +37,12 @@ class Step:
 
 REQUIRED_FACES = FACE_REQUIRED_BOOTH
 
+# 새 부스(11/10 C 도면 v19)는 앞문을 닫아야 11/5 밝기가 나온다(밝기를 문 닫고 맞춤). 노트북을 만진 뒤 안내마다 붙인다
+DOOR = "앞문을 닫고 찍으세요"
+
 _POSE = {
     Face.TOP: "TOP: 닫아서 상판이 위",
-    Face.BOT: "BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기)",
+    Face.BOT: f"BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기), {DOOR}",
     Face.KB: "KB: 펼쳐서 100° 가이드에 맞춤",
     Face.SF: "SF(앞 모서리)가 옆면 카메라 쪽을 향하게",
     Face.SB: "SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게",
@@ -57,15 +60,11 @@ _SIDE_CAMS = (Camera.CAM1,)
 # 11/10 최종 부스(C 도면 v19): 조명 자리는 11/5 그대로, 종이 확산지를 평판 틀로 바꾸고 암막 틀·오븐식 앞문을 덮었다.
 # L2·L3 버튼은 책상 위 스위치 판에 모였고, VL49는 배터리가 들어 있어 오른쪽 옆 천을 들치고 램프 스위치를 손으로 민다.
 LIGHT_GEAR = {
-    Light.L1: "VL49(빔 오른쪽 끝, 확산판 틀 뒤) · 오른쪽 옆 천을 들치고 램프 스위치",
+    Light.L1: "VL49(빔 오른쪽 끝, 확산판 틀 뒤, 2단계) · 오른쪽 옆 천을 들치고 램프 스위치",
     Light.L2: "LED 바 #1(빔 왼쪽 끝 아래) · 스위치 판 L2 버튼",
     Light.L3: "LED 바 #2(바닥 스토퍼 자리) · 스위치 판 L3 버튼",
     Light.L4: "LED 바 #2(앞 L4 자리로 옮김) · 스위치 판 L3 버튼",
 }
-# 새 부스는 앞문을 닫아야 11/5 밝기가 나온다(밝기를 문 닫고 맞춤). 노트북을 만진 뒤 안내마다 붙인다
-DOOR = "앞문을 닫고 찍으세요"
-
-
 def light_instruction(light: Light) -> str:
     if light is Light.OFF:
         return "조명을 모두 끄세요"
@@ -189,6 +188,8 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
 
     def shots(face: Face, lights: tuple[Light, ...], cams: tuple[Camera, ...], optional: bool = False) -> None:
         pose = _FULL_POSE.get(face, _POSE[face])
+        if face in SIDE_FACES:  # 옆면은 면마다 노트북을 돌리느라 문을 연다
+            pose = f"{pose}, {DOOR}"
         for light in lights:
             raw.append((StepKind.SHOT, f"{pose} · {light_instruction(light)}", face, light, cams, optional))
 
@@ -200,7 +201,7 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
     if side_camera:
         notice(f"노트북을 닫아 책상 높이 옆면 카메라 앞에 세우세요(배경판은 노트북 뒤 30cm). 옆면은 L1·L2만 써요. {DOOR}")
     else:
-        notice("노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요")
+        notice(f"노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요. {DOOR}")
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
         shots(face, (Light.L1, Light.L2), _SIDE_CAMS)
     shots(Face.SCR1, (Light.OFF,), _SIDE_CAMS, optional=Face.SCR1 not in REQUIRED_FACES)

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .camera import CameraError, OpenCvCamera, check_rotate
-from .camera_presets import Presets
+from .camera_presets import PresetError, Presets
 from .capture_client import ApiError, BoothAuth, CaptureClient, http_call
 from .checkout import submit_session, upload_workers
 from .codes import Camera, Light
@@ -435,6 +435,8 @@ def light_check(light: str | None, leak: bool, images: list[str], cameras: list[
             stats = measure_light(load(path))
             parsed = parse_filename(Path(path).name)
             name_light = chosen or (parsed.light if parsed else None)
+            if name_light is None and not leak and center_range is None:
+                raise SystemExit(f"{Path(path).name}: 이름에서 조명을 읽지 못했어요. --light로 켠 조명을 알려 주세요")
             ok, text = judge_light(name_light, stats, leak=leak, center_range=center_range)
             failed += not ok
             print(f"{Path(path).name}\t{text}")
@@ -445,11 +447,14 @@ def light_check(light: str | None, leak: bool, images: list[str], cameras: list[
                 print(f"{key}\t{n}장\t가운데 {center:.1f}\t날림 {clip:.3f}%")
         return 1 if failed else 0
     if not leak and chosen is None:
-        raise SystemExit("--light(L1·L2·L3) 또는 --leak 중 하나가 필요해요")
+        raise SystemExit("--light(L1~L4) 또는 --leak 중 하나가 필요해요")
     presets_path = os.environ.get("TRACE_BOOTH_PRESETS")
     if not presets_path:
         raise SystemExit("TRACE_BOOTH_PRESETS(11/5 프리셋 파일)가 필요해요. 카메라 값은 바꾸지 않고 조명 자리만 맞춰요")
-    settings = Presets.load(Path(presets_path).expanduser()).for_light(LEAK_PRESET if leak else chosen)
+    try:
+        settings = Presets.load(Path(presets_path).expanduser()).for_light(LEAK_PRESET if leak else chosen)
+    except (PresetError, ValueError, OSError) as e:  # JSONDecodeError는 ValueError
+        raise SystemExit(f"프리셋을 쓸 수 없어요: {e}") from e
     if capture is None:
         devices = {Camera.CAM1: _env("TRACE_BOOTH_CAM1"), Camera.CAM2: _env("TRACE_BOOTH_CAM2")}
 

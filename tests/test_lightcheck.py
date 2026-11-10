@@ -90,3 +90,26 @@ def test_위_카메라로_찍어_저장하고_판정한다(tmp_path, monkeypatch
 def test_찍을_때는_조명이나_빛샘을_골라야_한다(monkeypatch) -> None:
     with pytest.raises(SystemExit):
         main(["light-check"])
+
+
+def test_이름에서_조명을_못_읽은_사진은_통과로_치지_않는다() -> None:
+    with pytest.raises(SystemExit):
+        light_check(None, False, ["photo.jpg"], ["CAM1"], load=lambda _p: _photo(38))
+
+
+def test_프리셋에_그_조명이_없으면_안내하고_멈춘다(tmp_path, monkeypatch) -> None:
+    presets = tmp_path / "presets.json"
+    presets.write_text(json.dumps({"L1": {"exposure_time_absolute": 1250}}))
+    monkeypatch.setenv("TRACE_BOOTH_PRESETS", str(presets))
+    with pytest.raises(SystemExit, match="프리셋"):
+        light_check("L4", False, [], ["CAM1"], capture=lambda _c, _s: b"")
+
+
+def test_새_부스_안내는_BOT_촬영과_옆면_촬영마다_앞문_닫기를_말한다() -> None:
+    from trace_booth.codes import Face
+    from trace_booth.shotlist import DOOR, QUICK_SHOTLIST, full_inspection_shotlist
+
+    first_bot = next(s for s in QUICK_SHOTLIST if s.face is Face.BOT)
+    assert DOOR in first_bot.instruction
+    side = [s for s in full_inspection_shotlist(side_camera=True) if s.face is Face.SF]
+    assert side and all(DOOR in s.instruction for s in side)
