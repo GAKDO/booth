@@ -114,6 +114,8 @@ def _checkout_json(c: CheckoutRecord | None) -> dict | None:
     }
 
 
+STREAM_WRITE_TIMEOUT = 2.0  # 실시간 보기 한 프레임을 보내는 데 이보다 오래 막히면 그 연결을 끊는다(초)
+
 _UI_COOKIE = "trace_booth_ui"
 
 
@@ -339,6 +341,9 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
+            # 받지 않는 연결(태블릿이 화면을 바꿨는데 남은 연결 등)에 막혀 있으면 실시간 보기가 장치를 놓지 못해
+            # 촬영이 최대 5초 기다린다(11/10). 2초 넘게 못 보내면 그 연결을 끊고 장치를 놓는다
+            self.connection.settimeout(STREAM_WRITE_TIMEOUT)
             try:
                 for jpg in frames:
                     self.wfile.write(
@@ -346,7 +351,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                         + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n"
                     )
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except OSError:  # BrokenPipe·ConnectionReset·쓰기 시간 초과
                 pass
             finally:
                 close = getattr(frames, "close", None)

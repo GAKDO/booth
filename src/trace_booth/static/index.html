@@ -463,7 +463,13 @@ function show(view) {
   $("actions").hidden = view === "waiting" || view === "manual";
 }
 
-let retaking = false;  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
+let retaking = false;
+// 찍는 동안 실시간 보기 스트림을 끊어 장치를 바로 놓아 준다(11/10, 촬영이 실시간 보기를 기다리는 시간 줄이기)
+let livePaused = false;
+async function withLivePaused(work) {
+  livePaused = true; applyLive();
+  try { return await work(); } finally { livePaused = false; applyLive(); }
+}  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
 function render() {
   const s = state, step = s && s.step;
   const busy = !s || s.status !== "IN_PROGRESS";
@@ -842,7 +848,7 @@ function applyLive() {
     const show = shown.includes(cam);
     $("liveFig" + cam).hidden = !show;
     // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
-    const want = on && show;
+    const want = on && show && !livePaused;
     const img = $("live" + cam);
     if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
     if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
@@ -1024,7 +1030,7 @@ $("start").onclick = async () => {
 $("shoot").onclick = async () => {
   $("shoot").disabled = true;
   $("shoot").textContent = "찍는 중…";
-  try { const r = await call("POST", "/api/sessions/current/shoot"); state = r.state; showShots(r.shots); }
+  try { const r = await withLivePaused(() => call("POST", "/api/sessions/current/shoot")); state = r.state; showShots(r.shots); }
   finally { $("shoot").textContent = "촬영"; render(); }
 };
 $("retake").onclick = async () => {
@@ -1033,7 +1039,7 @@ $("retake").onclick = async () => {
   retaking = true;
   $("retake").textContent = "찍는 중…";
   render();
-  try { const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); }
+  try { const r = await withLivePaused(() => call("POST", "/api/sessions/current/retake")); state = r.state; showShots(r.shots); }
   finally { retaking = false; $("retake").textContent = "다시 찍기"; render(); }
 };
 $("next").onclick = async () => {

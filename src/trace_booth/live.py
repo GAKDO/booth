@@ -30,7 +30,8 @@ class CameraGate:
         """촬영용. 실시간 보기가 장치를 닫을 때까지 기다린 뒤 들어간다."""
         with self._cv:
             self._pending += 1
-            self._cv.wait_for(lambda: self._live_open == 0, timeout)
+            if not self._cv.wait_for(lambda: self._live_open == 0, timeout):
+                print(f"  실시간 보기가 {timeout:.0f}초 안에 장치를 놓지 않음(그대로 찍음)", flush=True)
         try:
             yield
         finally:

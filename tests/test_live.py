@@ -99,3 +99,37 @@ def test_실시간_보기_경로는_MJPEG를_보낸다(service):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_받지_않는_실시간_보기_연결이_있어도_촬영은_5초를_기다리지_않는다(service, monkeypatch):
+    import socket
+    import time
+
+    from trace_booth import web
+
+    monkeypatch.setattr(web, "STREAM_WRITE_TIMEOUT", 0.3)
+
+    class BigSource(FakeSource):
+        def read(self) -> bytes | None:
+            return b"\xff\xd8" + b"x" * 2_000_000 + b"\xff\xd9"  # 소켓 버퍼를 금방 채운다
+
+    gate = CameraGate()
+    live = {"CAM1": lambda: live_frames(BigSource, gate, sleep=lambda _: None)}
+    server = make_server(App(service, live=live), "127.0.0.1", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    stale = socket.socket()
+    stale.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    try:
+        stale.connect(("127.0.0.1", server.server_address[1]))
+        stale.sendall(b"GET /api/live/CAM1 HTTP/1.1\r\nHost: x\r\n\r\n")  # 요청만 하고 읽지 않는다
+        deadline = time.monotonic() + 5
+        while gate._live_open == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert gate._live_open == 1
+        started = time.monotonic()
+        with gate.exclusive(timeout=5.0):
+            waited = time.monotonic() - started
+        assert waited < 2.0
+    finally:
+        stale.close()
+        server.shutdown()
