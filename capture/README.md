@@ -150,6 +150,25 @@ set -a; . ~/.config/trace-booth.env; set +a   # serve·retry·shots 전에 이 �
 - 사진에 가로 줄무늬가 보이면 바·VL49 밝기를 최대로 두고 노출 시간을 바꿔 봅니다(LED 디밍 깜빡임).
 - 자동 전환(선택): Jetson GPIO + 3.3V로 동작하는 2채널 릴레이로 바 #1·#2의 USB 5V 선을 끊고 잇습니다. VL49는 배터리가 있어 릴레이로 끌 수 없으므로 손으로 둡니다.
 
+### 새 부스 밝기·빛샘 숫자로 확인 (11/10, `trace-booth light-check`)
+
+최종 부스(C 도면 v19: 확산판 평판 틀·암막 틀·오븐식 앞문)를 세운 뒤, 카메라 값은 11/5 프리셋 그대로 두고 **확산판 틀 자리만** 움직여 아래 숫자를 맞춥니다.
+가운데 밝기 = 사진 가운데 40%×40% 칸의 회색 평균, 날림 = 사진 전체에서 R·G·B 중 하나라도 255인 픽셀 %입니다.
+
+```bash
+set -a; . ~/.config/trace-booth.env; set +a
+export TRACE_BOOTH_PRESETS=~/trace-booth-presets.final-1105.json
+# 0) 기준 확인: 같은 노트북의 11/5 사진을 이 계산으로 다시 잰다(중앙값이 README 숫자와 다르면 --range로 그 값을 쓴다)
+trace-booth light-check --images ~/trace-booth-data/MB95/MB95_TOP_L*_CAM*_*.jpg
+# 1) 조명 하나만 켜고 문 닫고(부스 화면 실시간 보기는 닫기) → CAM1·CAM2 한 장씩 찍어 판정
+trace-booth light-check --light L1            # L2, L3도 같은 방법
+trace-booth light-check --light L1 --range 31 39   # 0)에서 잰 기준을 쓸 때
+# 2) 빛샘: 부스 조명 셋 다 끄고 문 닫고(L2 프리셋으로 찍음) → 가운데 5 이하
+trace-booth light-check --leak
+```
+
+찍은 사진은 `~/trace-booth-data/lightcheck/`에 남습니다. 모두 통과면 종료 코드 0, 하나라도 기준 밖이면 1이고 어느 쪽으로 옮길지 한 줄로 알려 줍니다.
+
 
 렌즈 높이 27cm와 두 카메라 범위를 먼저 맞춘 뒤 합니다(docs `booth/README.md` "카메라·조명 맞추기"). 팀 노트북(REG01)을 놓고 조명마다 한 번씩 합니다.
 

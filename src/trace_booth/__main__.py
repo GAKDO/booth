@@ -6,12 +6,13 @@ import argparse
 import os
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 from . import __version__
-from .camera import OpenCvCamera, check_rotate
-from .camera_presets import Presets
+from .camera import CameraError, OpenCvCamera, check_rotate
+from .camera_presets import PresetError, Presets
 from .capture_client import ApiError, BoothAuth, CaptureClient, http_call
 from .checkout import submit_session, upload_workers
 from .codes import Camera, Light
@@ -19,7 +20,9 @@ from .detect.build import build_engine
 from .detect.engine import DetectError, Detector, ModelInfo, open_detector
 from .detect.runner import Photo, detect_photos, detect_set
 from .detect.timing import LIMIT_SECONDS, TARGET_SECONDS, grade
+from .lightcheck import LightStats, judge_light, measure_light, summarize
 from .live import CameraGate, OpenCvLiveSource, live_frames
+from .naming import parse_filename
 from .netcheck import netcheck
 from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
@@ -403,6 +406,79 @@ def bench(engine: str | None, images: list[str], session_public_id: str | None, 
     return 2 if median > LIMIT_SECONDS else 0
 
 
+LEAK_PRESET = Light.L2  # 빛샘은 가장 민감한 값(노출 2047·gain 56)으로 찍는다
+
+
+def _decode(jpeg: bytes) -> object:
+    import cv2
+    import numpy as np
+
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise SystemExit("찍은 사진을 읽지 못했어요")
+    return image
+
+
+def light_check(light: str | None, leak: bool, images: list[str], cameras: list[str],
+                load: Callable[[str], object] = _imread,
+                capture: Callable[[Camera, dict[str, int]], bytes] | None = None,
+                center_range: tuple[float, float] | None = None) -> int:
+    """새 부스 밝기·빛샘 확인(11/10). 사진 파일을 주면 그것만 재고, 없으면 위 카메라로 한 장씩 찍어 잰다.
+
+    종료 코드: 모두 통과 0, 하나라도 기준 밖 1.
+    """
+    chosen = Light(light) if light else None
+    if images:
+        rows: list[tuple[str, LightStats]] = []
+        failed = 0
+        for path in images:
+            stats = measure_light(load(path))
+            parsed = parse_filename(Path(path).name)
+            name_light = chosen or (parsed.light if parsed else None)
+            if name_light is None and not leak and center_range is None:
+                raise SystemExit(f"{Path(path).name}: 이름에서 조명을 읽지 못했어요. --light로 켠 조명을 알려 주세요")
+            ok, text = judge_light(name_light, stats, leak=leak, center_range=center_range)
+            failed += not ok
+            print(f"{Path(path).name}\t{text}")
+            rows.append((f"{parsed.face.value} {parsed.light.value} {parsed.camera.value}" if parsed else "이름 규칙 밖", stats))
+        if len(images) > 1:
+            print("--- 묶음별 중앙값(11/5 사진이면 이 값이 새 부스의 기준) ---")
+            for key, (n, center, clip) in summarize(rows).items():
+                print(f"{key}\t{n}장\t가운데 {center:.1f}\t날림 {clip:.3f}%")
+        return 1 if failed else 0
+    if not leak and chosen is None:
+        raise SystemExit("--light(L1~L4) 또는 --leak 중 하나가 필요해요")
+    presets_path = os.environ.get("TRACE_BOOTH_PRESETS")
+    if not presets_path:
+        raise SystemExit("TRACE_BOOTH_PRESETS(11/5 프리셋 파일)가 필요해요. 카메라 값은 바꾸지 않고 조명 자리만 맞춰요")
+    try:
+        settings = Presets.load(Path(presets_path).expanduser()).for_light(LEAK_PRESET if leak else chosen)
+    except (PresetError, ValueError, OSError) as e:  # JSONDecodeError는 ValueError
+        raise SystemExit(f"프리셋을 쓸 수 없어요: {e}") from e
+    if capture is None:
+        devices = {Camera(c): _env(f"TRACE_BOOTH_{c}") for c in cameras}  # 고른 카메라만
+
+        def capture(code: Camera, controls: dict[str, int]) -> bytes:
+            return OpenCvCamera(code, devices[code], warmup_frames=_warmup_frames()).capture(controls)
+
+    label = "LEAK" if leak else chosen.value
+    out_dir = _data_dir() / "lightcheck"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    failed = 0
+    for code in (Camera(c) for c in cameras):
+        try:
+            jpeg = capture(code, settings)
+        except CameraError as e:
+            raise SystemExit(f"{e} — 부스 화면의 실시간 보기를 닫았는지(장치 사용 중) 확인해요") from e
+        path = out_dir / f"{stamp}_{label}_{code.value}.jpg"
+        path.write_bytes(jpeg)
+        ok, text = judge_light(chosen, measure_light(_decode(jpeg)), leak=leak, center_range=center_range)
+        failed += not ok
+        print(f"{label} {code.value}\t{text}\t({path})")
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="trace-booth")
     parser.add_argument("--version", action="store_true", help="버전만 출력")
@@ -430,6 +506,14 @@ def main(argv: list[str] | None = None) -> int:
     p_bench.add_argument("--session", help="찍은 세션 publicId(사진 대신)")
     p_bench.add_argument("--runs", type=int, default=5)
     p_bench.add_argument("--lights", help="세션 사진 중 이 조명만(예: L3). 판정 조명 옵션과 같은 조건으로 잴 때")
+    p_light = sub.add_parser("light-check", help="새 부스 조명 밝기·빛샘을 11/5 숫자와 비교(사진 파일 또는 위 카메라)")
+    p_light.add_argument("--light", choices=[x.value for x in (Light.L1, Light.L2, Light.L3, Light.L4)],
+                         help="켠 조명 하나(프리셋도 이 조명 값). 사진 파일이면 이름에서 읽음")
+    p_light.add_argument("--leak", action="store_true", help="부스 조명을 모두 끄고 문을 닫은 빛샘 확인(가운데 5 이하)")
+    p_light.add_argument("--camera", nargs="+", choices=["CAM1", "CAM2"], default=["CAM1", "CAM2"])
+    p_light.add_argument("--range", nargs=2, type=float, metavar=("LO", "HI"),
+                         help="가운데 밝기 기준을 바꿈(11/5 사진을 --images로 잰 중앙값 ±10%% 등)")
+    p_light.add_argument("--images", nargs="*", default=[], help="잴 사진 파일(11/5 사진으로 기준 확인 등). 주면 찍지 않음")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "serve":
         return serve(args.host, args.port)
@@ -451,6 +535,9 @@ def main(argv: list[str] | None = None) -> int:
         except DetectError as e:
             raise SystemExit(f"엔진을 만들지 못했어요: {e}") from e
         return 0
+    if args.command == "light-check":
+        return light_check(args.light, args.leak, args.images, args.camera,
+                           center_range=tuple(args.range) if args.range else None)
     if args.command == "bench":
         return bench(args.engine, args.images, args.session, args.runs, lights=args.lights)
     print(f"trace-booth {__version__}")

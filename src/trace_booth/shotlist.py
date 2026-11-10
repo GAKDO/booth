@@ -37,32 +37,34 @@ class Step:
 
 REQUIRED_FACES = FACE_REQUIRED_BOOTH
 
+# 새 부스(11/10 C 도면 v19)는 앞문을 닫아야 11/5 밝기가 나온다(밝기를 문 닫고 맞춤). 자세를 바꾸면 문을 열므로 면 자세 안내마다 붙인다
+DOOR = "앞문을 닫고 찍으세요"
+
 _POSE = {
-    Face.TOP: "TOP: 닫아서 상판이 위",
-    Face.BOT: "BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기)",
-    Face.KB: "KB: 펼쳐서 100° 가이드에 맞춤",
-    Face.SF: "SF(앞 모서리)가 옆면 카메라 쪽을 향하게",
-    Face.SB: "SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게",
-    Face.SL: "SL(왼쪽 면)이 옆면 카메라 쪽을 향하게",
-    Face.SR: "SR(오른쪽 면)이 옆면 카메라 쪽을 향하게",
-    Face.SCR0: "SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게",
-    Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기)",
+    Face.TOP: f"TOP: 닫아서 상판이 위, {DOOR}",
+    Face.BOT: f"BOT: 앞 모서리를 들어 뒤로 넘겨 바닥이 위(좌우로 굴리지 않기), {DOOR}",
+    Face.KB: f"KB: 펼쳐서 100° 가이드에 맞춤, {DOOR}",
+    Face.SF: f"SF(앞 모서리)가 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SB: f"SB(뒤 힌지 쪽)가 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SL: f"SL(왼쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SR: f"SR(오른쪽 면)이 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SCR0: f"SCR0: 화면을 끈 채 펼쳐 화면 쪽이 옆면 카메라 쪽을 향하게, {DOOR}",
+    Face.SCR1: f"SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 건너뛰기), {DOOR}",
 }
 _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
 _SIDE_CAMS = (Camera.CAM1,)
 
 
-# 11/4 조명 장비(민서 11/3 주문): L1 = VIJIM VL49(확산, 앞 기둥 위), L2·L3 = 5V USB LED 바 35cm 6000K 두 개(스침광).
+# 11/4 조명 장비(민서 11/3 주문): L1 = VIJIM VL49(확산), L2·L3 = 5V USB LED 바 35cm 6000K 두 개(스침광).
 # 11/5 실기 확정 배치: L1 큰 확산지·2단계, L2 왼쪽 위에 붙이고 A4로 가림, L3 뒤쪽 바닥(capture/README.md 3절).
-# VL49는 배터리가 들어 있어 USB 전원을 끊어도 꺼지지 않으므로 손으로 켜고 끈다.
+# 11/10 최종 부스(C 도면 v19): 조명 자리는 11/5 그대로, 종이 확산지를 평판 틀로 바꾸고 암막 틀·오븐식 앞문을 덮었다.
+# L2·L3 버튼은 책상 위 스위치 판에 모였고, VL49는 배터리가 들어 있어 오른쪽 옆 천을 들치고 램프 스위치를 손으로 민다.
 LIGHT_GEAR = {
-    Light.L1: "VL49(앞 기둥 위, 큰 확산지 뒤, 2단계)",
-    Light.L2: "LED 바 #1(왼쪽 위, A4로 가림)",
-    Light.L3: "LED 바 #2(뒤쪽 바닥)",
-    Light.L4: "LED 바 #2(앞 자리로 옮김)",
+    Light.L1: "VL49(빔 오른쪽 끝, 확산판 틀 뒤, 2단계) · 오른쪽 옆 천을 들치고 램프 스위치",
+    Light.L2: "LED 바 #1(빔 왼쪽 끝 아래) · 스위치 판 L2 버튼",
+    Light.L3: "LED 바 #2(바닥 스토퍼 자리) · 스위치 판 L3 버튼",
+    Light.L4: "LED 바 #2(앞 L4 자리로 옮김) · 스위치 판 L3 버튼",
 }
-
-
 def light_instruction(light: Light) -> str:
     if light is Light.OFF:
         return "조명을 모두 끄세요"
@@ -103,7 +105,7 @@ def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tu
     for face in (Face.BOT, Face.TOP):
         order = lights
         if face is Face.TOP:
-            raw.append((StepKind.NOTICE, "노트북을 다시 뒤집어 상판이 위로 오게 놓으세요", None, None, ()))
+            raw.append((StepKind.NOTICE, f"노트북을 다시 뒤집어 상판이 위로 오게 놓고, {DOOR}", None, None, ()))
             # TOP은 거꾸로(L3 → L2 → L1): 뒤집는 동안 켜 둔 바를 그대로 쓰고, 손으로 켜는 VL49(L1)는 한 대에 한 번만 다시 켠다
             order = tuple(reversed(lights))
         for light in order:
@@ -161,13 +163,13 @@ SIDE_FACES = (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0, Face.SCR1)
 
 # 전체 검사의 자세 안내. 옆면은 노트북을 닫은 채 세워 그 면이 카메라를 향하게 돌린다
 _FULL_POSE = {
-    Face.KB: "KB: 노트북을 펼쳐 화면을 100° 가이드에 맞추고 키보드가 위 카메라를 보게",
-    Face.SF: "SF: 닫은 채 앞 모서리(트랙패드 쪽)가 옆면 카메라를 향하게",
-    Face.SB: "SB: 닫은 채 뒤 힌지 쪽이 옆면 카메라를 향하게",
-    Face.SL: "SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게",
-    Face.SR: "SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게",
-    Face.SCR0: "SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게",
-    Face.SCR1: "SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기)",
+    Face.KB: f"KB: 노트북을 펼쳐 화면을 100° 가이드에 맞추고 키보드가 위 카메라를 보게, {DOOR}",
+    Face.SF: f"SF: 닫은 채 앞 모서리(트랙패드 쪽)가 옆면 카메라를 향하게, {DOOR}",
+    Face.SB: f"SB: 닫은 채 뒤 힌지 쪽이 옆면 카메라를 향하게, {DOOR}",
+    Face.SL: f"SL: 닫은 채 왼쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
+    Face.SR: f"SR: 닫은 채 오른쪽 면(포트)이 옆면 카메라를 향하게, {DOOR}",
+    Face.SCR0: f"SCR0: 펼쳐서 화면을 끈 채 화면 쪽이 옆면 카메라를 향하게, {DOOR}",
+    Face.SCR1: f"SCR1: 화면을 켜고 전체를 흰색으로 띄움(못 띄우면 사유를 적고 건너뛰기), {DOOR}",
 }
 
 
@@ -190,14 +192,14 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
             raw.append((StepKind.SHOT, f"{pose} · {light_instruction(light)}", face, light, cams, optional))
 
     shots(Face.BOT, MVP_LIGHTS, _TOP_CAMS)
-    notice("노트북을 다시 뒤집어 상판이 위로 오게 놓으세요")
+    notice(f"노트북을 다시 뒤집어 상판이 위로 오게 놓고, {DOOR}")
     shots(Face.TOP, tuple(reversed(MVP_LIGHTS)), _TOP_CAMS)
-    notice("노트북을 펼쳐 화면을 100° 가이드에 맞추고, 바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮기세요")
+    notice(f"노트북을 펼쳐 화면을 100° 가이드에 맞추고, 바 #2(뒤쪽 L3)를 앞 자리(L4)로 옮긴 뒤 {DOOR}")
     shots(Face.KB, (Light.L1, Light.L2, Light.L4), _TOP_CAMS)
     if side_camera:
-        notice("노트북을 닫아 책상 높이 옆면 카메라 앞에 세우세요(배경판은 노트북 뒤 30cm). 옆면은 L1·L2만 써요")
+        notice(f"노트북을 닫아 책상 높이 옆면 카메라 앞에 세우세요(배경판은 노트북 뒤 30cm). 옆면은 L1·L2만 써요. {DOOR}")
     else:
-        notice("노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요")
+        notice(f"노트북을 닫고, CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요. {DOOR}")
     for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
         shots(face, (Light.L1, Light.L2), _SIDE_CAMS)
     shots(Face.SCR1, (Light.OFF,), _SIDE_CAMS, optional=Face.SCR1 not in REQUIRED_FACES)
