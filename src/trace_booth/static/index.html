@@ -889,7 +889,7 @@ for (const cam of ["CAM1", "CAM2", "SIDE"]) {
   $("live" + cam).onerror = () => {
     const img = $("live" + cam);
     if (!img.dataset.on) return;
-    delete img.dataset.on;
+    img.removeAttribute("src"); delete img.dataset.on;  // 끊긴 연결을 놓고, 아직 볼 카메라면 applyLive가 다시 연다
     setTimeout(applyLive, 1000);
   };
 }
