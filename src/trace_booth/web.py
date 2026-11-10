@@ -291,6 +291,10 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if app.quick is not None and svc.store.get_session(app.current).mode == "QUICK":
                     app.quick.prefetch(app.current)  # 찍는 동안 미리 탐지(완료 때는 남은 사진만)
                 return self._json(201, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
+            if action == "/prev":
+                expected = self._body().get("step")
+                shots = svc.back(app.current, expected if isinstance(expected, int) else None)
+                return self._json(200, {"shots": [_shot_json(s) for s in shots], "state": _state(app)})
             if action == "/next":
                 expected = self._body().get("step")
                 svc.advance(app.current, expected if isinstance(expected, int) else None)

@@ -212,13 +212,18 @@ class CaptureService:
             return self._capture(s, step)
 
     def retake(self, session_id: int) -> list[ShotRecord]:
-        """가장 최근에 찍은 단계(보통 지금 단계)를 새 번호로 다시 찍는다. 현재 단계는 그대로."""
+        """지금 단계를 찍었으면 그 단계를, 아니면 가장 최근에 찍은 단계를 새 번호로 다시 찍는다. 현재 단계는 그대로.
+
+        '이전 단계'로 돌아온 뒤 다시 찍기를 누르면 돌아온 그 단계를 다시 찍어야 한다(11/10).
+        """
         with self._lock:
             s = self.store.get_session(session_id)
             taken = self.store.shots(s.id)
             if not taken:
                 raise CaptureError("다시 찍을 사진이 없어요")
             steps = self.steps_for(s)
+            if s.status == "IN_PROGRESS" and s.current_step < len(steps) and self._taken(s, steps[s.current_step]):
+                return self._capture(s, steps[s.current_step])
             if taken[-1].step_index >= len(steps):
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
             return self._capture(s, steps[taken[-1].step_index])
@@ -236,6 +241,30 @@ class CaptureService:
             if step.captures and not self._taken(s, step):
                 raise CaptureError("이 단계를 아직 안 찍었어요. 촬영을 누르세요")
             self.store.update_session(s.id, current_step=s.current_step + 1)
+
+    def back(self, session_id: int, expected_step: int | None = None) -> list[ShotRecord]:
+        """이전 단계로 돌아간다. 돌아간 단계에서 마지막으로 찍은 사진들을 돌려준다(화면에 다시 보이게).
+
+        잘못 찍고 '다음'을 눌렀을 때 돌아가서 다시 찍기 위해(11/10). 앞에서 찍은 사진은 지우지 않고,
+        다시 찍으면 새 번호로 남아 올리기·탐지는 마지막 장(latest_shots)만 쓴다.
+        expected_step을 주면 지금 단계가 그 번호일 때만 돌아간다(목록 끝이면 단계 수와 같은 번호).
+        """
+        with self._lock:
+            s = self.store.get_session(session_id)
+            steps = self.steps_for(s)
+            if s.status != "IN_PROGRESS":
+                raise CaptureError("이미 완료한 촬영이에요")
+            if expected_step is not None and expected_step != s.current_step:
+                raise CaptureError("이미 다른 단계로 바뀌었어요. 화면 안내를 확인하세요")
+            if s.current_step <= 0:
+                raise CaptureError("첫 단계예요. 더 돌아갈 단계가 없어요")
+            prev = min(s.current_step, len(steps)) - 1
+            self.store.update_session(s.id, current_step=prev)
+            latest: dict[str, ShotRecord] = {}
+            for sh in self.store.shots(s.id):
+                if sh.step_index == prev:
+                    latest[sh.camera] = sh  # 찍은 차례대로라 마지막 것이 남는다
+            return list(latest.values())
 
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
