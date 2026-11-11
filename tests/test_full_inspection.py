@@ -323,8 +323,10 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고
     a, b = first_sb, first_sb + 1
     steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
     service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 다시 켠 경우
+    before = len(service.store.shots(s.id))
     with pytest.raises(CaptureError, match="처음부터"):
-        service.shoot(s.id)  # 안내와 실제 조명이 어긋난 채 이어 찍지 않는다
+        service.retake(s.id)  # 바뀐 번호의 조명으로 다시 찍지 않는다
+    assert len(service.store.shots(s.id)) == before
     assert service.store.get_session(s.id).status == "ABANDONED"
     assert service.missing(s.id)  # 완료되지 않는다
     again = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
@@ -355,3 +357,28 @@ def test_순서가_바뀐_세션은_기기를_다시_고르거나_완료를_누�
     service.inspection_lists["full"] = tuple(FULL_INSPECTION_SHOTLIST)  # 새 순서로 다시 켬
     u = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
     assert u.id != t.id and service.store.get_session(t.id).status == "ABANDONED"
+
+
+def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    steps = list(service.inspection_lists["full"])
+    first_sb = next(i for i, st in enumerate(steps) if st.face is Face.SB)
+    while service.view(s.id).step.index < first_sb:
+        if service.view(s.id).step.captures:
+            service.shoot(s.id)
+        service.advance(s.id)
+    service.shoot(s.id)
+    steps[first_sb], steps[first_sb + 1] = (
+        replace(steps[first_sb], light=steps[first_sb + 1].light),
+        replace(steps[first_sb + 1], light=steps[first_sb].light),
+    )
+    service.inspection_lists["full"] = tuple(steps)
+    before = len(service.store.shots(s.id))
+    with pytest.raises(CaptureError, match="처음부터"):
+        service.shoot(s.id)  # 안내와 실제 조명이 어긋난 채 이어 찍지 않는다
+    assert len(service.store.shots(s.id)) == before
+    assert service.store.get_session(s.id).status == "ABANDONED"
