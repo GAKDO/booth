@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from collections.abc import Callable
-from contextlib import nullcontext
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .codes import Camera
 
@@ -134,6 +134,9 @@ def rotate_frame(frame, degrees: int):  # frame은 numpy 배열(Jetson 시스템
     return cv2.rotate(frame, code)
 
 
+CLOSE_WAIT = 10.0  # 앞 촬영의 닫기를 기다리는 최대 초
+
+
 class OpenCvCamera:
     """장치를 열고 프레임 몇 장을 버린 뒤 한 장 찍고 닫는다(두 대를 동시에 열지 않음)."""
 
@@ -156,18 +159,51 @@ class OpenCvCamera:
         self._set_controls = set_controls
         self._gate = gate  # 실시간 보기와 장치를 나눠 쓸 때. 찍는 동안 실시간 보기를 멈춘다
         self.rotate = check_rotate(rotate)  # 카메라를 뒤집어 달았을 때 저장 전에 바로 세운다(11/6 옆면 Brio)
+        self._idle = threading.Event()  # 뒤에서 닫는 중이 아니면 켜져 있다
+        self._idle.set()
 
     def capture(self, settings: dict[str, int]) -> bytes:
         marks = _Marks()
-        try:
-            with self._gate.exclusive() if self._gate is not None else nullcontext():
-                marks.lap("대기")  # 실시간 보기가 장치를 놓을 때까지
+        if self._gate is None:
+            try:
                 return self._capture(settings, marks)
-        finally:
-            # 단계마다 어디서 시간이 드는지 serve 창에 남긴다(11/9 한 단계 9초 원인 찾기)
-            print(f"  {self.code.value} {marks}", flush=True)
+            finally:
+                print(f"  {self.code.value} {marks}", flush=True)
+        # 닫기(cap.release)가 jetson2에서 2~4초 걸린다(11/11 실측). 사진은 바로 돌려주고 닫기는 뒤에서 한다.
+        # 닫는 동안에는 게이트를 잡고 있어 실시간 보기가 열지 않고, 다음 촬영은 앞 닫기가 끝날 때까지 기다린다
+        if not self._idle.wait(CLOSE_WAIT):
+            print(f"  {self.code.value} 앞 촬영의 닫기가 {CLOSE_WAIT:.0f}초 안에 끝나지 않음(그대로 찍음)", flush=True)
+        gate = self._gate
+        gate.enter()
+        marks.lap("대기")  # 앞 닫기 + 실시간 보기가 장치를 놓을 때까지
+        handed = False
 
-    def _capture(self, settings: dict[str, int], marks: _Marks | None = None) -> bytes:
+        def close_later(cap: Any) -> None:
+            nonlocal handed
+            handed = True
+            self._idle.clear()
+
+            def run() -> None:
+                try:
+                    cap.release()
+                finally:
+                    marks.lap("닫기(뒤)")
+                    # 단계마다 어디서 시간이 드는지 serve 창에 남긴다(11/9 한 단계 9초 원인 찾기)
+                    print(f"  {self.code.value} {marks}", flush=True)
+                    self._idle.set()
+                    gate.leave()
+
+            threading.Thread(target=run, name=f"close-{self.code.value}", daemon=True).start()
+
+        try:
+            return self._capture(settings, marks, close=close_later)
+        finally:
+            if not handed:  # 장치를 열지 못했으면 닫을 것도 없다
+                print(f"  {self.code.value} {marks}", flush=True)
+                gate.leave()
+
+    def _capture(self, settings: dict[str, int], marks: _Marks | None = None,
+                 close: Callable[[Any], None] | None = None) -> bytes:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
 
         lap = marks.lap if marks is not None else (lambda _name: None)
@@ -202,5 +238,8 @@ class OpenCvCamera:
                 raise CameraError(self.code, "JPEG 인코딩 실패")
             return buf.tobytes()
         finally:
-            cap.release()
-            lap("닫기")
+            if close is not None:
+                close(cap)
+            else:
+                cap.release()
+                lap("닫기")
