@@ -218,6 +218,7 @@ class CaptureService:
             step = self._current(s)
             if not step.captures:
                 raise CaptureError("이 단계는 찍지 않는 안내 단계예요. '다음'을 누르세요")
+            self._check_list_unchanged(s)
             # 찍어도 단계는 그대로: 사진을 확인하고 '다음'을 눌러야 넘어간다(11/5, 조명을 바꾸기 전에 다음 단계 이름으로 찍히던 실수)
             return self._capture(s, step)
 
@@ -231,6 +232,7 @@ class CaptureService:
             taken = self.store.shots(s.id)
             if not taken:
                 raise CaptureError("다시 찍을 사진이 없어요")
+            self._check_list_unchanged(s)
             steps = self.steps_for(s)
             if s.status == "IN_PROGRESS" and s.current_step < len(steps) and self._taken(s, steps[s.current_step]):
                 return self._capture(s, steps[s.current_step])
@@ -279,6 +281,16 @@ class CaptureService:
                 if sh.step_index == prev:
                     latest[sh.camera] = sh  # 찍은 차례대로라 마지막 것이 남는다
             return list(latest.values())
+
+    def _check_list_unchanged(self, s: SessionRecord) -> None:
+        """찍은 사진이 지금 목록의 같은 번호 단계와 면·조명이 다르면 이어 찍지 않는다.
+
+        서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)에서 화면 안내와 실제 조명이 어긋난 채 찍히는 것을 막는다.
+        """
+        steps = self.steps_for(s)
+        for sh in self.store.shots(s.id):
+            if sh.step_index >= len(steps) or not _same_step(sh, steps[sh.step_index]):
+                raise CaptureError("촬영 목록이 바뀌어 이어 찍을 수 없어요. 이 세션을 닫고(ABANDONED) 새 촬영을 시작하세요")
 
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
