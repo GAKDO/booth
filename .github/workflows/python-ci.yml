@@ -37,3 +37,13 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: python -m pytest -q
+      # 운영 화면 하네스: 가짜 카메라로 서버를 띄우고 Chromium으로 눌러 본다(tests/test_ui.py)
+      - name: 화면 하네스 준비
+        run: |
+          python -m pip install -q -e ".[dev,ui]"
+          python -m playwright install --with-deps chromium
+      - name: 화면 하네스
+        env:
+          PYTHONUTF8: "1"
+          TRACE_UI_TESTS: "1"
+        run: python -m pytest -q tests/test_ui.py

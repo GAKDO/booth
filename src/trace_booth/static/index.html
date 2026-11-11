@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TRACE 부스 촬영</title>
+<style>
+  /* 부스 태블릿(가로 1280px 안팎, 손가락 터치)에 맞춘 단계형 화면. API·순서는 그대로 두고 보이는 방식만 정리했다 */
+  :root {
+    /* gakdo.site(GAKDO/web src/index.css)와 같은 값: 검정 바탕 #0b0b0f, 브랜드 빨강 #c8161d */
+    --bg:#0b0b0f; --panel:#131318; --panel2:#1c1c23; --line:#26262e;
+    --fg:#f4f4f5; --muted:#a1a1aa; --accent:#c8161d; --accent-hover:#a51218; --accent-ink:#fff;
+    --accent-soft:rgba(200,22,29,.14);
+    --ok:#22c55e; --ok-bg:rgba(34,197,94,.12); --bad:#ef4444; --bad-bg:rgba(239,68,68,.12);
+    --warn:#f5b93b; --warn-bg:rgba(245,185,59,.12);
+    --r:16px; --tap:64px;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  [hidden] { display:none !important; }
+  html, body { height:100%; }
+  body { margin:0; font-family:"Pretendard Variable", Pretendard, Inter, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    color:var(--fg); font-size:18px; line-height:1.45; user-select:none; letter-spacing:-0.005em;
+    font-feature-settings:"cv11", "ss01"; -webkit-font-smoothing:antialiased;
+    /* 사이트 첫 화면처럼 옅은 격자 + 위쪽 빨간 빛 */
+    background:
+      radial-gradient(1100px 520px at 75% -12%, rgba(200,22,29,.22), transparent 62%),
+      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 56px 56px,
+      linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 56px 56px,
+      var(--bg);
+    background-attachment:fixed; }
+  .num { font-variant-numeric:tabular-nums; }
+  button, input { font:inherit; color:inherit; }
+  button { cursor:pointer; touch-action:manipulation; }
+
+  /* 위 막대: 이름 · 모드 · 업로드 대기 · 실시간 */
+  .topbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:16px;
+    padding:12px 24px; background:rgba(11,11,15,.82); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:12px; font-weight:800; font-size:19px; letter-spacing:.2em; white-space:nowrap; }
+  .brand .logo { width:34px; height:34px; border-radius:10px; background:var(--accent); display:grid; place-items:center;
+    font-style:normal; font-size:18px; letter-spacing:0; box-shadow:0 6px 24px rgba(200,22,29,.45); }
+  .brand span { color:var(--muted); font-weight:600; font-size:14px; letter-spacing:.02em; padding:3px 10px;
+    border:1px solid var(--line); border-radius:999px; }
+  .modes { display:flex; background:rgba(19,19,24,.8); border:1px solid var(--line); border-radius:999px; padding:4px; gap:2px; }
+  .modes button { white-space:nowrap; border:0; background:none; padding:10px 18px; border-radius:999px; font-size:16px; font-weight:600; color:var(--muted); min-height:44px; }
+  .modes button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); }
+  .spacer { flex:1; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-size:15px; font-weight:600;
+    background:var(--panel2); color:var(--muted); white-space:nowrap; }
+  .pill.warn { background:var(--warn-bg); color:var(--warn); }
+  .iconbtn { min-height:44px; padding:8px 16px; border-radius:999px; border:1px solid var(--line); background:var(--panel); font-size:16px; font-weight:600; }
+  .iconbtn[aria-pressed="true"] { border-color:var(--accent); color:#fca5a5; background:var(--accent-soft); }
+
+  main { max-width:1180px; margin:0 auto; padding:24px 24px 140px; }
+  h1 { font-size:30px; margin:0; line-height:1.25; }
+  .sub { color:var(--muted); margin:6px 0 0; font-size:17px; }
+  .head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; }
+
+  /* 오류: 누르면 닫힘 */
+  #error { display:flex; gap:12px; align-items:flex-start; background:var(--bad-bg); border:1px solid rgba(239,68,68,.4); color:#fecaca;
+    padding:14px 18px; border-radius:12px; margin-bottom:16px; font-size:17px; }
+  #error:empty { display:none; }
+  #error::before { content:"!"; flex:none; width:24px; height:24px; border-radius:50%; background:var(--bad); color:#fff;
+    font-weight:800; display:grid; place-items:center; font-size:15px; }
+
+  .btn { white-space:nowrap; min-height:var(--tap); padding:0 28px; border-radius:14px; border:1px solid var(--line); background:var(--panel2);
+    font-size:20px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:10px; }
+  .btn:active:not(:disabled) { transform:scale(.98); }
+  .btn:disabled { opacity:.35; cursor:default; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); box-shadow:0 8px 28px rgba(200,22,29,.35); }
+  .btn.primary:hover:not(:disabled) { background:var(--accent-hover); }
+  .btn.ghost { background:none; }
+  .btn.big { min-height:84px; padding:0 48px; font-size:26px; border-radius:18px; }
+
+  /* 1. 기기 고르기 */
+  .devices { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:16px; }
+  .device { text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:22px 24px;
+    min-height:132px; display:flex; flex-direction:column; justify-content:space-between; gap:14px; transition:border-color .15s; }
+  .device:hover, .device:focus-visible { border-color:rgba(200,22,29,.6); }
+  .device:active { border-color:var(--accent); transform:scale(.99); }
+  .device .model { font-size:26px; font-weight:800; }
+  .device .serial { font-size:19px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .device .foot { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:15px; }
+  .device .go { color:#f87171; font-weight:700; font-size:17px; white-space:nowrap; flex:none; }
+  .device .foot { gap:12px; }
+  .device .foot > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag { display:inline-block; padding:4px 10px; border-radius:8px; font-size:14px; font-weight:700; background:var(--panel2); color:var(--fg); }
+  .tag.OUT { background:rgba(59,130,246,.16); color:#93c5fd; }
+  .tag.RCV { background:rgba(168,85,247,.16); color:#d8b4fe; }
+  .tag.RET { background:rgba(245,185,59,.16); color:#fcd34d; }
+  .device.resume { border-color:rgba(245,185,59,.6); }
+  .device .resume-tag { background:var(--warn-bg); color:var(--warn); }
+  .empty { background:var(--panel); border:1px dashed var(--line); border-radius:var(--r); padding:48px 24px; text-align:center; color:var(--muted); font-size:19px; }
+
+  /* 1'. 학습·출고·반납 직접 입력 */
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:28px; }
+  .form { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; max-width:620px; }
+  .form label { min-width:0; }
+  .listpick { display:grid; gap:10px; font-size:16px; color:var(--muted); font-weight:600; }
+  .lists { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .lists button { text-align:left; display:grid; gap:6px; padding:16px 16px 14px; min-height:96px; border-radius:14px;
+    border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; transition:border-color .15s, background .15s; }
+  .lists button:hover { border-color:#3a3a44; }
+  .lists button .t { font-size:18px; font-weight:700; }
+  .lists button .n { font-size:14px; color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
+  .lists button[aria-checked="true"] { border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent); }
+  .lists button[aria-checked="true"] .n { color:#fca5a5; }
+  .lists.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .profilepick { margin-bottom:18px; }
+  @media (max-width:560px) { .lists, .lists.two { grid-template-columns:minmax(0,1fr); } .lists button { min-height:0; } }
+  .form input { width:100%; min-width:0; }
+  .form label { display:grid; gap:8px; font-size:16px; color:var(--muted); font-weight:600; }
+  .form input { min-height:var(--tap); padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--bg);
+    font-size:22px; user-select:text; }
+  .form input:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+  .form .help { font-size:14px; font-weight:500; color:var(--muted); line-height:1.5; }
+  .form .lab { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .form .len { font-size:13px; font-weight:600; color:var(--muted); }
+  .form .len.ok { color:var(--ok); }
+  .form-error { margin:0; min-height:0; color:#f87171; font-size:15px; font-weight:600; }
+  .form-error:empty { display:none; }
+  .form-ok { margin:0; color:#4ade80; font-size:15px; font-weight:600; }
+  .form-ok:empty { display:none; }
+  .codebox { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+  .coderow { display:flex; gap:10px; }
+  .coderow input { flex:1 1 auto; width:100%; min-width:0; font-size:28px; letter-spacing:.3em; font-variant-numeric:tabular-nums; }
+  .or { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:14px; }
+  .or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
+  .tip { display:flex; align-items:center; gap:16px; flex-wrap:wrap; max-width:620px; margin-bottom:16px; padding:16px 20px; border-radius:var(--r);
+    border:1px solid rgba(200,22,29,.35); background:var(--accent-soft); font-size:16px; line-height:1.55; }
+  .tip > div { flex:1 1 280px; }
+  .tip.warn { border-color:rgba(245,185,59,.5); background:var(--warn-bg); }
+  .tip.warn strong { color:var(--warn); }
+
+  /* 2. 단계별 촬영 */
+  .who { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .who strong { font-size:22px; }
+  .phases { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:18px; }
+  .phase { padding:12px 14px; border-radius:12px; background:var(--panel); border:1px solid var(--line); color:var(--muted); font-size:16px; font-weight:600; }
+  .phase b { display:block; font-size:13px; font-weight:700; letter-spacing:.04em; opacity:.8; }
+  .phase.now { border-color:var(--accent); color:var(--fg); background:var(--accent-soft); }
+  .phase.passed { color:var(--ok); }
+  .phase.passed b::after { content:" ✓"; }
+  .progress { display:flex; align-items:center; gap:14px; margin-bottom:14px; color:var(--muted); font-size:16px; font-variant-numeric:tabular-nums; }
+  .bar { flex:1; height:10px; border-radius:99px; background:var(--panel2); overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--accent); border-radius:99px; transition:width .3s; }
+  .step { background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:32px; }
+  .step.notice { border-color:rgba(245,185,59,.5); background:linear-gradient(0deg, var(--warn-bg), var(--warn-bg)), var(--panel); }
+  .step .kind { font-size:15px; font-weight:700; color:var(--muted); letter-spacing:.04em; margin-bottom:10px; }
+  .step.notice .kind { color:var(--warn); }
+  #instruction { font-size:32px; font-weight:800; line-height:1.35; word-break:keep-all; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+  .chip { padding:8px 14px; border-radius:10px; background:var(--panel2); font-size:17px; font-weight:700; }
+  .chip small { color:var(--muted); font-weight:600; margin-right:6px; }
+  #meta { color:var(--muted); font-size:15px; margin-top:16px; }
+  .notice-warn { color:var(--warn); }
+  .done { display:flex; align-items:center; gap:14px; color:var(--ok); font-size:30px; font-weight:800; }
+  .done::before { content:"✓"; width:52px; height:52px; border-radius:50%; background:var(--ok-bg); display:grid; place-items:center; flex:none; }
+  .section-title { font-size:15px; color:var(--muted); font-weight:700; margin:24px 0 10px; letter-spacing:.03em; }
+
+  /* 아래 고정 동작 막대: 왼쪽 보조, 오른쪽 큰 주 버튼 하나 */
+  .actions { position:fixed; left:0; right:0; bottom:0; z-index:9; display:flex; align-items:center; gap:12px;
+    padding:16px 24px calc(16px + env(safe-area-inset-bottom)); background:rgba(14,17,22,.95); border-top:1px solid var(--line); }
+  .actions .inner { max-width:1180px; margin:0 auto; width:100%; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+
+  .thumbs { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; }
+  .thumbs figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .thumbs img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#000; }
+  .thumbs figcaption { padding:8px 12px; font-size:14px; color:var(--muted); word-break:break-all; }
+  .thumbs figure.hit { border-color:rgba(239,68,68,.6); }
+  .thumbs figure.hit figcaption { color:#fca5a5; }
+
+  /* 실시간 보기 */
+  #live { margin-bottom:20px; }
+  .live-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .live-bar .title { font-size:15px; color:var(--muted); font-weight:700; margin-right:auto; }
+  .seg { display:flex; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px; }
+  .seg button { border:0; background:none; min-height:44px; padding:0 14px; border-radius:9px; font-size:15px; font-weight:700; color:var(--muted); }
+  .seg button[aria-pressed="true"] { background:var(--panel2); color:var(--fg); box-shadow:inset 0 0 0 1px var(--line); }
+  .live-size { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:15px; font-weight:700; }
+  .live-size input { width:180px; accent-color:var(--accent); height:44px; }
+  /* 크기 막대(--live-w, 화면 폭의 %)만큼 본문 폭을 넘어서도 가운데로 넓힌다 */
+  /* 고른 카메라 수(--cols)만큼 칸이 늘어난다: 1대면 크게, 2대면 반씩, 3대면 셋으로 */
+  .live-grid { display:grid; grid-template-columns:repeat(var(--cols, 2), 1fr); gap:12px;
+    width:max(100%, min(calc(100vw - 32px), calc(var(--live-w, 0) * 1vw))); position:relative; left:50%; transform:translateX(-50%); }
+  #live figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  #live img { display:block; width:100%; aspect-ratio:16/9; background:#000; cursor:zoom-in; }
+  #live img:fullscreen { object-fit:contain; cursor:zoom-out; }
+  #live figcaption { padding:8px 12px; font-size:14px; color:var(--muted); }
+
+  /* 3. 판정 */
+  .verdict { border-radius:20px; padding:22px 28px; display:flex; align-items:center; gap:22px; border:2px solid var(--line); background:var(--panel); margin-bottom:16px; }
+  .verdict .icon { width:72px; height:72px; flex:none; border-radius:50%; display:grid; place-items:center; font-size:40px; font-weight:900; background:var(--panel2); }
+  #verdict { font-size:44px; font-weight:900; line-height:1.1; letter-spacing:-0.02em; }
+  #verdictMeta { color:var(--muted); font-size:16px; margin-top:6px; }
+  /* 판정 사진: 왼쪽 큰 사진 하나, 오른쪽은 스크롤 되는 작은 사진 목록(행 높이는 큰 사진이 정함) */
+  .viewer { display:grid; grid-template-columns:minmax(0, 1fr) 240px; gap:16px; align-items:start; }
+  .stage { margin:0; background:#000; border:1px solid var(--line); border-radius:16px; overflow:hidden; position:relative;
+    touch-action:pan-y pinch-zoom;  /* 가로 밀기는 페이지가 받아 사진을 넘기고, 세로 스크롤·두 손가락 확대는 브라우저가 처리 */
+    /* 큰 사진이 아래 막대에 가리지 않게 화면 높이에 맞춘다(머리·판정 카드·막대 높이를 뺀 값) */
+    --maxh:max(240px, calc(100vh - 440px)); }
+  .stage .frame { position:relative; margin:0 auto; width:min(100%, calc(var(--maxh) * var(--ar, 16/9))); aspect-ratio:var(--ar, 16/9); }
+  .stage .frame img { display:block; width:100%; height:100%; object-fit:contain; }
+  .stage .frame svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .stage figcaption { background:var(--panel); border-top:1px solid var(--line); display:flex; align-items:center; gap:10px; padding:12px 16px; font-size:16px; font-weight:700; }
+  .stage figcaption .count { margin-left:auto; color:var(--muted); font-weight:600; }
+  .stage figcaption .hitn { color:#f87171; }
+  .stage .nav { position:absolute; top:calc(50% - 50px); width:56px; height:56px; border-radius:50%; border:1px solid rgba(255,255,255,.15);
+    background:rgba(11,11,15,.6); backdrop-filter:blur(6px); font-size:34px; line-height:1; display:grid; place-items:center; }
+  .stage .nav:disabled { opacity:.25; }
+  .stage .prev { left:12px; } .stage .next { right:12px; }
+  .rail { position:relative; align-self:stretch; min-height:240px; }
+  .rail-head { font-size:14px; color:var(--muted); font-weight:700; margin-bottom:8px; }
+  .rail-list { position:absolute; inset:28px 0 0 0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:4px;
+    overscroll-behavior:contain; scrollbar-width:thin; }
+  .rail-list figure { margin:0; flex:none; background:var(--panel); border:2px solid var(--line); border-radius:12px; overflow:hidden; cursor:pointer; }
+  .rail-list figure[aria-current="true"] { border-color:var(--fg); }
+  .rail-list figure.hit { border-color:rgba(239,68,68,.55); }
+  .rail-list figure.hit[aria-current="true"] { border-color:#f87171; box-shadow:0 0 0 3px rgba(239,68,68,.25); }
+  .rail-list img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#000; }
+  .rail-list figcaption { padding:6px 10px; font-size:13px; color:var(--muted); display:flex; justify-content:space-between; }
+  .rail-list figure.hit figcaption { color:#fca5a5; }
+  .verdict.ok { border-color:rgba(34,197,94,.55); background:linear-gradient(0deg, var(--ok-bg), var(--ok-bg)), var(--panel); }
+  .verdict.ok .icon, .verdict.ok #verdict { color:var(--ok); }
+  .verdict.ok .icon { background:var(--ok-bg); }
+  .verdict.bad { border-color:rgba(239,68,68,.55); background:linear-gradient(0deg, var(--bad-bg), var(--bad-bg)), var(--panel); }
+  .verdict.bad .icon, .verdict.bad #verdict { color:var(--bad); }
+  .verdict.bad .icon { background:var(--bad-bg); }
+  .verdict.wait #verdict, .verdict.wait .icon { color:var(--warn); }
+  .verdict.wait .icon { animation:spin 1.2s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .overlay { position:relative; }
+  .overlay svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .overlay polygon { fill:rgba(239,68,68,.25); stroke:#ef4444; stroke-width:4; vector-effect:non-scaling-stroke; }
+
+  /* 확인 시트: 브라우저 confirm 대신 큰 버튼 두 개(터치용) */
+  .sheet { position:fixed; inset:0; z-index:20; display:flex; align-items:flex-end; justify-content:center;
+    background:rgba(0,0,0,.6); padding:24px; }
+  .sheet .box { width:min(640px, 100%); background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:32px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); animation:up .18s ease-out; }
+  @keyframes up { from { transform:translateY(24px); opacity:0; } }
+  .sheet h2 { margin:0 0 6px; font-size:28px; line-height:1.3; }
+  .sheet .lead { font-size:22px; font-weight:800; margin:14px 0 4px; }
+  .sheet p { color:var(--muted); margin:8px 0 0; font-size:17px; }
+  .sheet .row2 { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-top:28px; }
+  .sheet .row2 .btn { width:100%; }
+  .btn.danger { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .back { min-height:48px; }
+
+  @media (max-width:860px) {
+    .topbar { flex-wrap:wrap; padding:10px 16px; }
+    .modes { order:3; width:100%; overflow-x:auto; }
+    .modes button { flex:1; padding:10px 8px; }
+    .head { flex-direction:column; align-items:stretch; }
+    main { padding:16px 16px 230px; }  /* 좁으면 아래 막대가 두 줄이 됨 */
+    .actions { padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
+    .phases { grid-template-columns:repeat(2, 1fr); }
+    .live-grid { grid-template-columns:1fr; }
+    .live-size input { width:120px; }
+    .verdict { padding:18px; gap:14px; }
+    .verdict .icon { width:52px; height:52px; font-size:28px; }
+    #verdict { font-size:32px; }
+    .viewer { grid-template-columns:minmax(0, 1fr); }
+    .rail { min-height:0; }
+    .rail-list { position:static; flex-direction:row; overflow-x:auto; overflow-y:hidden; }
+    .rail-list figure { width:150px; }
+    .btn.big { padding:0 28px; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><i class="logo" aria-hidden="true">T</i>TRACE<span>부스</span></div>
+  <nav class="modes" id="modes" aria-label="모드">
+    <button data-mode="QUICK" aria-pressed="true">빠른 검사</button>
+    <button data-mode="TRAINING" aria-pressed="false">학습 데이터</button>
+    <button data-mode="OUT" aria-pressed="false">출고</button>
+    <button data-mode="RET" aria-pressed="false">반납</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="queue" class="pill" hidden></span>
+  <button id="liveToggle" class="iconbtn" aria-pressed="false">실시간 보기</button>
+</header>
+
+<main>
+  <div id="error" role="alert"></div>
+
+  <div id="live" hidden>
+    <div class="live-bar">
+      <span class="title">실시간 카메라</span>
+      <div class="seg" id="liveLayout" role="group" aria-label="보일 카메라">
+        <button data-v="all" aria-pressed="true">모두</button><button data-v="CAM1" aria-pressed="false">CAM1</button><button data-v="CAM2" aria-pressed="false">CAM2</button><button data-v="SIDE" aria-pressed="false" hidden>옆면</button>
+      </div>
+      <label class="live-size">크기<input type="range" id="liveSize" min="0" max="100" step="5" value="0" aria-label="실시간 화면 크기"></label>
+    </div>
+    <div class="live-grid" id="liveGrid">
+      <figure id="liveFigCAM1"><img id="liveCAM1" alt="CAM1 실시간"><figcaption>CAM1 (앞) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+      <figure id="liveFigCAM2"><img id="liveCAM2" alt="CAM2 실시간"><figcaption>CAM2 (뒤) · 누르면 전체 화면 · 찍는 동안 잠깐 멈춤</figcaption></figure>
+      <figure id="liveFigSIDE" hidden><img id="liveSIDE" alt="옆면 카메라 실시간"><figcaption>옆면 카메라 (책상 높이, 뒤집어 단 것을 바로 세워 보임 · 저장 사진도 이 방향) · 옆면 목록의 CAM1 사진은 이 카메라로 찍어요</figcaption></figure>
+    </div>
+  </div>
+
+  <!-- 1. 빠른 검사: 기기 고르기 -->
+  <section id="waiting" hidden>
+    <div class="head">
+      <div><h1>검사할 기기를 고르세요</h1><p class="sub">부스에 올린 노트북과 같은 기기를 누르면 촬영을 시작해요</p></div>
+      <button id="reload" class="btn ghost">새로고침</button>
+    </div>
+    <!-- 검사 범위(11/8): 기본은 빠른 검사(위·아래). 전체 검사는 키보드·옆면까지 28장(SCR1 선택). 못 불러오면 숨기고 빠른 검사 -->
+    <div class="listpick profilepick" id="profilePick" hidden>
+      <span class="lab" id="profileLab">검사 범위</span>
+      <div class="lists two" id="profiles" role="radiogroup" aria-labelledby="profileLab"></div>
+      <small class="help" id="profileHelp"></small>
+    </div>
+    <div class="devices" id="waitingList"></div>
+  </section>
+
+  <!-- 1'. 학습·출고·반납: 직접 입력 -->
+  <section id="manual" hidden>
+    <div class="head"><div><h1 id="manualTitle">기기 ID를 넣고 시작하세요</h1><p class="sub" id="manualSub"></p></div></div>
+    <!-- 출고·반납: 세 ID를 손으로 넣는 화면. 무엇을 어디서 찾는지 칸마다 적고, 빠른 검사로 가면 자동으로 채워진다는 것을 먼저 보인다 -->
+    <div class="tip checkout" id="quickTip">
+      <div><strong>ID를 몰라도 돼요.</strong> 관리자 화면에서 출고를 시작한 기기는 <b>빠른 검사</b> 목록에 뜨고, 누르면 세 ID가 자동으로 채워져요.</div>
+      <button type="button" class="iconbtn" id="toQuick">빠른 검사로 가기</button>
+    </div>
+    <div class="tip warn" id="retBlocked" hidden role="status">
+      <strong>수령·반납은 빠른 검사에서 찍어요.</strong> 관리자 화면에서 수령·반납을 시작하면 빠른 검사 목록에 그 기기가 '수령'·'반납'으로 떠요. 부스 코드를 넣어도 빠른 검사로 바로 넘어가요.
+    </div>
+    <div class="card form" id="manualForm">
+      <!-- 부스 코드(11/4): 관리자 화면이 발급한 6자리를 넣으면 아래 세 칸이 채워진다. 21자를 손으로 옮기지 않게 -->
+      <div class="checkout codebox" id="codeBox">
+        <label for="boothCode"><span class="lab">부스 코드 <span class="len">가장 쉬워요</span></span>
+          <span class="coderow"><input id="boothCode" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" placeholder="숫자 6자리" aria-describedby="codeHelp">
+          <button type="button" class="btn" id="redeem">불러오기</button></span>
+          <small class="help" id="codeHelp">관리자 화면 → 렌탈 상세 → '부스에 넣을 ID' → <b>부스 코드 발급</b>. 6자리를 넣으면 아래 세 칸이 자동으로 채워져요(10분 안에 한 번).</small></label>
+        <p class="form-ok" id="codeOk" role="status"></p>
+        <p class="form-error" id="codeError" role="alert"></p>
+        <div class="or"><span>또는 세 ID를 직접 넣기</span></div>
+      </div>
+      <!-- 학습 촬영 목록(11/6): 서버를 다시 켜지 않고 위·아래·펼친·옆면을 카드로 고른다 -->
+      <div class="training listpick" hidden>
+        <span class="lab" id="shotlistLab">촬영 목록</span>
+        <div class="lists" id="shotlist" role="radiogroup" aria-labelledby="shotlistLab"></div>
+        <small class="help" id="shotlistHelp"></small>
+      </div>
+      <label for="device"><span id="deviceLabel">기기 ID</span>
+        <input id="device" autocomplete="off" spellcheck="false" aria-describedby="deviceHelp">
+        <small class="help" id="deviceHelp"></small></label>
+      <label class="checkout" for="rental"><span class="lab">렌탈 ID <span class="len" id="rentalLen">0 / 21자</span></span>
+        <input id="rental" autocomplete="off" spellcheck="false" aria-describedby="rentalHelp">
+        <small class="help" id="rentalHelp">관리자 화면 → 렌탈 → 그 렌탈을 열면 '부스에 넣을 ID'에 있어요(주소창 /admin/rentals/ 뒤 21자와 같아요). 복사 버튼을 쓰세요.</small></label>
+      <label class="checkout" for="checkpoint"><span class="lab">시점 ID <span class="len" id="checkpointLen">0 / 21자</span></span>
+        <input id="checkpoint" autocomplete="off" spellcheck="false" aria-describedby="checkpointHelp">
+        <small class="help" id="checkpointHelp">같은 렌탈 상세의 '시점 진행'에서 출고를 시작하면 생기는 ID예요. 출고 시작을 먼저 눌러야 보여요.</small></label>
+      <p class="form-error" id="formError" role="alert"></p>
+      <button id="start" class="btn primary big">시작</button>
+    </div>
+  </section>
+
+  <!-- 2. 단계별 촬영 -->
+  <section id="capture" hidden>
+    <div class="who"><button id="back" class="iconbtn back" hidden>← 목록으로</button><span class="tag" id="modeTag"></span><strong id="who"></strong></div>
+    <div class="phases" id="phases" hidden>
+      <div class="phase" data-phase="0"><b>1</b><span>바닥면 촬영</span></div>
+      <div class="phase" data-phase="1"><b>2</b><span>뒤집기</span></div>
+      <div class="phase" data-phase="2"><b>3</b><span>상판 촬영</span></div>
+      <div class="phase" data-phase="3"><b>4</b><span>완료 · 판정</span></div>
+    </div>
+    <div class="progress"><span id="stepNo"></span><div class="bar"><i id="barFill"></i></div><span id="missingNo"></span></div>
+    <div class="step" id="stepCard">
+      <div class="kind" id="stepKind"></div>
+      <div id="instruction"></div>
+      <div class="chips" id="chips"></div>
+      <div id="meta"></div>
+    </div>
+    <div id="lastShots" hidden>
+      <div class="section-title">방금 찍은 사진</div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+  </section>
+
+  <!-- 3. 판정 -->
+  <section id="result" hidden>
+    <div class="verdict" id="verdictBox">
+      <div class="icon" id="verdictIcon"></div>
+      <div><div id="verdict"></div><div id="verdictMeta"></div></div>
+    </div>
+    <div class="viewer">
+      <figure class="stage" id="stage">
+        <div class="frame overlay" id="stageFrame"></div>
+        <button class="nav prev" id="prevPhoto" aria-label="이전 사진">‹</button>
+        <button class="nav next" id="nextPhoto" aria-label="다음 사진">›</button>
+        <figcaption id="stageCap"></figcaption>
+      </figure>
+      <aside class="rail" aria-label="사진 목록">
+        <div class="rail-head">사진 <span id="photoCount" class="num"></span> · 흠집 많은 순</div>
+        <div class="rail-list" id="resultPhotos"></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="box">
+    <h2 id="sheetTitle"></h2>
+    <div class="lead" id="sheetLead"></div>
+    <p id="sheetBody"></p>
+    <div class="row2"><button id="sheetNo" class="btn">취소</button><button id="sheetYes" class="btn primary big">확인</button></div>
+  </div>
+</div>
+
+<footer class="actions" id="actions" hidden>
+  <div class="inner">
+    <button id="prev" class="btn" disabled hidden>← 이전 단계</button>
+    <button id="retake" class="btn" disabled>다시 찍기</button>
+    <button id="skip" class="btn" disabled hidden>SCR1 건너뛰기</button>
+    <button id="submit" class="btn" hidden>다시 올리기</button>
+    <button id="redetect" class="btn" hidden>다시 탐지</button>
+    <div class="spacer"></div>
+    <button id="complete" class="btn" disabled>완료</button>
+    <button id="next" class="btn primary big" disabled hidden>다음</button>
+    <button id="shoot" class="btn primary big" disabled>촬영</button>
+    <button id="nextDevice" class="btn primary big" hidden>다음 기기</button>
+  </div>
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null, result = null, completedAt = 0, waitMs = null, label = "", mode = "QUICK";
+let openDevice = null;  // 목록으로 돌아오며 멈춘 기기(서버에 열린 세션이 남아 있음)
+let openProfile = null;  // 멈춘 기기의 검사 범위(이어 찍을 때 화면에서 고른 범위가 달라도 그 범위로 잇는다)
+let profile = "QUICK";  // 검사 범위(QUICK·FULL). 서버 기본값(TRACE_BOOTH_INSPECTION)으로 시작
+const PROFILE_CARD = {
+  QUICK: ["빠른 검사", "위·아래 2면. 바닥 → 뒤집어 상판"],
+  FULL: ["전체 검사", "위·아래 → 펼친 키보드(바 #2를 앞 L4로) → 닫아서 옆면 5면, SCR1은 선택"],
+};
+// 진행 칸 이름: 빠른 검사는 바닥·뒤집기·상판·판정, 전체 검사는 위·아래·키보드·옆면 다음 판정
+const PHASES = {
+  QUICK: ["바닥면 촬영", "뒤집기", "상판 촬영", "완료 · 판정"],
+  FULL: ["바닥 · 상판", "펼친 키보드", "옆면", "완료 · 판정"],
+};
+const MODE_NAME = { TRAINING: "학습", OUT: "출고", RET: "반납", QUICK: "빠른 검사" };
+const KIND = { OUT: "출고", RCV: "수령", RET: "반납" };
+const FACE = { BOT: "바닥면", TOP: "상판", KB: "키보드", SF: "앞면", SB: "뒷면", SL: "왼쪽", SR: "오른쪽", SCR0: "화면(꺼짐)", SCR1: "화면(켜짐)" };
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+$("error").onclick = () => { $("error").textContent = ""; };
+
+async function call(method, path, body) {
+  $("error").textContent = "";
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (!res.ok) {
+    const extra = data.missing ? ` (${data.missing.join(", ")})` : data.camera ? ` (${data.camera})` : "";
+    $("error").textContent = (data.detail || "오류") + extra;
+    throw new Error(data.detail);
+  }
+  return data;
+}
+
+// 지금 보일 화면 하나만 켠다: waiting(기기 고르기) · manual(직접 입력) · capture(촬영) · result(판정)
+function show(view) {
+  for (const id of ["waiting", "manual", "capture", "result"]) $(id).hidden = id !== view;
+  $("actions").hidden = view === "waiting" || view === "manual";
+}
+
+// 찍는 동안에는 서버(CameraGate)가 실시간 보기 장치를 잠깐 닫는다. 화면은 스트림을 끊지 않아 마지막 장면이 그대로 남는다
+// (11/11, 찍는 동안 끊었더니 화면이 깨진 이미지로 바뀌고 촬영 시간은 줄지 않음)
+let retaking = false;  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
+function render() {
+  const s = state, step = s && s.step;
+  const busy = !s || s.status !== "IN_PROGRESS";
+  const notice = !!step && step.kind === "NOTICE";
+  const taken = !!step && step.taken;  // 찍은 단계는 사진을 확인하고 '다음'을 눌러야 넘어간다
+  const forward = notice || taken;
+  $("shoot").disabled = busy || retaking || !step || notice;
+  $("next").disabled = busy || retaking || !step || !forward;
+  $("skip").disabled = busy || !step || !step.optional;
+  $("retake").disabled = busy || retaking;
+  $("prev").disabled = busy || retaking;
+  $("complete").disabled = busy || retaking;
+  $("back").disabled = retaking;
+  if (!s) return;
+  // 주 버튼은 하나만: 안내 단계·찍은 단계는 '다음', 목록 끝은 '완료', 그 밖은 '촬영'
+  const end = !busy && !step;
+  $("next").hidden = !forward;
+  $("shoot").hidden = forward || end || busy;
+  $("complete").className = end ? "btn primary big" : "btn";
+  $("complete").hidden = busy;
+  $("retake").hidden = busy;
+  $("prev").hidden = busy || (!!step && step.index === 0);  // 잘못 찍고 넘어갔을 때 돌아가 다시 찍기(11/10)
+  $("back").hidden = busy;
+  renderStep(s, step);
+  if (s.mode === "QUICK") return renderQuick(s, step);
+  show("capture");
+  $("redetect").hidden = true;  // 빠른 검사 판정에서 켠 버튼이 남지 않게
+  const c = s.checkout;
+  $("submit").hidden = !(c && c.status === "FAILED");
+  $("nextDevice").hidden = true;
+  $("skip").hidden = false;
+  if (s.status === "COMPLETE" && c && c.status !== "SUBMITTED") {
+    setInstruction("서버에 올리지 못했어요. 다시 올리기를 누르세요", "올리기 실패");
+    $("error").textContent = c.lastError || "";
+  } else if (s.status === "COMPLETE") {
+    $("instruction").innerHTML = '<span class="done">완료. 완료 책상으로 보내세요</span>';
+    $("stepKind").textContent = "끝";
+  }
+  const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
+  $("meta").innerHTML = esc(`${MODE_NAME[s.mode]}${s.mode === "TRAINING" && s.shotlist ? " · " + ((LIST_CARD[s.shotlist] || [LIST_LABEL[s.shotlist] || s.shotlist])[0]) : ""} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`)
+    + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>');
+  renderQueue(s.queue);
+}
+
+function setInstruction(text, kind) {
+  $("instruction").textContent = text;
+  $("stepKind").textContent = kind;
+}
+
+// 단계 카드·진행 막대·칩(면·조명·카메라)
+function renderStep(s, step) {
+  $("modeTag").textContent = s.mode === "QUICK" && s.profile === "FULL" ? "전체 검사" : MODE_NAME[s.mode];
+  $("who").textContent = s.mode === "QUICK" ? label : s.deviceId;
+  const total = step ? step.index + s.remainingSteps : null;
+  const at = step ? step.index + 1 : total;
+  $("stepNo").textContent = step ? `단계 ${at} / ${total}` : "모든 단계를 마쳤어요";
+  $("barFill").style.width = step ? `${(step.index / total) * 100}%` : "100%";
+  $("missingNo").textContent = s.missing.length ? `빠진 사진 ${s.missing.length}장` : "빠진 사진 없음";
+  $("stepCard").className = step && step.kind === "NOTICE" ? "step notice" : "step";
+  if (step) {
+    const kind = step.kind === "NOTICE" ? "안내 · 준비되면 다음"
+      : step.taken ? "찍음 · 사진을 확인하고 다음 (잘못 찍었으면 다시 찍기)"
+      : step.kind === "SLATE" ? "ID 카드" : "촬영";
+    setInstruction(step.instruction, kind);
+  } else {
+    setInstruction("목록 끝. 완료를 누르세요", "끝");
+  }
+  const chips = [];
+  if (step && step.face) chips.push(`<span class="chip"><small>면</small>${esc(FACE[step.face] || step.face)} ${esc(step.face)}</span>`);
+  if (step && step.light) chips.push(`<span class="chip"><small>조명</small>${esc(step.light)}</span>`);
+  if (step && step.cameras.length) chips.push(`<span class="chip"><small>카메라</small>${esc(step.cameras.join(" · "))}</span>`);
+  if (step && step.optional) chips.push('<span class="chip"><small>선택</small>건너뛸 수 있음</span>');
+  $("chips").innerHTML = chips.join("");
+  const quick = s.mode === "QUICK";
+  $("phases").hidden = !quick;
+  if (quick) {
+    const full = s.profile === "FULL";
+    const names = PHASES[full ? "FULL" : "QUICK"];
+    for (const el of document.querySelectorAll(".phase")) el.querySelector("span").textContent = names[Number(el.dataset.phase)];
+    const sideFace = (f) => ["SF", "SB", "SL", "SR", "SCR0", "SCR1"].includes(f);
+    // 전체 검사: 안내 단계는 다음에 찍을 면의 칸으로 본다(펼치기 안내는 키보드 칸, 옆면 준비는 옆면 칸, 끝 안내는 판정 칸)
+    const fullPhase = () => {
+      const face = step && (step.face || step.nextFace);
+      if (!face) return 3;
+      return face === "KB" ? 1 : sideFace(face) ? 2 : 0;
+    };
+    const now = full ? fullPhase() : !step ? 3 : step.kind === "NOTICE" ? 1 : step.face === "TOP" ? 2 : 0;
+    for (const el of document.querySelectorAll(".phase")) {
+      const p = Number(el.dataset.phase);
+      el.className = "phase" + (p === now ? " now" : p < now ? " passed" : "");
+    }
+  }
+}
+
+function renderQueue(q) {
+  const waiting = q ? q.pending + q.failed : 0;
+  $("queue").hidden = !waiting;
+  $("queue").textContent = waiting ? `올리지 못함 ${waiting}장` : "";
+  $("queue").className = waiting ? "pill warn" : "pill";
+}
+
+function renderQuick(s, step) {
+  const shooting = s.status === "IN_PROGRESS";
+  show(shooting ? "capture" : "result");
+  $("meta").innerHTML = shooting
+    ? esc(`${(PROFILE_CARD[s.profile] || PROFILE_CARD.QUICK)[0]} · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + step.cameras.join("·") : ""}`
+      + ` · 빠진 사진 ${s.missing.length}`) + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>')
+    : "";
+  // 전체 검사의 SCR1(선택)만 건너뛸 수 있다. 빠른 검사에는 선택 단계가 없다
+  $("skip").hidden = !(shooting && step && step.optional);
+  $("submit").hidden = true;
+  $("nextDevice").hidden = shooting;
+  if (shooting) $("redetect").hidden = true;
+  renderQueue(s.queue);
+}
+
+/** 이 신뢰도 이상은 "흠집 의심", 그 아래(부스 문턱 0.25까지)는 "확인 필요"(관리자 검수 화면과 같은 값) */
+const SUSPECT_CONFIDENCE = 0.4;
+
+function renderResult() {
+  const r = result;
+  if (!r) return;
+  const v = $("verdict"), box = $("verdictBox"), icon = $("verdictIcon");
+  if (r.status === "DONE") {
+    const bad = r.verdict === "DEFECT";
+    v.textContent = bad ? "문제 있음" : "문제 없음";
+    box.className = "verdict " + (bad ? "bad" : "ok"); icon.textContent = bad ? "!" : "✓";
+  } else if (r.status === "FAILED") {
+    v.textContent = "판정 못 함"; box.className = "verdict bad"; icon.textContent = "×";
+  } else {
+    v.textContent = "판정 중…"; box.className = "verdict wait"; icon.textContent = "◌";
+  }
+  const faces = Object.entries(r.faces).map(([f, n]) => `${f} ${n}곳`).join(" · ");
+  // 사람 검수(11/8): AI는 넓게 잡고 관리자가 확정한다. 신뢰도 0.40 이상은 흠집 의심, 그 아래는 확인 필요(사진별로 셈, 오염 제외)
+  const marks = r.photos.flatMap((p) => p.detections).filter((d) => d.class !== "stain");
+  const suspect = marks.filter((d) => d.confidence >= SUSPECT_CONFIDENCE).length;
+  const review = marks.length ? `확인할 곳 ${marks.length}곳(흠집 의심 ${suspect} · 확인 필요 ${marks.length - suspect}) · 관리자 검수 뒤 확정 · ` : "";
+  const time = waitMs != null ? ` · 완료→판정 ${(waitMs / 1000).toFixed(1)}초` : "";
+  $("verdictMeta").textContent = r.status === "FAILED" ? (r.error || "")
+    : r.status === "DONE" ? `${review}${r.profile === "FULL" ? "전체 검사 · " : ""}${label} · 흠집 표시 ${r.count}곳(사진별)${faces ? " · " + faces : ""} · 탐지 ${r.seconds}초${time}`
+      + (r.testOnly ? " · ⚠ 엔진 없는 시험(판정 아님)" : "")
+    : label;
+  const u = r.upload || {};
+  const up = u.set !== "SUBMITTED" ? (u.set === "FAILED" ? "서버에 못 올림(자동으로 다시)" : "서버에 올리는 중")
+    : u.detections === "SENT" ? "서버에 올림" : u.detections === "CLOSED" ? "서버 등급이 이미 매겨짐"
+    : u.detections === "TEST_ONLY" ? "사진만 올림(시험 결과는 안 올림)"
+    : r.status === "DONE" ? "탐지 결과 올리는 중" : "사진 올림";
+  $("verdictMeta").textContent += ` · ${up}`;
+  $("redetect").hidden = r.status !== "FAILED";
+  renderPhotos([...r.photos].sort((a, b) => b.detections.length - a.detections.length));
+}
+
+// 판정 사진. 결과를 다시 읽을 때마다 그리면 목록 스크롤과 이미지가 깜박이므로, 사진·탐지가 바뀔 때만 다시 그린다
+let photos = [], photosKey = "", selShot = null;
+const polysOf = (p) => p.detections.map((d) =>
+  `<polygon points="${d.polygon.map((pt) => pt.join(",")).join(" ")}"><title>${esc(d.class)} ${d.confidence}</title></polygon>`).join("");
+const nameOf = (p) => `${esc(p.face)} · ${esc(p.light)} · ${esc(p.camera)}`;
+function renderPhotos(list) {
+  const key = JSON.stringify(list.map((p) => [p.shotId, p.detections.length]));
+  if (key === photosKey) return;
+  photosKey = key; photos = list;
+  if (!photos.some((p) => p.shotId === selShot)) selShot = photos.length ? photos[0].shotId : null;
+  $("photoCount").textContent = `${photos.length}장`;
+  $("resultPhotos").innerHTML = photos.map((p, i) =>
+    `<figure class="${p.detections.length ? "hit" : ""}" data-i="${i}" tabindex="0" role="button" aria-label="${nameOf(p)} 크게 보기">` +
+    `<div class="overlay"><img src="/api/shots/${encodeURIComponent(p.shotId)}/thumbnail" alt="${nameOf(p)}" loading="lazy">` +
+    `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polysOf(p)}</svg></div>` +
+    `<figcaption><span>${nameOf(p)}</span><span>${p.detections.length ? "흠집 " + p.detections.length : ""}</span></figcaption></figure>`).join("");
+  for (const el of $("resultPhotos").children) {
+    el.onclick = () => selectPhoto(Number(el.dataset.i));
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectPhoto(Number(el.dataset.i)); } };
+  }
+  showStage();
+}
+function selectPhoto(i) {
+  if (!photos[i]) return;
+  selShot = photos[i].shotId; showStage();
+  const el = $("resultPhotos").children[i];
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+function showStage() {
+  const i = photos.findIndex((p) => p.shotId === selShot);
+  $("stage").hidden = i < 0;
+  if (i < 0) return;
+  const p = photos[i];
+  for (const el of $("resultPhotos").children) el.setAttribute("aria-current", String(Number(el.dataset.i) === i));
+  // 큰 사진은 썸네일보다 큰 크기(w=1600)로 받는다
+  $("stageFrame").style.setProperty("--ar", `${p.width}/${p.height}`);
+  $("stageFrame").innerHTML = `<img src="/api/shots/${encodeURIComponent(p.shotId)}/thumbnail?w=1600" alt="${nameOf(p)}">` +
+    `<svg viewBox="0 0 ${p.width} ${p.height}" preserveAspectRatio="none">${polysOf(p)}</svg>`;
+  const n = p.detections.length;
+  $("stageCap").innerHTML = `<span>${nameOf(p)}</span>${n ? `<span class="hitn">흠집 ${n}곳</span>` : "<span>흠집 없음</span>"}` +
+    `<span class="count num">${i + 1} / ${photos.length}</span>`;
+  $("prevPhoto").disabled = i === 0;
+  $("nextPhoto").disabled = i === photos.length - 1;
+}
+const stepPhoto = (d) => selectPhoto(photos.findIndex((p) => p.shotId === selShot) + d);
+$("prevPhoto").onclick = () => stepPhoto(-1);
+$("nextPhoto").onclick = () => stepPhoto(1);
+document.addEventListener("keydown", (e) => {
+  if ($("result").hidden || sheetDone) return;
+  // 실시간 크기 막대 같은 입력 칸에서 누른 방향키·수정 키 조합은 사진을 넘기지 않는다
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (e.target.closest && e.target.closest("input, textarea, select")) return;
+  if (e.key === "ArrowLeft") stepPhoto(-1);
+  if (e.key === "ArrowRight") stepPhoto(1);
+});
+// 큰 사진을 손가락으로 옆으로 밀어도 넘긴다
+let swipeX = null;
+$("stage").addEventListener("pointerdown", (e) => { swipeX = e.clientX; });
+$("stage").addEventListener("pointerup", (e) => {
+  if (swipeX == null) return;
+  const dx = e.clientX - swipeX; swipeX = null;
+  if (Math.abs(dx) > 60) stepPhoto(dx < 0 ? 1 : -1);
+});
+
+async function pollResult() {
+  if (!state || state.mode !== "QUICK" || state.status !== "COMPLETE") return;
+  try {
+    result = await (await fetch("/api/sessions/current/result")).json();
+    if ((result.status === "DONE" || result.status === "FAILED") && waitMs == null && completedAt) waitMs = Date.now() - completedAt;
+    renderResult();
+    const up = result.upload || {};
+    const settled = ["SENT", "CLOSED", "TEST_ONLY"].includes(up.detections) && up.set === "SUBMITTED" || (result.status === "FAILED" && up.set === "SUBMITTED");
+    if ((result.status === "DONE" || result.status === "FAILED") && settled) return;
+  } catch (e) { /* 다음에 다시 */ }
+  setTimeout(pollResult, result && (result.status === "DONE" || result.status === "FAILED") ? 3000 : 700);
+}
+
+function emptyList(text) {
+  $("waitingList").innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(text)}</div>`;
+}
+
+async function loadWaiting() {
+  emptyList("불러오는 중…");
+  try {
+    const res = await fetch("/api/rentals/waiting");
+    const data = await res.json();
+    if (!res.ok) { emptyList(data.detail || "목록을 못 불러왔어요"); return; }
+    if (!data.items.length) { emptyList("기다리는 기기가 없어요(관리자 화면에서 시점을 시작하세요)"); return; }
+    $("waitingList").innerHTML = "";
+    for (const w of data.items) {
+      const b = document.createElement("button");
+      b.className = "device";
+      const kind = KIND[w.checkpointType] || w.checkpointType;
+      b.innerHTML = `<div><div class="model">${esc(w.modelCode)}</div><div class="serial">${esc(w.serial)}</div></div>`
+        + `<div class="foot"><span><span class="tag ${esc(w.checkpointType)}">${esc(kind)}</span> &nbsp;렌탈 ${esc(w.rentalId.slice(0, 6))}…</span>`
+        + `<span class="go">촬영 시작 →</span></div>`;
+      const resume = openDevice === w.deviceId;
+      if (resume) {
+        b.classList.add("resume");
+        b.querySelector(".go").textContent = "이어 찍기 →";
+        b.querySelector(".foot > span").insertAdjacentHTML("afterbegin", '<span class="tag resume-tag">찍던 기기</span> ');
+      }
+      b.onclick = () => pickDevice(w, resume);
+      $("waitingList").appendChild(b);
+    }
+  } catch (e) { emptyList("목록을 못 불러왔어요"); }
+}
+
+async function startQuick(w, resume) {
+  label = `${w.modelCode} · ${w.serial}`;
+  const p = resume && openProfile ? openProfile : profile;
+  state = await call("POST", "/api/sessions",
+    { mode: "QUICK", profile: p, deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
+  if (openDevice === w.deviceId) { openDevice = null; openProfile = null; }  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
+  result = null; waitMs = null; completedAt = 0;
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("resultPhotos").innerHTML = ""; photosKey = ""; photos = []; selShot = null; render();
+}
+
+// 기기를 누르면 바로 시작하지 않고 한 번 확인한다(잘못 누름 방지). 찍던 기기는 이어 찍는다고 알려 준다
+async function pickDevice(w, resume) {
+  const kind = KIND[w.checkpointType] || w.checkpointType;
+  const p = resume && openProfile ? openProfile : profile;
+  const range = p === "FULL" ? "전체 검사(28장)" : "빠른 검사";
+  const ok = await ask({
+    title: resume ? "찍던 기기를 이어 찍을까요?" : `${kind} ${range}를 시작할까요?`,
+    lead: `${w.modelCode} · ${w.serial}`,
+    body: resume ? "앞에서 찍은 사진은 그대로 두고 멈춘 단계부터 이어서 찍어요."
+      : "부스에 올린 노트북 바닥 라벨의 시리얼과 같은지 확인하세요.",
+    yes: resume ? "이어 찍기" : "촬영 시작", no: "다시 고르기",
+  });
+  if (ok) startQuick(w, resume);
+}
+
+// 확인 시트. 누른 버튼이 '확인'이면 true. 바깥이나 Esc는 취소
+let sheetDone = null, sheetReturnFocus = null;
+function ask({ title, lead = "", body = "", yes = "확인", no = "취소", danger = false }) {
+  if (sheetDone) sheetDone(false);
+  sheetReturnFocus = document.activeElement;
+  $("sheetTitle").textContent = title; $("sheetLead").textContent = lead; $("sheetBody").textContent = body;
+  $("sheetLead").hidden = !lead;
+  $("sheetYes").textContent = yes; $("sheetNo").textContent = no;
+  $("sheetYes").className = "btn big " + (danger ? "danger" : "primary");
+  $("sheet").hidden = false; $("sheetYes").focus();
+  return new Promise((resolve) => {
+    sheetDone = (v) => {
+      sheetDone = null; $("sheet").hidden = true;
+      if (sheetReturnFocus && sheetReturnFocus.isConnected) sheetReturnFocus.focus();  // 연 자리로 포커스를 돌려준다
+      sheetReturnFocus = null; resolve(v);
+    };
+  });
+}
+$("sheetYes").onclick = () => sheetDone && sheetDone(true);
+$("sheetNo").onclick = () => sheetDone && sheetDone(false);
+$("sheet").onclick = (e) => { if (e.target === $("sheet") && sheetDone) sheetDone(false); };
+document.addEventListener("keydown", (e) => {
+  if (!sheetDone) return;
+  if (e.key === "Escape") { sheetDone(false); return; }
+  if (e.key === "Tab") {  // 시트가 열려 있는 동안 Tab은 두 버튼 사이만 돈다
+    e.preventDefault();
+    ($(document.activeElement === $("sheetYes") ? "sheetNo" : "sheetYes")).focus();
+  }
+});
+
+// 촬영을 멈추고 처음 화면으로. 서버 세션은 그대로 두므로 같은 기기를 다시 고르면 이어 찍는다
+async function leaveCapture() {
+  if (!state || state.status !== "IN_PROGRESS") return true;
+  const taken = !state.step || state.step.index > 0;
+  if (taken) {
+    const ok = await ask({
+      title: "촬영을 멈추고 나갈까요?", lead: state.mode === "QUICK" ? label : state.deviceId,
+      body: "찍은 사진은 지워지지 않아요. 같은 기기를 다시 고르면 멈춘 단계부터 이어 찍어요.",
+      yes: "나가기", no: "계속 찍기", danger: true,
+    });
+    if (!ok) return false;
+  }
+  openDevice = state.deviceId;
+  openProfile = state.profile || null;
+  return true;
+}
+$("back").onclick = async () => {
+  if (!(await leaveCapture())) return;
+  state = null; $("error").textContent = ""; applyMode();
+};
+
+function resetQuick() {
+  state = null; result = null;
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true; $("meta").textContent = "";
+  for (const id of ["shoot", "next", "prev", "retake", "complete"]) $(id).disabled = true;
+  show("waiting"); loadWaiting();
+}
+
+function showShots(shots) {
+  $("lastShots").hidden = !shots.length;
+  $("thumbs").innerHTML = shots.map((x) =>
+    `<figure><img src="/api/shots/${x.id}/thumbnail?t=${Date.now()}" alt="${esc(x.filename)}">` +
+    `<figcaption>${esc(x.filename)}</figcaption></figure>`).join("");
+}
+
+// 실시간 보기: 보일 카메라와 크기(0=본문 폭 ~ 100=화면 끝까지). 고른 값은 이 태블릿에만 기억한다
+// 카메라는 여러 대를 골라 켜고 끈다(11/6). cams=null이면 '모두', 아니면 고른 카메라만 고른 수만큼 칸을 나눠 보인다
+const liveView = { cams: null, size: 0 };
+let liveCams = ["CAM1", "CAM2"];  // 서버에 있는 카메라. 옆면 카메라(SIDE)는 TRACE_BOOTH_SIDE_CAM을 넣었을 때만
+try {
+  const saved = JSON.parse(localStorage.getItem("trace.booth.live") || "{}");
+  if (typeof saved.size === "number") liveView.size = saved.size;
+  if (Array.isArray(saved.cams)) liveView.cams = saved.cams;
+  else if (saved.layout && saved.layout !== "both") liveView.cams = [saved.layout];  // 예전 한 대 고르기 기억
+} catch (e) { /* 기억 못 해도 기본값 */ }
+function shownCams() {
+  const picked = (liveView.cams || []).filter(c => liveCams.includes(c));
+  return picked.length ? picked : liveCams;  // 고른 게 없으면(또는 없는 카메라뿐이면) 모두
+}
+function saveLive() { try { localStorage.setItem("trace.booth.live", JSON.stringify(liveView)); } catch (e) { /* 무시 */ } }
+function applyLive() {
+  const on = !$("live").hidden;
+  const shown = shownCams();
+  const all = !(liveView.cams || []).some(c => liveCams.includes(c));
+  for (const b of document.querySelectorAll("#liveLayout button")) {
+    const pressed = b.dataset.v === "all" ? all : !all && shown.includes(b.dataset.v);
+    b.setAttribute("aria-pressed", String(pressed));
+  }
+  $("liveSize").value = liveView.size;
+  $("liveGrid").style.setProperty("--live-w", liveView.size);
+  $("liveGrid").style.setProperty("--cols", String(Math.min(shown.length, 3)));
+  for (const cam of ["CAM1", "CAM2", "SIDE"]) {
+    const show = shown.includes(cam);
+    $("liveFig" + cam).hidden = !show;
+    // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
+    const want = on && show;
+    const img = $("live" + cam);
+    if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
+    if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
+  }
+}
+$("liveToggle").onclick = () => {
+  const on = $("live").hidden;
+  $("live").hidden = !on;
+  $("liveToggle").textContent = on ? "실시간 끄기" : "실시간 보기";
+  $("liveToggle").setAttribute("aria-pressed", String(on));
+  applyLive();
+};
+for (const b of document.querySelectorAll("#liveLayout button")) {
+  b.onclick = () => {
+    const v = b.dataset.v;
+    if (v === "all") liveView.cams = null;
+    else if (!liveView.cams) liveView.cams = [v];  // '모두'에서 하나를 누르면 그 하나만 크게
+    else if (liveView.cams.includes(v)) liveView.cams = liveView.cams.filter(c => c !== v);  // 다시 누르면 뺀다
+    else liveView.cams = liveView.cams.concat(v);  // 다른 카메라를 누르면 칸이 하나 늘어난다
+    if (liveView.cams && !liveView.cams.filter(c => liveCams.includes(c)).length) liveView.cams = null;  // 다 빼면 모두
+    saveLive(); applyLive();
+  };
+}
+$("liveSize").oninput = () => { liveView.size = Number($("liveSize").value); saveLive(); applyLive(); };
+applyLive();
+fetch("/api/live").then(r => r.ok ? r.json() : null).then(j => {
+  if (!j || !Array.isArray(j.cameras)) return;
+  liveCams = ["CAM1", "CAM2"].concat(j.cameras.includes("SIDE") ? ["SIDE"] : []);  // 위 카메라 두 대는 늘 보인다
+  const sideBtn = document.querySelector('#liveLayout button[data-v="SIDE"]');
+  sideBtn.hidden = !liveCams.includes("SIDE");
+  applyLive();
+}).catch(() => { /* 목록을 못 받아도 CAM1·CAM2는 보인다 */ });
+for (const cam of ["CAM1", "CAM2", "SIDE"]) {
+  $("live" + cam).onclick = (e) => {
+    if (document.fullscreenElement) document.exitFullscreen(); else e.target.requestFullscreen();
+  };
+  // 서버가 막힌 연결을 끊었거나(쓰기 2초 제한) 스트림이 끊기면, 보고 있는 동안 1초 뒤 다시 연결한다
+  $("live" + cam).onerror = () => {
+    const img = $("live" + cam);
+    if (!img.dataset.on) return;
+    img.removeAttribute("src"); delete img.dataset.on;  // 끊긴 연결을 놓고, 아직 볼 카메라면 applyLive가 다시 연다
+    setTimeout(applyLive, 1000);
+  };
+}
+
+function setMode(m) {
+  mode = m;
+  for (const b of document.querySelectorAll("#modes button")) b.setAttribute("aria-pressed", String(b.dataset.mode === m));
+}
+
+function applyMode() {
+  const m = mode;
+  for (const el of document.querySelectorAll(".checkout")) el.hidden = m === "TRAINING" || m === "QUICK";
+  for (const el of document.querySelectorAll(".training")) el.hidden = m !== "TRAINING" || !$("shotlist").children.length;
+  $("skip").hidden = m === "QUICK";
+  $("result").hidden = true;
+  if (m === "QUICK") { resetQuick(); return; }
+  show("manual");
+  const training = m === "TRAINING";
+  $("manualTitle").textContent = training ? "학습 데이터 촬영 · 기기 이름을 넣고 시작하세요"
+    : m === "RET" ? "반납 촬영" : `${MODE_NAME[m]} 촬영 · 세 ID를 넣고 시작하세요`;
+  $("manualSub").textContent = training ? "학습 데이터는 서버에 올리지 않고 부스에만 저장해요"
+    : "관리자 화면(gakdo.site/admin) 렌탈 상세에서 부스 코드 6자리를 받아 넣거나, 21자 ID 세 개를 복사해 넣으세요";
+  // 학습은 사람이 정한 짧은 기기 이름, 출고·반납은 관리자 화면의 기기 ID(21자)
+  $("deviceLabel").textContent = training ? "기기 이름" : "기기 ID";
+  $("device").placeholder = training ? "예: MB01" : "21자, 예: aAXQFO2Vz6ZTFbPctC2dq";
+  $("device").autocapitalize = training ? "characters" : "off";
+  $("deviceHelp").textContent = training ? "영문 대문자 2~4자 + 숫자 2자리. 기기에 붙인 ID 카드의 이름을 쓰고, 사진 파일 이름 앞에 들어가요"
+    : "렌탈 상세의 '부스에 넣을 ID'에 있는 기기 ID예요(시리얼 번호 아님). 대소문자를 그대로 넣으세요";
+  $("retBlocked").hidden = m !== "RET";
+  $("manualForm").hidden = m === "RET";
+  $("formError").textContent = "";
+  markInvalid("");
+  $("codeOk").textContent = ""; $("codeError").textContent = "";
+  updateLens();
+}
+// 21자 칸은 몇 자 넣었는지 바로 보이게(복사가 덜 됐는지 알 수 있게)
+function updateLens() {
+  for (const id of ["rental", "checkpoint"]) {
+    const n = $(id).value.trim().length;
+    $(id + "Len").textContent = `${n} / 21자`;
+    $(id + "Len").classList.toggle("ok", n === 21);
+  }
+}
+for (const id of ["rental", "checkpoint"]) $(id).addEventListener("input", updateLens);
+// 부스 코드 → 세 ID 채우기. 서버는 코드를 한 번만 받으므로, 채운 뒤 기기가 맞는지 보이고 시작은 사람이 누른다
+let redeeming = false;  // Enter·버튼이 겹쳐 한 번만 쓰는 코드를 두 번 보내지 않게
+let codeFilled = false; // 세 칸이 코드로 채워졌는지(새 코드를 넣으면 앞 코드 값은 지워 엉뚱한 기기로 시작하지 않게)
+async function redeemCode() {
+  if (redeeming) return;
+  const code = $("boothCode").value.replace(/\s/g, "");
+  $("codeOk").textContent = ""; $("codeError").textContent = "";
+  if (!/^[0-9]{6}$/.test(code)) { $("codeError").textContent = "부스 코드는 숫자 6자리예요"; return; }
+  if (codeFilled) {
+    for (const id of ["device", "rental", "checkpoint"]) $(id).value = "";
+    codeFilled = false; updateLens();
+  }
+  redeeming = true; $("redeem").disabled = true;
+  let t;
+  try {
+    const res = await fetch("/api/booth-code", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }) });
+    const data = await res.json();
+    if (!res.ok) { $("codeError").textContent = data.detail || "부스 코드를 확인하지 못했어요"; return; }
+    t = data;
+  } catch (e) {
+    $("codeError").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요"; return;
+  } finally { redeeming = false; $("redeem").disabled = false; }
+  if (t.checkpointType !== "OUT") {
+    // 수령·반납 코드는 빠른 검사(위·아래 2면)로 찍는다. 코드는 이미 쓰였으므로 버리지 않고 빠른 검사 확인으로 넘긴다(11/4)
+    $("boothCode").value = "";
+    if (mode !== "QUICK") { setMode("QUICK"); state = null; applyMode(); }
+    pickDevice(t, false);
+    return;
+  }
+  // 기다리는 동안 다른 탭으로 옮겼어도 코드는 이미 쓰였으므로 출고 탭으로 돌아와 채운다
+  if (mode !== "OUT") { setMode("OUT"); state = null; applyMode(); }
+  $("device").value = t.deviceId; $("rental").value = t.rentalId; $("checkpoint").value = t.checkpointId;
+  codeFilled = true;
+  $("boothCode").value = ""; $("formError").textContent = ""; markInvalid("");
+  updateLens();
+  $("codeOk").textContent = `${t.modelCode} · ${t.serial} 불러왔어요. 부스 안 기기가 맞는지 확인하고 시작을 누르세요`;
+  $("start").focus();
+}
+$("redeem").onclick = redeemCode;
+// 사람이 칸을 고치면 직접 넣은 값으로 보고 새 코드를 넣어도 지우지 않는다
+for (const id of ["device", "rental", "checkpoint"]) $(id).addEventListener("input", () => { codeFilled = false; });
+$("boothCode").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); redeemCode(); } });
+$("toQuick").onclick = () => document.querySelector('#modes button[data-mode="QUICK"]').click();
+for (const b of document.querySelectorAll("#modes button")) {
+  b.onclick = async () => {
+    if (b.dataset.mode === mode) return;  // 같은 모드를 다시 눌러도 하던 화면 그대로
+    if (!(await leaveCapture())) return;
+    setMode(b.dataset.mode); state = null; applyMode();
+  };
+}
+$("reload").onclick = loadWaiting;
+$("nextDevice").onclick = resetQuick;
+$("redetect").onclick = async () => {
+  completedAt = Date.now(); waitMs = null;
+  result = await call("POST", "/api/sessions/current/detect"); renderResult(); pollResult();
+};
+// 서버에 보내기 전에 어느 칸이 잘못됐는지 알려 준다(서버도 같은 규칙으로 다시 검사)
+const ID21 = /^[A-Za-z0-9_-]{21}$/;
+// 돌려주는 값: [잘못된 칸의 id, 문장]. 문제가 없으면 ["", ""]
+function formProblem(body) {
+  if (body.mode === "TRAINING") return /^[A-Z]{2,4}[0-9]{2}$/.test(body.deviceId) ? ["", ""] : ["device", "기기 이름은 영문 대문자 2~4자 + 숫자 2자리예요(예: MB01)"];
+  if (!ID21.test(body.deviceId)) return ["device", "기기 ID는 관리자 화면 렌탈 상세의 21자 기기 ID예요(시리얼 번호가 아니에요)"];
+  const rental = idProblem("렌탈 ID", body.rentalId, "복사 버튼으로 다시 넣어 주세요");
+  if (rental) return ["rental", rental];
+  const checkpoint = idProblem("시점 ID", body.checkpointId, "출고를 시작했는지 확인하세요");
+  return checkpoint ? ["checkpoint", checkpoint] : ["", ""];
+}
+// 오류 칸에 aria-invalid와 오류 문장 연결(화면 읽기 프로그램이 칸으로 돌아왔을 때 이유를 읽게)
+function markInvalid(field) {
+  for (const id of ["device", "rental", "checkpoint"]) {
+    if (id === field) { $(id).setAttribute("aria-invalid", "true"); $(id).setAttribute("aria-errormessage", "formError"); }
+    else { $(id).removeAttribute("aria-invalid"); $(id).removeAttribute("aria-errormessage"); }
+  }
+}
+// 길이가 틀린 것과 글자가 틀린 것을 나눠 알려 준다(입력칸은 자르지 않으니 22자 이상도 여기서 걸린다)
+function idProblem(name, value, hint) {
+  if (value.length !== 21) return `${name}가 21자가 아니에요(지금 ${value.length}자). ${hint}`;
+  if (!ID21.test(value)) return `${name}에 쓸 수 없는 글자가 있어요(영문·숫자·_·-만). ${hint}`;
+  return "";
+}
+$("start").onclick = async () => {
+  const raw = $("device").value.trim();
+  // 학습 이름만 대문자로 바꾼다. 21자 ID는 대소문자가 달라지면 다른 기기가 된다
+  const body = { deviceId: mode === "TRAINING" ? raw.toUpperCase() : raw, mode };
+  if (mode === "TRAINING" && shotlistValue) body.shotlist = shotlistValue;
+  if (body.mode !== "TRAINING") {
+    body.rentalId = $("rental").value.trim(); body.checkpointId = $("checkpoint").value.trim();
+  }
+  const [field, problem] = formProblem(body);
+  $("formError").textContent = problem;
+  markInvalid(field);
+  if (problem) { $(field).focus(); return; }
+  try { state = await call("POST", "/api/sessions", body); } catch (e) {
+    // 서버가 거절한 문장은 call()이 이미 보여 줌. 비어 있으면 연결 자체가 실패한 것
+    if (!$("error").textContent) $("error").textContent = "부스 서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요";
+    return;
+  }
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true; render();
+};
+$("shoot").onclick = async () => {
+  $("shoot").disabled = true;
+  $("shoot").textContent = "찍는 중…";
+  try { const r = await call("POST", "/api/sessions/current/shoot"); state = r.state; showShots(r.shots); }
+  finally { $("shoot").textContent = "촬영"; render(); }
+};
+$("retake").onclick = async () => {
+  // 촬영 버튼과 똑같이 '찍는 중…'을 보이고, 찍는 동안 다른 버튼은 누르지 못하게 한다
+  if (retaking) return;
+  retaking = true;
+  $("retake").textContent = "찍는 중…";
+  render();
+  try { const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); }
+  finally { retaking = false; $("retake").textContent = "다시 찍기"; render(); }
+};
+$("next").onclick = async () => {
+  $("next").disabled = true;  // 두 번 눌러도 한 번만(서버도 단계 번호로 한 번 더 막는다)
+  try { state = await call("POST", "/api/sessions/current/next", { step: state.step.index }); }
+  finally { $("next").disabled = false; }
+  $("thumbs").innerHTML = ""; $("lastShots").hidden = true;  // 다음 단계에 앞 단계 사진이 남지 않게
+  render();
+};
+$("prev").onclick = async () => {
+  $("prev").disabled = true;  // 두 번 눌러도 한 단계만(서버도 단계 번호로 한 번 더 막는다)
+  try {
+    const r = await call("POST", "/api/sessions/current/prev", state.step ? { step: state.step.index } : {});
+    state = r.state; showShots(r.shots);  // 돌아간 단계에서 찍은 사진을 다시 보여 준다
+  } catch (e) {
+    if (!$("error").textContent) $("error").textContent = "이전 단계로 가지 못했어요. 잠시 뒤 다시 눌러 주세요";
+  } finally { render(); }
+};
+$("skip").onclick = async () => {
+  const reason = prompt("SCR1을 건너뛰는 사유");
+  if (reason) { state = await call("POST", "/api/sessions/current/skip-scr1", { reason }); render(); }
+};
+$("complete").onclick = async () => {
+  $("complete").disabled = true;
+  completedAt = Date.now(); waitMs = null;
+  try { state = (await call("POST", "/api/sessions/current/complete")).state; } finally { render(); }
+  if (state.mode === "QUICK") {
+    $("thumbs").innerHTML = ""; $("lastShots").hidden = true;
+    result = { status: "RUNNING", faces: {}, photos: [] }; renderResult(); pollResult();
+  }
+};
+$("submit").onclick = async () => {
+  $("submit").disabled = true;
+  try { state = await call("POST", "/api/sessions/current/submit"); } finally { $("submit").disabled = false; render(); }
+};
+async function restore() {
+  // 새로고침해도 하던 빠른 검사(촬영 중이거나 판정 결과)를 이어 보인다
+  try {
+    const res = await fetch("/api/sessions/current");
+    if (!res.ok) return applyMode();
+    const s = await res.json();
+    if (s.mode !== "QUICK") return applyMode();
+    setMode("QUICK"); applyMode();
+    state = s; label = s.deviceId; render();
+    if (s.status === "COMPLETE") pollResult();
+  } catch (e) { applyMode(); }
+}
+// 검사 범위(빠른·전체)를 불러와 카드로 보인다. 못 불러오면 칸을 숨기고 빠른 검사로 찍는다
+function pickProfile(name) {
+  profile = name;
+  for (const b of $("profiles").children) b.setAttribute("aria-checked", String(b.dataset.name === name));
+  $("profileHelp").textContent = (PROFILE_CARD[name] || ["", ""])[1];
+}
+async function loadProfiles() {
+  try {
+    const res = await fetch("/api/inspection-profiles");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.profiles || data.profiles.length < 2) return;
+    $("profiles").innerHTML = "";
+    for (const p of data.profiles) {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.name = p.name; b.setAttribute("role", "radio");
+      b.innerHTML = `<span class="t">${esc((PROFILE_CARD[p.name] || [p.label])[0])}</span><span class="n">${p.photos}장</span>`;
+      b.onclick = () => pickProfile(p.name);
+      $("profiles").append(b);
+    }
+    pickProfile(data.default);
+    $("profilePick").hidden = false;
+  } catch (e) { /* 칸 없이 빠른 검사 */ }
+}
+// 학습 촬영 목록을 불러와 카드로 보인다(못 불러오면 칸을 숨기고 서버 기본 목록으로 찍는다)
+const LIST_LABEL = {};
+// 카드에 보일 짧은 이름과 준비할 것. 서버 목록에 없는 이름은 서버가 준 이름 그대로
+const LIST_CARD = {
+  mvp: ["위·아래", "바닥 → 뒤집어 상판. 어제와 같은 자리"],
+  kb: ["펼친 상태", "100° 가이드에 맞추고, LED 바 #2를 앞(L4)으로"],
+  side: ["옆면", "책상 높이 옆면 카메라(없으면 CAM1을 내려서)로, 배경판은 뒤 30cm에"],
+};
+let shotlistValue = "";
+function pickShotlist(name) {
+  shotlistValue = name;
+  for (const b of $("shotlist").children) b.setAttribute("aria-checked", String(b.dataset.name === name));
+  $("shotlistHelp").textContent = (LIST_CARD[name] || ["", ""])[1] + (name ? " · 기기 이름은 위·아래 때와 같게" : "");
+}
+async function loadShotlists() {
+  try {
+    const res = await fetch("/api/shotlists");
+    if (!res.ok) return;
+    const data = await res.json();
+    $("shotlist").innerHTML = "";
+    for (const l of data.lists) {
+      LIST_LABEL[l.name] = l.label;
+      if (!LIST_CARD[l.name] && l.name !== data.default) continue;  // full(보관)은 기본일 때만 보인다
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.name = l.name; b.setAttribute("role", "radio");
+      b.innerHTML = `<span class="t">${esc((LIST_CARD[l.name] || [l.label])[0])}</span><span class="n">${l.photos}장</span>`;
+      b.onclick = () => pickShotlist(l.name);
+      $("shotlist").append(b);
+    }
+    pickShotlist(data.default);
+  } catch (e) { /* 칸 없이 기본 목록 */ }
+}
+Promise.all([loadShotlists(), loadProfiles()]).then(restore);
+setInterval(async () => {
+  if (!state) return;
+  try { state.queue = await (await fetch("/api/queue")).json(); render(); } catch (e) { /* 다음에 다시 */ }
+}, 3000);
+</script>
+</body>
+</html>
