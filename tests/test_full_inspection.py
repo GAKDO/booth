@@ -251,3 +251,134 @@ def test_TRACE_BOOTH_INSPECTION은_quick_full만_받고_비우면_빠른_검사�
     assert _inspection_profile(" Quick ") == "QUICK"
     with pytest.raises(SystemExit):
         _inspection_profile("half")
+
+
+def _hand_switches(steps) -> int:
+    """조명을 손으로 바꾸는 횟수(앞 사진과 조명이 다른 사진 단계 수)."""
+    lights = [s.light for s in steps if s.kind is StepKind.SHOT]
+    return sum(1 for a, b in itertools.pairwise(lights) if a is not b)
+
+
+def test_전체_검사_옆면은_면마다_L1_L2_순서를_뒤집어_조명을_덜_바꾼다():
+    for side_camera in (False, True):
+        steps = full_inspection_shotlist(side_camera)
+        side = [(s.face, s.light) for s in steps if s.kind is StepKind.SHOT and s.face in SIDE_FACES]
+        assert side[:10] == [
+            (Face.SF, Light.L1), (Face.SF, Light.L2), (Face.SB, Light.L2), (Face.SB, Light.L1),
+            (Face.SL, Light.L1), (Face.SL, Light.L2), (Face.SR, Light.L2), (Face.SR, Light.L1),
+            (Face.SCR0, Light.L1), (Face.SCR0, Light.L2),
+        ]
+        assert side[10] == (Face.SCR1, Light.OFF)
+        assert required_photo_count(steps) == 28
+        assert _hand_switches(steps) == 13  # 예전 순서(면마다 L1→L2)는 17번
+
+
+def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안내한다():
+    steps = FULL_INSPECTION_SHOTLIST
+    shots = [s for s in steps if s.kind is StepKind.SHOT]
+    for prev, cur in itertools.pairwise(shots):
+        same = "그대로(앞 사진과 같음)" in cur.instruction
+        assert same is (prev.light is cur.light)
+        if not same:
+            assert "켜세요" in cur.instruction or "끄세요" in cur.instruction
+    quick = [s for s in QUICK_SHOTLIST if s.kind is StepKind.SHOT]
+    assert [("그대로(앞 사진과 같음)" in s.instruction) for s in quick] == [False, False, False, True, False, False]
+
+
+def test_같은_조명_안내도_어느_조명이_켜져_있어야_하는지_적는다():
+    shots = [s for s in FULL_INSPECTION_SHOTLIST if s.kind is StepKind.SHOT]
+    same = [s for s in shots if "그대로(앞 사진과 같음)" in s.instruction]
+    assert same and all(f"{s.light.value}만 켜져 있는지 확인" in s.instruction for s in same)
+
+
+def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진을_찍은_것으로_치지_않는다(service):
+    from dataclasses import replace
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    run_to_end(service, s.id, skip_scr1=SCR1_REASON)
+    assert service.missing(s.id) == []
+    # 예전 순서로 찍었다고 치고 SB 두 단계의 조명을 바꾼 목록으로 다시 켠 경우
+    steps = list(service.inspection_lists["full"])
+    sb = [i for i, st in enumerate(steps) if st.face is Face.SB]
+    a, b = sb
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)
+    assert sorted(service.missing(s.id)) == ["SB_L1_CAM1", "SB_L2_CAM1"]
+
+
+def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고_그_단계를_안_찍은_것으로_본다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    steps = list(service.inspection_lists["full"])
+    first_sb = next(i for i, st in enumerate(steps) if st.face is Face.SB)
+    while service.view(s.id).step.index < first_sb:
+        st = service.view(s.id).step
+        if st.captures:
+            service.shoot(s.id)
+        service.advance(s.id)
+    service.shoot(s.id)  # 지금 목록의 첫 SB 단계(L2)
+    a, b = first_sb, first_sb + 1
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 다시 켠 경우
+    before = len(service.store.shots(s.id))
+    with pytest.raises(CaptureError, match="처음부터"):
+        service.retake(s.id)  # 바뀐 번호의 조명으로 다시 찍지 않는다
+    assert len(service.store.shots(s.id)) == before
+    assert service.store.get_session(s.id).status == "ABANDONED"
+    assert service.missing(s.id)  # 완료되지 않는다
+    again = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    assert again.id != s.id and again.current_step == 0  # 같은 기기를 다시 고르면 새로 시작한다
+
+
+def test_순서가_바뀐_세션은_기기를_다시_고르거나_완료를_누르면_닫히고_새로_시작한다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    run_to_end(service, s.id, skip_scr1=SCR1_REASON)
+    steps = list(service.inspection_lists["full"])
+    a, b = [i for i, st in enumerate(steps) if st.face is Face.SB]
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)
+    with pytest.raises(CaptureError, match="처음부터"):
+        service.complete(s.id)  # 목록 끝에서 완료를 눌러도 닫고 안내한다
+    assert service.store.get_session(s.id).status == "ABANDONED"
+
+    t = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    service.shoot(t.id)
+    service.inspection_lists["full"] = tuple(FULL_INSPECTION_SHOTLIST)  # 같은 번호의 조명은 같아 그대로 이어 간다
+    assert service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL").id == t.id
+    service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 끝까지 찍어 둔 세션
+    run_to_end(service, t.id, skip_scr1=SCR1_REASON)
+    service.inspection_lists["full"] = tuple(FULL_INSPECTION_SHOTLIST)  # 새 순서로 다시 켬
+    u = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    assert u.id != t.id and service.store.get_session(t.id).status == "ABANDONED"
+
+
+def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    steps = list(service.inspection_lists["full"])
+    first_sb = next(i for i, st in enumerate(steps) if st.face is Face.SB)
+    while service.view(s.id).step.index < first_sb:
+        if service.view(s.id).step.captures:
+            service.shoot(s.id)
+        service.advance(s.id)
+    service.shoot(s.id)
+    steps[first_sb], steps[first_sb + 1] = (
+        replace(steps[first_sb], light=steps[first_sb + 1].light),
+        replace(steps[first_sb + 1], light=steps[first_sb].light),
+    )
+    service.inspection_lists["full"] = tuple(steps)
+    before = len(service.store.shots(s.id))
+    with pytest.raises(CaptureError, match="처음부터"):
+        service.shoot(s.id)  # 안내와 실제 조명이 어긋난 채 이어 찍지 않는다
+    assert len(service.store.shots(s.id)) == before
+    assert service.store.get_session(s.id).status == "ABANDONED"

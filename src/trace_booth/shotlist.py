@@ -75,6 +75,26 @@ def light_instruction(light: Light) -> str:
     return f"{text} · {LIGHT_GEAR[light]}"
 
 
+def light_text(light: Light, previous: Light | None) -> str:
+    """앞 사진과 같은 조명이면 '그대로'라고 알린다(11/11). 조명을 다시 만지다 끄거나 바꾸는 실수를 줄인다.
+
+    '이전 단계로'로 돌아와 찍을 때는 실제 조명이 다를 수 있으므로, 어느 조명이 켜져 있어야 하는지는 늘 함께 적는다.
+    """
+    if previous is light:
+        return f"{light.value} 그대로(앞 사진과 같음), {light.value}만 켜져 있는지 확인 · {LIGHT_GEAR[light]}"
+    return light_instruction(light)
+
+
+def _previous_light(raw: list[tuple]) -> Light | None:
+    """raw 목록에서 바로 앞 사진 단계의 조명(공지 단계는 건너뛰고, ID 카드 단계면 None으로 전체 안내를 보인다)."""
+    for item in reversed(raw):
+        if item[0] is StepKind.SHOT:
+            return item[3]
+        if item[0] is StepKind.SLATE:
+            return None
+    return None
+
+
 def _build() -> tuple[Step, ...]:
     raw: list[tuple] = [(StepKind.SLATE, "L1을 켜고 ID 카드를 받침에 세우세요", None, None, _SIDE_CAMS, False)]
 
@@ -98,6 +118,7 @@ def _build() -> tuple[Step, ...]:
 
 
 MVP_LIGHTS = (Light.L1, Light.L2, Light.L3)
+SIDE_LIGHTS = (Light.L1, Light.L2)
 
 
 def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tuple[Step, ...]:
@@ -109,7 +130,8 @@ def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tu
             # TOP은 거꾸로(L3 → L2 → L1): 뒤집는 동안 켜 둔 바를 그대로 쓰고, 손으로 켜는 VL49(L1)는 한 대에 한 번만 다시 켠다
             order = tuple(reversed(lights))
         for light in order:
-            raw.append((StepKind.SHOT, f"{_POSE[face]} · {light_instruction(light)}", face, light, _TOP_CAMS))
+            text = light_text(light, _previous_light(raw))
+            raw.append((StepKind.SHOT, f"{_POSE[face]} · {text}", face, light, _TOP_CAMS))
     return tuple(Step(i, k, text, f, li, cams) for i, (k, text, f, li, cams) in enumerate(raw))
 
 
@@ -190,7 +212,8 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
     def shots(face: Face, lights: tuple[Light, ...], cams: tuple[Camera, ...], optional: bool = False) -> None:
         pose = _FULL_POSE.get(face, _POSE[face])
         for light in lights:
-            raw.append((StepKind.SHOT, f"{pose} · {light_instruction(light)}", face, light, cams, optional))
+            text = light_text(light, _previous_light(raw))
+            raw.append((StepKind.SHOT, f"{pose} · {text}", face, light, cams, optional))
 
     shots(Face.BOT, MVP_LIGHTS, _TOP_CAMS)
     notice(f"노트북을 다시 뒤집어 상판이 위로 오게 놓고, {DOOR}")
@@ -204,8 +227,10 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
         notice(f"노트북을 닫고, {back} 노트북을 옆면 카메라 앞 바닥 선에 세우세요. 옆면은 L1·L2만 써요. {DOOR}")
     else:
         notice(f"노트북을 닫고, {back} CAM1을 삼각대에서 풀어 책상에 세우고 배경판을 노트북 뒤 30cm에 두세요. {DOOR}")
-    for face in (Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0):
-        shots(face, (Light.L1, Light.L2), _SIDE_CAMS)
+    # 옆면은 면마다 L1·L2를 번갈아 순서를 뒤집는다(L1→L2, L2→L1, …, 11/11). 손으로 켜는 VL49(L1)와 L2 버튼을
+    # 면마다 두 번씩(10번) 만지던 것이 면 사이에서는 그대로 두게 되어 6번으로 준다. 찍는 사진(면·조명)은 같다.
+    for i, face in enumerate((Face.SF, Face.SB, Face.SL, Face.SR, Face.SCR0)):
+        shots(face, SIDE_LIGHTS if i % 2 == 0 else tuple(reversed(SIDE_LIGHTS)), _SIDE_CAMS)
     shots(Face.SCR1, (Light.OFF,), _SIDE_CAMS, optional=Face.SCR1 not in REQUIRED_FACES)
     if not side_camera:
         notice("CAM1을 다시 끼워 볼헤드 감시선을 맞추세요(다음 빠른 검사 준비)")
