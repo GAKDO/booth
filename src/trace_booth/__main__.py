@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from . import __version__
-from .camera import CameraError, OpenCvCamera, check_rotate
+from .camera import CameraDevice, CameraError, OpenCvCamera, check_rotate
 from .camera_presets import PresetError, Presets
 from .capture_client import ApiError, BoothAuth, CaptureClient, http_call
 from .checkout import submit_session, upload_workers
@@ -29,6 +29,7 @@ from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
 from .session import CaptureService, _now
+from .shared_camera import SharedCamera
 from .shotlist import (
     FULL_INSPECTION,
     MVP_SHOTLIST,
@@ -154,6 +155,30 @@ def _live_feed(code: Camera, device: str, gate: CameraGate, rotate: int = 0) -> 
     return feed
 
 
+def _keep_open(raw: str | None = None) -> bool:
+    """TRACE_BOOTH_KEEP_OPEN: 1(기본)이면 카메라를 열어 둔 채 실시간 보기와 촬영이 같이 쓴다(11/11).
+
+    0이면 전처럼 촬영·실시간 보기가 번갈아 장치를 열고 닫는다.
+    """
+    value = (os.environ.get("TRACE_BOOTH_KEEP_OPEN", "") if raw is None else raw).strip() or "1"
+    if value not in ("0", "1"):
+        raise SystemExit(f"TRACE_BOOTH_KEEP_OPEN은 0 또는 1이에요: {value}")
+    return value == "1"
+
+
+def _shared_feed(cam: SharedCamera) -> LiveFeed:
+    """열어 둔 카메라의 실시간 보기. 카메라마다 가장 최근 연결 하나만 프레임을 받는다."""
+    latest = itertools.count(1)
+    newest = [0]
+
+    def feed() -> Iterator[bytes]:
+        me = next(latest)
+        newest[0] = me
+        return cam.frames(current=lambda: newest[0] == me)
+
+    return feed
+
+
 def _side_camera(gate: CameraGate, presets: Presets) -> tuple[OpenCvCamera, int, Presets] | None:
     """옆면 전용 카메라(TRACE_BOOTH_SIDE_CAM). 없으면 None이고 옆면도 CAM1로 찍는다.
 
@@ -182,15 +207,34 @@ def serve(host: str, port: int) -> int:
     gate = CameraGate()  # 촬영과 실시간 보기가 장치를 나눠 쓴다
     devices = {Camera.CAM1: _env("TRACE_BOOTH_CAM1"), Camera.CAM2: _env("TRACE_BOOTH_CAM2")}
     warmup = _warmup_frames()
-    cameras = {code: OpenCvCamera(code, dev, gate=gate, warmup_frames=warmup) for code, dev in devices.items()}
-    live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
+    keep_open = _keep_open()
     side = _side_camera(gate, presets)
-    list_cameras, list_presets = {}, {}
-    if side is not None:
-        side_cam, rotate, side_presets = side
-        list_cameras["side"] = {Camera.CAM1: side_cam}  # 파일 이름은 CAM1 그대로(계약 유지)
-        list_presets["side"] = side_presets
-        live["SIDE"] = _live_feed(Camera.CAM1, side_cam.device, gate, rotate)
+    list_cameras: dict[str, dict[Camera, CameraDevice]] = {}
+    list_presets: dict[str, Presets] = {}
+    cameras: dict[Camera, CameraDevice]
+    opened: list[SharedCamera] = []  # 열어 둘 카메라. 서버를 띄우기 직전에 시작한다
+    if keep_open:
+        shared = {code: SharedCamera(code, dev, warmup_frames=warmup) for code, dev in devices.items()}
+        cameras = dict(shared)
+        live = {code.value: _shared_feed(cam) for code, cam in shared.items()}
+        opened.extend(shared.values())
+        if side is not None:
+            side_cam, rotate, side_presets = side
+            side_shared = SharedCamera(Camera.CAM1, side_cam.device, warmup_frames=warmup, rotate=rotate)
+            list_cameras["side"] = {Camera.CAM1: side_shared}  # 파일 이름은 CAM1 그대로(계약 유지)
+            list_presets["side"] = side_presets
+            live["SIDE"] = _shared_feed(side_shared)
+            opened.append(side_shared)
+    else:
+        cameras = {code: OpenCvCamera(code, dev, gate=gate, warmup_frames=warmup) for code, dev in devices.items()}
+        live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
+        if side is not None:
+            side_cam, rotate, side_presets = side
+            list_cameras["side"] = {Camera.CAM1: side_cam}  # 파일 이름은 CAM1 그대로(계약 유지)
+            list_presets["side"] = side_presets
+            live["SIDE"] = _live_feed(Camera.CAM1, side_cam.device, gate, rotate)
+    print(f"카메라: {'열어 둔 채 같이 씀' if keep_open else '촬영·실시간 보기가 번갈아 열고 닫음'}"
+          " (TRACE_BOOTH_KEEP_OPEN)")
     store = Store(data_dir / "booth.db")
     shotlist_name = os.environ.get("TRACE_BOOTH_SHOTLIST", "mvp")
     if shotlist_name not in SHOTLISTS:
@@ -253,6 +297,8 @@ def serve(host: str, port: int) -> int:
     else:
         print(f"부스 화면 접속 비밀이 켜져 있어요. 태블릿에서 http://<부스 주소>:{port}/?token=<비밀> 로 한 번 여세요")
     server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token), host, port)
+    for cam in opened:
+        cam.start()
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
     try:
         server.serve_forever()
@@ -260,6 +306,10 @@ def serve(host: str, port: int) -> int:
         pass
     finally:
         server.server_close()
+        for cam in opened:  # 모두 멈추라고 한 뒤 닫기를 기다린다(닫기가 대당 2~4초)
+            cam.stop(0)
+        for cam in opened:
+            cam.stop()
     return 0
 
 
