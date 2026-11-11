@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from . import __version__
@@ -140,7 +141,17 @@ def _submitter(store: Store) -> Submitter | None:
 
 
 def _live_feed(code: Camera, device: str, gate: CameraGate, rotate: int = 0) -> LiveFeed:
-    return lambda: live_frames(lambda: OpenCvLiveSource(code, device, rotate=rotate), gate)
+    """카메라마다 가장 최근 연결 하나만 장치를 쓴다. 새 연결이 오면 옛 연결은 다음 차례에 끝난다."""
+    latest = itertools.count(1)
+    newest = [0]
+
+    def feed() -> Iterator[bytes]:
+        me = next(latest)
+        newest[0] = me
+        return live_frames(lambda: OpenCvLiveSource(code, device, rotate=rotate), gate,
+                           current=lambda: newest[0] == me)
+
+    return feed
 
 
 def _side_camera(gate: CameraGate, presets: Presets) -> tuple[OpenCvCamera, int, Presets] | None:

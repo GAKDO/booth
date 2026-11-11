@@ -133,3 +133,27 @@ def test_받지_않는_실시간_보기_연결이_있어도_촬영은_5초를_�
     finally:
         stale.close()
         server.shutdown()
+
+
+def test_같은_카메라에_새_연결이_오면_옛_연결은_끝난다():
+    _reset()
+    alive = {"old": True}
+    frames = live_frames(FakeSource, CameraGate(), sleep=lambda _: None, current=lambda: alive["old"])
+    next(frames)
+    alive["old"] = False
+    assert list(frames) == []  # 다음 차례에 끝나고 장치를 닫는다
+    assert FakeSource.closed == 1
+
+
+def test_촬영_중에도_마지막_프레임을_다시_보내_연결을_살려_둔다():
+    _reset()
+    gate = CameraGate()
+    now = {"t": 0.0}
+    frames = live_frames(FakeSource, gate, sleep=lambda _: None, clock=lambda: now["t"], keepalive=1.0)
+    first = next(frames)
+    gate.enter(timeout=0.1)  # 촬영 시작: 실시간 보기는 장치를 닫고 기다린다
+    now["t"] = 5.0
+    assert next(frames) == first  # 새 장면 대신 마지막 장면을 다시 보낸다
+    assert FakeSource.closed == 1
+    gate.leave()
+    frames.close()
