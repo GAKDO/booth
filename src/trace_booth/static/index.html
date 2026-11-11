@@ -464,13 +464,9 @@ function show(view) {
   $("actions").hidden = view === "waiting" || view === "manual";
 }
 
-let retaking = false;
-// 찍는 동안 실시간 보기 스트림을 끊어 장치를 바로 놓아 준다(11/10, 촬영이 실시간 보기를 기다리는 시간 줄이기)
-let livePaused = 0;  // 진행 중인 촬영 요청 수(촬영·다시 찍기가 겹쳐도 모두 끝난 뒤에 다시 켠다)
-async function withLivePaused(work) {
-  livePaused += 1; applyLive();
-  try { return await work(); } finally { livePaused -= 1; applyLive(); }
-}  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
+// 찍는 동안에는 서버(CameraGate)가 실시간 보기 장치를 잠깐 닫는다. 화면은 스트림을 끊지 않아 마지막 장면이 그대로 남는다
+// (11/11, 찍는 동안 끊었더니 화면이 깨진 이미지로 바뀌고 촬영 시간은 줄지 않음)
+let retaking = false;  // 다시 찍는 동안에는 주기 갱신(render)이 버튼을 다시 켜지 않게
 function render() {
   const s = state, step = s && s.step;
   const busy = !s || s.status !== "IN_PROGRESS";
@@ -851,7 +847,7 @@ function applyLive() {
     const show = shown.includes(cam);
     $("liveFig" + cam).hidden = !show;
     // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
-    const want = on && show && livePaused === 0;
+    const want = on && show;
     const img = $("live" + cam);
     if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
     if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
@@ -1040,7 +1036,7 @@ $("start").onclick = async () => {
 $("shoot").onclick = async () => {
   $("shoot").disabled = true;
   $("shoot").textContent = "찍는 중…";
-  try { const r = await withLivePaused(() => call("POST", "/api/sessions/current/shoot")); state = r.state; showShots(r.shots); }
+  try { const r = await call("POST", "/api/sessions/current/shoot"); state = r.state; showShots(r.shots); }
   finally { $("shoot").textContent = "촬영"; render(); }
 };
 $("retake").onclick = async () => {
@@ -1049,7 +1045,7 @@ $("retake").onclick = async () => {
   retaking = true;
   $("retake").textContent = "찍는 중…";
   render();
-  try { const r = await withLivePaused(() => call("POST", "/api/sessions/current/retake")); state = r.state; showShots(r.shots); }
+  try { const r = await call("POST", "/api/sessions/current/retake"); state = r.state; showShots(r.shots); }
   finally { retaking = false; $("retake").textContent = "다시 찍기"; render(); }
 };
 $("next").onclick = async () => {
