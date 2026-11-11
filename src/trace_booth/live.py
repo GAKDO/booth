@@ -28,16 +28,23 @@ class CameraGate:
     @contextmanager
     def exclusive(self, timeout: float = 5.0) -> Iterator[None]:
         """촬영용. 실시간 보기가 장치를 닫을 때까지 기다린 뒤 들어간다."""
+        self.enter(timeout)
+        try:
+            yield
+        finally:
+            self.leave()
+
+    def enter(self, timeout: float = 5.0) -> None:
+        """촬영 시작. leave()를 부를 때까지 실시간 보기가 장치를 열지 않는다(닫기를 뒤로 미룰 때 직접 쓴다)."""
         with self._cv:
             self._pending += 1
             if not self._cv.wait_for(lambda: self._live_open == 0, timeout):
                 print(f"  실시간 보기가 {timeout:.0f}초 안에 장치를 놓지 않음(그대로 찍음)", flush=True)
-        try:
-            yield
-        finally:
-            with self._cv:
-                self._pending -= 1
-                self._cv.notify_all()
+
+    def leave(self) -> None:
+        with self._cv:
+            self._pending -= 1
+            self._cv.notify_all()
 
     def live_acquire(self, timeout: float) -> bool:
         """실시간 보기용. 촬영이 없을 때만 장치를 열어도 된다."""
