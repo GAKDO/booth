@@ -304,3 +304,26 @@ def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진
     steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
     service.inspection_lists["full"] = tuple(steps)
     assert sorted(service.missing(s.id)) == ["SB_L1_CAM1", "SB_L2_CAM1"]
+
+
+def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고_그_단계를_안_찍은_것으로_본다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    steps = list(service.inspection_lists["full"])
+    first_sb = next(i for i, st in enumerate(steps) if st.face is Face.SB)
+    while service.view(s.id).step.index < first_sb:
+        st = service.view(s.id).step
+        if st.captures:
+            service.shoot(s.id)
+        service.advance(s.id)
+    service.shoot(s.id)  # 지금 목록의 첫 SB 단계(L2)
+    a, b = first_sb, first_sb + 1
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 다시 켠 경우
+    with pytest.raises(CaptureError):
+        service.retake(s.id)
+    with pytest.raises(CaptureError):
+        service.advance(s.id)  # 같은 번호의 다른 조명 사진으로는 넘어가지 않는다

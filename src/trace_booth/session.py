@@ -82,6 +82,16 @@ def _write_new(path: Path, data: bytes) -> None:
         os.fsync(f.fileno())
 
 
+def _same_step(shot: ShotRecord, step: Step) -> bool:
+    """사진이 이 단계의 것인지. 단계 번호만이 아니라 면·조명까지 맞춰 본다.
+
+    서버를 다시 켜 목록 순서가 바뀌어도(11/11 옆면 순서) 같은 번호의 다른 조명 사진을 이 단계 것으로 치지 않는다.
+    """
+    face = step.face.value if step.face else None
+    light = step.light.value if step.light else None
+    return shot.step_index == step.index and shot.face == face and shot.light == light
+
+
 class CaptureService:
     def __init__(
         self,
@@ -224,7 +234,8 @@ class CaptureService:
             steps = self.steps_for(s)
             if s.status == "IN_PROGRESS" and s.current_step < len(steps) and self._taken(s, steps[s.current_step]):
                 return self._capture(s, steps[s.current_step])
-            if taken[-1].step_index >= len(steps):
+            if taken[-1].step_index >= len(steps) or not _same_step(taken[-1], steps[taken[-1].step_index]):
+                # 서버를 다시 켜 목록 순서가 바뀌면(11/11 옆면 순서) 같은 번호가 다른 조명을 가리킨다
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
             if s.status == "IN_PROGRESS" and taken[-1].step_index > s.current_step:
                 # 이전 단계로 돌아온 뒤 뒤쪽 단계를 지금 조명으로 다시 찍으면 사진이 엉뚱한 이름으로 남는다
@@ -272,7 +283,7 @@ class CaptureService:
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
             return False
-        have = {sh.camera for sh in self.store.shots(s.id) if sh.step_index == step.index}
+        have = {sh.camera for sh in self.store.shots(s.id) if _same_step(sh, step)}
         return all(cam.value in have for cam in step.cameras)
 
     def skip_optional(self, session_id: int, reason: str) -> None:
@@ -289,15 +300,13 @@ class CaptureService:
 
     def missing(self, session_id: int) -> list[str]:
         s = self.store.get_session(session_id)
-        # 단계 번호만이 아니라 면·조명까지 맞춰 본다. 서버를 다시 켜 목록 순서가 바뀌어도(11/11 옆면 순서) 같은 번호의
-        # 다른 조명 사진을 찍은 것으로 치지 않는다
-        have = {(sh.step_index, sh.camera, sh.face, sh.light) for sh in self.store.shots(session_id)}
+        shots = self.store.shots(session_id)
         out = []
         for step in self.steps_for(s):
             if step.kind is not StepKind.SHOT:
                 continue
             for cam in step.cameras:
-                if (step.index, cam.value, step.face.value, step.light.value) in have:
+                if any(sh.camera == cam.value and _same_step(sh, step) for sh in shots):
                     continue
                 if step.optional and s.scr1_skip_reason:
                     continue
