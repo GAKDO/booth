@@ -251,3 +251,35 @@ def test_TRACE_BOOTH_INSPECTION은_quick_full만_받고_비우면_빠른_검사�
     assert _inspection_profile(" Quick ") == "QUICK"
     with pytest.raises(SystemExit):
         _inspection_profile("half")
+
+
+def _hand_switches(steps) -> int:
+    """조명을 손으로 바꾸는 횟수(앞 사진과 조명이 다른 사진 단계 수)."""
+    lights = [s.light for s in steps if s.kind is StepKind.SHOT]
+    return sum(1 for a, b in itertools.pairwise(lights) if a is not b)
+
+
+def test_전체_검사_옆면은_면마다_L1_L2_순서를_뒤집어_조명을_덜_바꾼다():
+    for side_camera in (False, True):
+        steps = full_inspection_shotlist(side_camera)
+        side = [(s.face, s.light) for s in steps if s.kind is StepKind.SHOT and s.face in SIDE_FACES]
+        assert side[:10] == [
+            (Face.SF, Light.L1), (Face.SF, Light.L2), (Face.SB, Light.L2), (Face.SB, Light.L1),
+            (Face.SL, Light.L1), (Face.SL, Light.L2), (Face.SR, Light.L2), (Face.SR, Light.L1),
+            (Face.SCR0, Light.L1), (Face.SCR0, Light.L2),
+        ]
+        assert side[10] == (Face.SCR1, Light.OFF)
+        assert required_photo_count(steps) == 28
+        assert _hand_switches(steps) == 13  # 예전 순서(면마다 L1→L2)는 17번
+
+
+def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안내한다():
+    steps = FULL_INSPECTION_SHOTLIST
+    shots = [s for s in steps if s.kind is StepKind.SHOT]
+    for prev, cur in itertools.pairwise(shots):
+        same = "조명 그대로" in cur.instruction
+        assert same is (prev.light is cur.light)
+        if not same:
+            assert "켜세요" in cur.instruction or "끄세요" in cur.instruction
+    quick = [s for s in QUICK_SHOTLIST if s.kind is StepKind.SHOT]
+    assert [("조명 그대로" in s.instruction) for s in quick] == [False, False, False, True, False, False]
