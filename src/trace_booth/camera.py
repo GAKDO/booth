@@ -171,8 +171,8 @@ class OpenCvCamera:
                 print(f"  {self.code.value} {marks}", flush=True)
         # 닫기(cap.release)가 jetson2에서 2~4초 걸린다(11/11 실측). 사진은 바로 돌려주고 닫기는 뒤에서 한다.
         # 닫는 동안에는 게이트를 잡고 있어 실시간 보기가 열지 않고, 다음 촬영은 앞 닫기가 끝날 때까지 기다린다
-        if not self._idle.wait(CLOSE_WAIT):
-            print(f"  {self.code.value} 앞 촬영의 닫기가 {CLOSE_WAIT:.0f}초 안에 끝나지 않음(그대로 찍음)", flush=True)
+        if not self._idle.wait(CLOSE_WAIT):  # 닫기가 겹치면 장치를 열 수 없으니 이번 촬영은 실패로 돌려준다
+            raise CameraError(self.code, f"앞 촬영의 닫기가 {CLOSE_WAIT:.0f}초 안에 끝나지 않음")
         gate = self._gate
         gate.enter()
         marks.lap("대기")  # 앞 닫기 + 실시간 보기가 장치를 놓을 때까지

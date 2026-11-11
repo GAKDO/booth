@@ -97,3 +97,18 @@ def test_게이트가_없으면_예전처럼_닫고_돌려준다(fake_cv2: type[
     fake_cv2.release_go.set()
     assert _camera(None).capture({}) == b"jpg"
     assert fake_cv2.release_started.is_set()
+
+
+def test_앞_닫기가_제한_시간을_넘기면_촬영을_실패로_돌려준다(
+    fake_cv2: type[_FakeCapture], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from trace_booth import camera
+
+    monkeypatch.setattr(camera, "CLOSE_WAIT", 0.1)
+    cam = _camera(CameraGate())
+    cam.capture({})
+    assert fake_cv2.release_started.wait(2)
+    with pytest.raises(CameraError):
+        cam.capture({})
+    assert fake_cv2.open_count == 1
+    fake_cv2.release_go.set()
