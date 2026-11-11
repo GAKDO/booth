@@ -329,3 +329,29 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고
     assert service.missing(s.id)  # 완료되지 않는다
     again = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
     assert again.id != s.id and again.current_step == 0  # 같은 기기를 다시 고르면 새로 시작한다
+
+
+def test_순서가_바뀐_세션은_기기를_다시_고르거나_완료를_누르면_닫히고_새로_시작한다(service):
+    from dataclasses import replace
+
+    from trace_booth.session import CaptureError
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    run_to_end(service, s.id, skip_scr1=SCR1_REASON)
+    steps = list(service.inspection_lists["full"])
+    a, b = [i for i, st in enumerate(steps) if st.face is Face.SB]
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)
+    with pytest.raises(CaptureError, match="처음부터"):
+        service.complete(s.id)  # 목록 끝에서 완료를 눌러도 닫고 안내한다
+    assert service.store.get_session(s.id).status == "ABANDONED"
+
+    t = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    service.shoot(t.id)
+    service.inspection_lists["full"] = tuple(FULL_INSPECTION_SHOTLIST)  # 같은 번호의 조명은 같아 그대로 이어 간다
+    assert service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL").id == t.id
+    service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 끝까지 찍어 둔 세션
+    run_to_end(service, t.id, skip_scr1=SCR1_REASON)
+    service.inspection_lists["full"] = tuple(FULL_INSPECTION_SHOTLIST)  # 새 순서로 다시 켬
+    u = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    assert u.id != t.id and service.store.get_session(t.id).status == "ABANDONED"

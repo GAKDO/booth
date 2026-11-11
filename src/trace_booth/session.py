@@ -168,6 +168,10 @@ class CaptureService:
         with self._lock:
             # 학습은 같은 목록의 열린 세션만 이어 간다. 다른 목록으로 찍던 세션은 그대로 두고 새로 연다
             s = self.store.find_open_session(device_id, mode, shotlist)
+            if s is not None and not self._list_matches(s):
+                # 서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)은 닫고 처음부터 새로 찍는다
+                self.store.update_session(s.id, status="ABANDONED")
+                s = None
             if s is not None and mode != "TRAINING":
                 c = self.store.get_checkout(s.id)
                 if c is None or (c.rental_id, c.checkpoint_id) != (rental_id, checkpoint_id):
@@ -215,10 +219,10 @@ class CaptureService:
     def shoot(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
             s = self.store.get_session(session_id)
+            self._check_list_unchanged(s)
             step = self._current(s)
             if not step.captures:
                 raise CaptureError("이 단계는 찍지 않는 안내 단계예요. '다음'을 누르세요")
-            self._check_list_unchanged(s)
             # 찍어도 단계는 그대로: 사진을 확인하고 '다음'을 눌러야 넘어간다(11/5, 조명을 바꾸기 전에 다음 단계 이름으로 찍히던 실수)
             return self._capture(s, step)
 
@@ -288,12 +292,15 @@ class CaptureService:
         서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)에서 화면 안내와 실제 조명이 어긋난 채 찍히는 것을 막는다.
         세션을 ABANDONED로 닫아 두므로 같은 기기를 다시 고르면 새 세션으로 처음부터 찍는다.
         """
+        if not self._list_matches(s):
+            if s.status == "IN_PROGRESS":
+                self.store.update_session(s.id, status="ABANDONED")
+            raise CaptureError("촬영 목록이 바뀌어 이 촬영을 닫았어요. 처음 화면에서 기기를 다시 골라 처음부터 찍어 주세요")
+
+    def _list_matches(self, s: SessionRecord) -> bool:
+        """이 세션의 사진이 모두 지금 목록의 같은 번호 단계와 면·조명이 맞는지."""
         steps = self.steps_for(s)
-        for sh in self.store.shots(s.id):
-            if sh.step_index >= len(steps) or not _same_step(sh, steps[sh.step_index]):
-                if s.status == "IN_PROGRESS":
-                    self.store.update_session(s.id, status="ABANDONED")
-                raise CaptureError("촬영 목록이 바뀌어 이 촬영을 닫았어요. 처음 화면에서 기기를 다시 골라 처음부터 찍어 주세요")
+        return all(sh.step_index < len(steps) and _same_step(sh, steps[sh.step_index]) for sh in self.store.shots(s.id))
 
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
@@ -330,6 +337,7 @@ class CaptureService:
 
     def complete(self, session_id: int) -> SessionRecord:
         with self._lock:
+            self._check_list_unchanged(self.store.get_session(session_id))
             missing = self.missing(session_id)
             if missing:
                 raise Incomplete(missing)
