@@ -104,27 +104,46 @@ def live_frames(
     gate: CameraGate,
     fps: float = 10.0,
     sleep: Callable[[float], None] = time.sleep,
+    current: Callable[[], bool] = lambda: True,
+    clock: Callable[[], float] = time.monotonic,
+    keepalive: float = 1.0,
 ) -> Iterator[bytes]:
     """JPEG 프레임을 끝없이 낸다. 촬영이 끼어들면 장치를 닫고 기다렸다가 다시 연다.
 
     받는 쪽이 끊으면(제너레이터 close) 장치를 닫는다.
+    current()가 거짓이 되면(같은 카메라의 새 연결이 생김) 끝낸다. 남은 옛 연결이 장치를 두고 다투지 않게(11/11).
+    프레임을 못 내는 동안(촬영 중·열기 실패)에도 keepalive초마다 마지막 프레임을 다시 낸다.
+    화면은 마지막 장면을 그대로 보이고, 끊긴 연결은 쓰기에서 바로 드러나 정리된다(11/11).
     """
     interval = 1.0 / fps
-    while True:
+    last: bytes | None = None
+    sent = clock()
+
+    def stale() -> bool:
+        return last is not None and clock() - sent >= keepalive
+
+    while current():
         if not gate.live_acquire(timeout=1.0):
+            if stale():
+                sent = clock()
+                yield last  # type: ignore[misc]
             continue
         try:
             try:
                 source = open_source()
             except CameraError:
                 sleep(1.0)  # 다른 곳이 장치를 쓰는 중. 잠시 뒤 다시
+                if stale():
+                    sent = clock()
+                    yield last  # type: ignore[misc]
                 continue
             try:
-                while not gate.capture_pending():
+                while current() and not gate.capture_pending():
                     jpg = source.read()
                     if jpg is None:
                         sleep(1.0)  # 프레임이 끊김. 장치를 다시 연다
                         break
+                    last, sent = jpg, clock()
                     yield jpg
                     sleep(interval)
             finally:
