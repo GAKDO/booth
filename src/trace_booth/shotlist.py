@@ -76,9 +76,12 @@ def light_instruction(light: Light) -> str:
 
 
 def light_text(light: Light, previous: Light | None) -> str:
-    """앞 사진과 같은 조명이면 '그대로'라고만 말한다(11/11). 조명을 다시 만지다 끄거나 바꾸는 실수를 줄인다."""
+    """앞 사진과 같은 조명이면 '그대로'라고 알린다(11/11). 조명을 다시 만지다 끄거나 바꾸는 실수를 줄인다.
+
+    '이전 단계로'로 돌아와 찍을 때는 실제 조명이 다를 수 있으므로, 어느 조명이 켜져 있어야 하는지는 늘 함께 적는다.
+    """
     if previous is light:
-        return f"조명 그대로({light.value}), 스위치를 만지지 마세요"
+        return f"{light.value} 그대로(앞 사진과 같음), {light.value}만 켜져 있는지 확인 · {LIGHT_GEAR[light]}"
     return light_instruction(light)
 
 

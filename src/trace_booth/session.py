@@ -289,13 +289,15 @@ class CaptureService:
 
     def missing(self, session_id: int) -> list[str]:
         s = self.store.get_session(session_id)
-        have = {(sh.step_index, sh.camera) for sh in self.store.shots(session_id)}
+        # 단계 번호만이 아니라 면·조명까지 맞춰 본다. 서버를 다시 켜 목록 순서가 바뀌어도(11/11 옆면 순서) 같은 번호의
+        # 다른 조명 사진을 찍은 것으로 치지 않는다
+        have = {(sh.step_index, sh.camera, sh.face, sh.light) for sh in self.store.shots(session_id)}
         out = []
         for step in self.steps_for(s):
             if step.kind is not StepKind.SHOT:
                 continue
             for cam in step.cameras:
-                if (step.index, cam.value) in have:
+                if (step.index, cam.value, step.face.value, step.light.value) in have:
                     continue
                 if step.optional and s.scr1_skip_reason:
                     continue

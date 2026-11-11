@@ -277,9 +277,30 @@ def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안�
     steps = FULL_INSPECTION_SHOTLIST
     shots = [s for s in steps if s.kind is StepKind.SHOT]
     for prev, cur in itertools.pairwise(shots):
-        same = "조명 그대로" in cur.instruction
+        same = "그대로(앞 사진과 같음)" in cur.instruction
         assert same is (prev.light is cur.light)
         if not same:
             assert "켜세요" in cur.instruction or "끄세요" in cur.instruction
     quick = [s for s in QUICK_SHOTLIST if s.kind is StepKind.SHOT]
-    assert [("조명 그대로" in s.instruction) for s in quick] == [False, False, False, True, False, False]
+    assert [("그대로(앞 사진과 같음)" in s.instruction) for s in quick] == [False, False, False, True, False, False]
+
+
+def test_같은_조명_안내도_어느_조명이_켜져_있어야_하는지_적는다():
+    shots = [s for s in FULL_INSPECTION_SHOTLIST if s.kind is StepKind.SHOT]
+    same = [s for s in shots if "그대로(앞 사진과 같음)" in s.instruction]
+    assert same and all(f"{s.light.value}만 켜져 있는지 확인" in s.instruction for s in same)
+
+
+def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진을_찍은_것으로_치지_않는다(service):
+    from dataclasses import replace
+
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    run_to_end(service, s.id, skip_scr1=SCR1_REASON)
+    assert service.missing(s.id) == []
+    # 예전 순서로 찍었다고 치고 SB 두 단계의 조명을 바꾼 목록으로 다시 켠 경우
+    steps = list(service.inspection_lists["full"])
+    sb = [i for i, st in enumerate(steps) if st.face is Face.SB]
+    a, b = sb
+    steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
+    service.inspection_lists["full"] = tuple(steps)
+    assert sorted(service.missing(s.id)) == ["SB_L1_CAM1", "SB_L2_CAM1"]
