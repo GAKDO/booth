@@ -2,8 +2,8 @@
 
 jetson2에서 C920을 닫는 데(cap.release) 2~4초가 걸려, 실시간 보기와 촬영이 번갈아 열고 닫으면
 단계마다 4초 넘게 기다렸다. 여기서는 1080p로 한 번 열어 두고
-- 뒤 스레드가 프레임을 계속 받기만 하고(grab, 풀지 않음),
-- 실시간 보기는 필요할 때만 마지막 프레임을 풀어 줄여 보내고,
+- 뒤 스레드만 장치를 만지며 프레임을 계속 받고(grab), 누가 원할 때만 방금 받은 것을 푼다(retrieve),
+- 실시간 보기는 다음 프레임을 받아 줄여 보내고,
 - 촬영은 프리셋을 넣고 프레임 몇 장을 흘려보낸 뒤 다음 프레임을 저장한다.
 장치가 빠지거나 읽기가 끊기면 닫고 1초 뒤 다시 연다.
 """
@@ -50,7 +50,9 @@ class SharedCamera:
         self._cv = threading.Condition()
         self._cap: Any = None
         self._count = 0  # 받은 프레임 수(새 프레임을 기다릴 때 쓴다)
-        self._io = threading.Lock()  # grab·retrieve는 한 번에 하나
+        self._want = 0  # 이 번호 이후 프레임을 풀어 달라는 요청(0이면 없음)
+        self._frame: Any = None  # 마지막으로 푼 프레임
+        self._frame_seq = 0
         self._shoot = threading.Lock()  # 촬영은 한 번에 하나
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -61,10 +63,10 @@ class SharedCamera:
             self._thread = threading.Thread(target=self._run, name=f"cam-{self.code.value}", daemon=True)
             self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 10) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(10)
+            self._thread.join(timeout)
 
     def _open(self) -> Any:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
@@ -79,8 +81,13 @@ class SharedCamera:
         return cap
 
     def _run(self) -> None:
+        """장치는 이 스레드만 만진다. 받기를 계속하고, 누가 프레임을 원하면 방금 받은 것을 풀어 둔다."""
         while not self._stop.is_set():
-            cap = self._open()
+            try:
+                cap = self._open()
+            except Exception as e:  # noqa: BLE001 - 열기 실패로 스레드가 죽으면 재시작 전까지 못 찍는다
+                print(f"  {self.code.value} 열기 실패: {type(e).__name__}: {e}", flush=True)
+                cap = None
             if cap is None:
                 self._stop.wait(self._reopen_delay)
                 continue
@@ -89,22 +96,35 @@ class SharedCamera:
                 self._cap = cap
                 self._cv.notify_all()
             try:
-                while not self._stop.is_set():
-                    with self._io:
-                        ok = cap.grab()
-                    if not ok:
-                        print(f"  {self.code.value} 프레임이 끊김. 다시 열어요", flush=True)
-                        break
-                    with self._cv:
-                        self._count += 1
-                        self._cv.notify_all()
+                self._pump(cap)
+            except Exception as e:  # noqa: BLE001 - 읽다가 난 오류도 닫고 다시 연다
+                print(f"  {self.code.value} 읽기 오류: {type(e).__name__}: {e}. 다시 열어요", flush=True)
             finally:
                 with self._cv:
                     self._cap = None
+                    self._frame = None
                     self._cv.notify_all()
-                with self._io:
-                    cap.release()
+                cap.release()
             self._stop.wait(self._reopen_delay)
+
+    def _pump(self, cap: Any) -> None:
+        while not self._stop.is_set():
+            if not cap.grab():
+                print(f"  {self.code.value} 프레임이 끊김. 다시 열어요", flush=True)
+                return
+            with self._cv:
+                self._count += 1
+                want = self._want != 0 and self._count >= self._want
+            if want:  # 푸는 일(디코딩)은 원할 때만 한다
+                ok, frame = cap.retrieve()
+                with self._cv:
+                    self._frame = frame if ok else None
+                    self._frame_seq = self._count
+                    self._want = 0
+                    self._cv.notify_all()
+            else:
+                with self._cv:
+                    self._cv.notify_all()
 
     def _wait_open(self, timeout: float) -> Any:
         with self._cv:
@@ -112,22 +132,26 @@ class SharedCamera:
                 return None
             return self._cap
 
-    def _wait_frames(self, n: int) -> bool:
-        """지금부터 새 프레임 n장이 들어올 때까지 기다린다. 장치가 닫히거나 너무 오래 걸리면 False."""
+    def _frame_from(self, seq: int, timeout: float) -> Any:
+        """seq번째 이후로 받은 프레임을 풀어 돌려준다. 장치가 닫혀 있거나, 못 풀거나, 시간이 지나면 None."""
+        deadline = time.monotonic() + timeout
         with self._cv:
-            target = self._count + n
-            ok = self._cv.wait_for(lambda: self._count >= target or self._cap is None, FRAME_WAIT * max(n, 1))
-            return ok and self._cap is not None and self._count >= target
+            while True:
+                if self._cap is None:
+                    return None
+                if self._frame_seq >= seq:
+                    return self._frame
+                if self._want == 0 or self._want > seq:
+                    self._want = seq
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self._cv.wait(remaining)
 
-    def _latest(self) -> Any:
-        """마지막으로 받은 프레임을 풀어 돌려준다. 장치가 닫혀 있거나 못 풀면 None."""
+    def _next_seq(self, skip: int = 0) -> int:
+        """지금부터 skip장을 흘려보낸 다음 프레임의 번호."""
         with self._cv:
-            cap = self._cap
-        if cap is None:
-            return None
-        with self._io:
-            ok, frame = cap.retrieve()
-        return frame if ok else None
+            return self._count + skip + 1
 
     # --- 촬영(CameraDevice) ---
     def capture(self, settings: dict[str, int]) -> bytes:
@@ -147,10 +171,8 @@ class SharedCamera:
                     raise CameraError(self.code, f"설정 적용 실패: {e}") from e
                 marks.lap("설정")
                 # 값이 반영된 프레임을 받기 위해 몇 장 흘려보내고, 그다음 새 프레임 한 장을 쓴다
-                if not self._wait_frames(self.warmup_frames + 1):
-                    marks.lap("버림+찍기")
-                    raise CameraError(self.code, "프레임을 받지 못함")
-                frame = self._latest()
+                seq = self._next_seq(self.warmup_frames)
+                frame = self._frame_from(seq, FRAME_WAIT * (self.warmup_frames + 1))
                 marks.lap("버림+찍기")
                 if frame is None:
                     raise CameraError(self.code, "프레임을 받지 못함")
@@ -167,7 +189,7 @@ class SharedCamera:
     def live_jpeg(self) -> bytes | None:
         import cv2
 
-        frame = self._latest()
+        frame = self._frame_from(self._next_seq(), FRAME_WAIT)
         if frame is None:
             return None
         frame = rotate_frame(frame, self.rotate)

@@ -212,11 +212,12 @@ def serve(host: str, port: int) -> int:
     list_cameras: dict[str, dict[Camera, CameraDevice]] = {}
     list_presets: dict[str, Presets] = {}
     cameras: dict[Camera, CameraDevice]
+    opened: list[SharedCamera] = []  # 열어 둘 카메라. 서버를 띄우기 직전에 시작한다
     if keep_open:
         shared = {code: SharedCamera(code, dev, warmup_frames=warmup) for code, dev in devices.items()}
         cameras = dict(shared)
         live = {code.value: _shared_feed(cam) for code, cam in shared.items()}
-        opened = list(shared.values())
+        opened.extend(shared.values())
         if side is not None:
             side_cam, rotate, side_presets = side
             side_shared = SharedCamera(Camera.CAM1, side_cam.device, warmup_frames=warmup, rotate=rotate)
@@ -224,8 +225,6 @@ def serve(host: str, port: int) -> int:
             list_presets["side"] = side_presets
             live["SIDE"] = _shared_feed(side_shared)
             opened.append(side_shared)
-        for cam in opened:
-            cam.start()
     else:
         cameras = {code: OpenCvCamera(code, dev, gate=gate, warmup_frames=warmup) for code, dev in devices.items()}
         live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
@@ -298,6 +297,8 @@ def serve(host: str, port: int) -> int:
     else:
         print(f"부스 화면 접속 비밀이 켜져 있어요. 태블릿에서 http://<부스 주소>:{port}/?token=<비밀> 로 한 번 여세요")
     server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token), host, port)
+    for cam in opened:
+        cam.start()
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
     try:
         server.serve_forever()
@@ -305,6 +306,10 @@ def serve(host: str, port: int) -> int:
         pass
     finally:
         server.server_close()
+        for cam in opened:  # 모두 멈추라고 한 뒤 닫기를 기다린다(닫기가 대당 2~4초)
+            cam.stop(0)
+        for cam in opened:
+            cam.stop()
     return 0
 
 

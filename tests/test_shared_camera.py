@@ -7,6 +7,7 @@ import threading
 import time
 import types
 from collections.abc import Iterator
+from typing import ClassVar
 
 import pytest
 
@@ -28,6 +29,8 @@ class _FakeCapture:
     open_count = 0
     release_count = 0
     fail_after: int | None = None  # 이 장 수만큼 받은 뒤 한 번 끊긴다
+    raise_after: int | None = None  # 이 장 수만큼 받은 뒤 한 번 예외를 낸다
+    threads: ClassVar[set[str]] = set()  # 장치를 만진 스레드 이름
 
     def __init__(self, device: str, backend: int) -> None:
         cls = type(self)
@@ -43,6 +46,10 @@ class _FakeCapture:
     def grab(self) -> bool:
         time.sleep(0.002)
         cls = type(self)
+        cls.threads.add(threading.current_thread().name)
+        if cls.raise_after is not None and self.seq >= cls.raise_after:
+            cls.raise_after = None
+            raise RuntimeError("cv2.error 흉내")
         if cls.fail_after is not None and self.seq >= cls.fail_after:
             cls.fail_after = None
             return False
@@ -50,6 +57,7 @@ class _FakeCapture:
         return True
 
     def retrieve(self) -> tuple[bool, _Frame]:
+        type(self).threads.add(threading.current_thread().name)
         return True, _Frame(self.seq)
 
     def release(self) -> None:
@@ -58,7 +66,8 @@ class _FakeCapture:
 
 @pytest.fixture
 def fake_cv2(monkeypatch: pytest.MonkeyPatch) -> type[_FakeCapture]:
-    cls = type("Cap", (_FakeCapture,), {"opened": True, "open_count": 0, "release_count": 0, "fail_after": None})
+    cls = type("Cap", (_FakeCapture,), {"opened": True, "open_count": 0, "release_count": 0, "fail_after": None,
+                                     "raise_after": None, "threads": set()})
     mod = types.SimpleNamespace(
         VideoCapture=cls, CAP_V4L2=200, CAP_PROP_FOURCC=6, CAP_PROP_FRAME_WIDTH=3, CAP_PROP_FRAME_HEIGHT=4,
         VideoWriter_fourcc=lambda *a: 0, IMWRITE_JPEG_QUALITY=1, INTER_AREA=3,
@@ -122,6 +131,24 @@ def test_프레임이_끊기면_닫고_다시_연다(fake_cv2, started) -> None:
     assert fake_cv2.open_count >= 2
     assert fake_cv2.release_count >= 1
     assert cam.capture({})  # 다시 열린 뒤 찍힌다
+
+
+def test_읽다가_예외가_나도_닫고_다시_연다(fake_cv2, started) -> None:
+    fake_cv2.raise_after = 3
+    cam = _camera(started)
+    deadline = time.monotonic() + 5
+    while fake_cv2.open_count < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert fake_cv2.open_count >= 2
+    assert fake_cv2.release_count >= 1
+    assert cam.capture({})
+
+
+def test_장치는_뒤_스레드만_만진다(fake_cv2, started) -> None:
+    cam = _camera(started)
+    cam.capture({})
+    assert cam.live_jpeg()
+    assert fake_cv2.threads == {"cam-CAM1"}
 
 
 def test_장치를_열지_못하면_촬영은_실패로_돌려준다(fake_cv2, started, monkeypatch) -> None:
