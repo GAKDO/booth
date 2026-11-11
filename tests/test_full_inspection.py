@@ -323,10 +323,9 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고
     a, b = first_sb, first_sb + 1
     steps[a], steps[b] = replace(steps[a], light=steps[b].light), replace(steps[b], light=steps[a].light)
     service.inspection_lists["full"] = tuple(steps)  # 예전 순서로 다시 켠 경우
-    with pytest.raises(CaptureError):
-        service.retake(s.id)
-    with pytest.raises(CaptureError):
-        service.advance(s.id)  # 같은 번호의 다른 조명 사진으로는 넘어가지 않는다
-    with pytest.raises(CaptureError, match="새 촬영"):
+    with pytest.raises(CaptureError, match="처음부터"):
         service.shoot(s.id)  # 안내와 실제 조명이 어긋난 채 이어 찍지 않는다
-    assert service.missing(s.id)  # 완료도 되지 않는다
+    assert service.store.get_session(s.id).status == "ABANDONED"
+    assert service.missing(s.id)  # 완료되지 않는다
+    again = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    assert again.id != s.id and again.current_step == 0  # 같은 기기를 다시 고르면 새로 시작한다

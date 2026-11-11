@@ -278,19 +278,22 @@ class CaptureService:
             self.store.update_session(s.id, current_step=prev)
             latest: dict[str, ShotRecord] = {}
             for sh in self.store.shots(s.id):
-                if sh.step_index == prev:
+                if _same_step(sh, steps[prev]):
                     latest[sh.camera] = sh  # 찍은 차례대로라 마지막 것이 남는다
             return list(latest.values())
 
     def _check_list_unchanged(self, s: SessionRecord) -> None:
-        """찍은 사진이 지금 목록의 같은 번호 단계와 면·조명이 다르면 이어 찍지 않는다.
+        """찍은 사진이 지금 목록의 같은 번호 단계와 면·조명이 다르면 이 세션을 닫고 멈춘다.
 
         서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)에서 화면 안내와 실제 조명이 어긋난 채 찍히는 것을 막는다.
+        세션을 ABANDONED로 닫아 두므로 같은 기기를 다시 고르면 새 세션으로 처음부터 찍는다.
         """
         steps = self.steps_for(s)
         for sh in self.store.shots(s.id):
             if sh.step_index >= len(steps) or not _same_step(sh, steps[sh.step_index]):
-                raise CaptureError("촬영 목록이 바뀌어 이어 찍을 수 없어요. 이 세션을 닫고(ABANDONED) 새 촬영을 시작하세요")
+                if s.status == "IN_PROGRESS":
+                    self.store.update_session(s.id, status="ABANDONED")
+                raise CaptureError("촬영 목록이 바뀌어 이 촬영을 닫았어요. 처음 화면에서 기기를 다시 골라 처음부터 찍어 주세요")
 
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
