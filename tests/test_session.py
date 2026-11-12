@@ -29,7 +29,7 @@ def test_기기_ID_MB01로_시작하면_첫_단계에_자세와_켤_조명과_�
     s = service.start("MB01")
     v = service.view(s.id)
     assert v.step.kind is StepKind.SLATE
-    assert "L1을 켜고" in v.step.instruction
+    assert "큰 조명을 켜고" in v.step.instruction
     assert v.remaining_steps == len(service.steps)
 
 
@@ -65,11 +65,11 @@ def test_찍은_사진을_다시_읽어_계산한_SHA256이_기록과_같다(ser
 def test_패스_2_SL_단계는_L1_한_장_L2_한_장을_차례로_안내하고_CAM1만_찍는다(service, cams):
     sid = service.start("MB01").id
     go_to(service, sid, Face.SL, Light.L1)
-    assert "L1만 켜세요" in service.view(sid).step.instruction
+    assert "오른쪽 큰 조명만 켜세요" in service.view(sid).step.instruction
     cam2_before = cams[Camera.CAM2].count
     first = service.shoot(sid)
     service.advance(sid)
-    assert "L2만 켜세요" in service.view(sid).step.instruction
+    assert "왼쪽 막대 조명만 켜세요" in service.view(sid).step.instruction
     second = service.shoot(sid)
     assert [s.filename for s in first + second] == ["MB01_SL_L1_CAM1_01.jpg", "MB01_SL_L2_CAM1_01.jpg"]
     assert cams[Camera.CAM2].count == cam2_before

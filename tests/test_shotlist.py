@@ -1,5 +1,5 @@
 from trace_booth.codes import Camera, Face, Light
-from trace_booth.shotlist import DEFAULT_SHOTLIST, REQUIRED_FACES, StepKind, required_photo_count
+from trace_booth.shotlist import DEFAULT_SHOTLIST, LIGHT_NAME, REQUIRED_FACES, StepKind, required_photo_count
 
 
 def shot_steps():
@@ -45,13 +45,13 @@ def test_SCR1은_조명_OFF로_한_장_찍는_선택_단계다():
 def test_스침광_단계는_그_조명만_켜라고_안내한다():
     for s in shot_steps():
         if s.light in (Light.L2, Light.L3, Light.L4):
-            assert f"{s.light.value}만 켜세요(L1 포함 나머지는 끄기)" in s.instruction
+            assert f"{LIGHT_NAME[s.light]}만 켜세요" in s.instruction and "큰 조명 포함 나머지는 끄기" in s.instruction
 
 
 def test_KB_전에_바_2를_옮기라고_안내한다():
     kb = next(s.index for s in shot_steps() if s.face is Face.KB)
     assert DEFAULT_SHOTLIST[kb - 1].kind is StepKind.NOTICE
-    assert "바 #2" in DEFAULT_SHOTLIST[kb - 1].instruction
+    assert "앞쪽 자리로 옮기" in DEFAULT_SHOTLIST[kb - 1].instruction
 
 
 def test_단계_번호는_목록_순서와_같다():

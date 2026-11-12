@@ -26,6 +26,7 @@ from trace_booth.quick_upload import upload_json, upload_quick
 from trace_booth.session import CaptureService, Incomplete, InvalidInput
 from trace_booth.shotlist import (
     FULL_INSPECTION_SHOTLIST,
+    LIGHT_NAME,
     QUICK_SHOTLIST,
     SIDE_FACES,
     StepKind,
@@ -64,7 +65,7 @@ def test_전체_검사는_빠른_검사와_같은_BOT_TOP_12장_뒤에_펼친_KB
     kb = [s for s in shots if s.face is Face.KB]
     assert [s.light for s in kb] == [Light.L1, Light.L2, Light.L4]
     assert all(s.cameras == (Camera.CAM1, Camera.CAM2) for s in kb)
-    assert all("펼쳐" in s.instruction and "100°" in s.instruction for s in kb)
+    assert all("열어" in s.instruction and "100°" in s.instruction for s in kb)
     side = [s for s in shots if s.face in SIDE_FACES]
     assert all(s.cameras == (Camera.CAM1,) for s in side)
     assert {s.light for s in side if s.face is not Face.SCR1} == {Light.L1, Light.L2}
@@ -78,12 +79,12 @@ def test_전체_검사는_펼치기_전에_바_2를_앞으로_옮기고_옆면_�
         steps = full_inspection_shotlist(side_camera)
         notices = [s.instruction for s in steps if s.kind is StepKind.NOTICE]
         first_kb = next(s.index for s in steps if s.face is Face.KB)
-        assert "L4" in steps[first_kb - 1].instruction and steps[first_kb - 1].kind is StepKind.NOTICE
+        assert "앞쪽 자리로 옮기" in steps[first_kb - 1].instruction and steps[first_kb - 1].kind is StepKind.NOTICE
         first_side = next(s.index for s in steps if s.face in SIDE_FACES)
         before_side = steps[first_side - 1]
         assert before_side.kind is StepKind.NOTICE and "되돌리" in before_side.instruction  # L4 자리가 옆면을 가리지 않게
         assert not any("되돌리" in s.instruction for s in steps[first_side:])
-        cam1_down = any("CAM1을 삼각대에서 풀어" in n for n in notices)
+        cam1_down = any("앞 위 카메라를 삼각대에서 풀어" in n for n in notices)
         assert cam1_down is (not side_camera)  # 옆면 카메라가 있으면 CAM1을 내리지 않는다
 
 
@@ -243,7 +244,7 @@ def test_전체_검사의_안내_단계는_다음에_찍을_면을_알려_화면
         if state["step"]["kind"] == "SHOT":
             call(web, "POST", "/api/sessions/current/shoot")
         state = json.loads(call(web, "POST", "/api/sessions/current/next", {"step": state["step"]["index"]})[2])
-    assert "펼쳐" in state["step"]["instruction"]
+    assert "열어" in state["step"]["instruction"]
 
 
 def test_TRACE_BOOTH_INSPECTION은_quick_full만_받고_비우면_빠른_검사다():
@@ -289,7 +290,7 @@ def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안�
 def test_같은_조명_안내도_어느_조명이_켜져_있어야_하는지_적는다():
     shots = [s for s in FULL_INSPECTION_SHOTLIST if s.kind is StepKind.SHOT]
     same = [s for s in shots if "그대로(앞 사진과 같음)" in s.instruction]
-    assert same and all(f"{s.light.value}만 켜져 있는지 확인" in s.instruction for s in same)
+    assert same and all(f"{LIGHT_NAME[s.light]}만 켜져 있는지 확인" in s.instruction for s in same)
 
 
 def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진을_찍은_것으로_치지_않는다(service):
@@ -404,3 +405,18 @@ def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(
             service.shoot(s.id)
         service.advance(s.id)
     assert asked.wait(2)  # 노트북을 옆면 카메라 앞에 세우는 동안 미리 연다
+
+
+def test_검사_안내에는_SF_L1_CAM1_같은_약어가_없고_첫_줄은_노트북을_어떻게_놓는지_말한다():
+    """11/12: 처음 쓰는 사람이 "어느 면을 어떻게 놓고 찍는지" 바로 알도록 행동 지시형으로 쓴다."""
+    import re
+
+    jargon = re.compile(r"\b(?:SF|SB|SL|SR|SCR0|SCR1|BOT|TOP|KB|L[1-4]|CAM[12])\b|바 #|상판")
+    for steps in (QUICK_SHOTLIST, full_inspection_shotlist(False), full_inspection_shotlist(True)):
+        for s in steps:
+            first = s.instruction.split("\n")[0]
+            # 조명 버튼 이름(스위치 판에 붙은 글자 L2·L3)만 둘째 줄 괄호 안에 남긴다
+            assert not jargon.search(first), first
+            if s.kind is StepKind.SHOT:
+                assert "놓으세요" in first or "두세요" in first, first
+                assert s.instruction.split("\n")[1].startswith("조명:"), s.instruction

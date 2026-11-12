@@ -34,8 +34,8 @@ def test_MVP_목록으로_끝까지_찍으면_빠진_사진_없이_완료된다(
 
 def test_조명_안내에_장비_이름이_붙는다() -> None:
     shots = [s for s in MVP_SHOTLIST if s.kind is StepKind.SHOT]
-    assert "VL49" in shots[0].instruction
-    assert "LED 바 #1" in shots[1].instruction and "LED 바 #2" in shots[2].instruction
+    assert "램프 스위치" in shots[0].instruction
+    assert "왼쪽 막대 조명" in shots[1].instruction and "뒤쪽 막대 조명" in shots[2].instruction
 
 
 def test_키보드_목록은_펼친_KB를_L1_L2_L4로_두_카메라에서_찍어_6장이다(tmp_path, cams, presets) -> None:
