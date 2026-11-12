@@ -53,6 +53,20 @@ _POSE = {
     Face.SCR0: f"노트북을 열고 화면을 끈 채, 화면이 옆면 카메라를 보게 놓으세요. {DOOR}",
     Face.SCR1: f"화면을 켜고 흰 화면을 띄운 뒤, 화면이 옆면 카메라를 보게 놓으세요(어려우면 건너뛰기). {DOOR}",
 }
+# 같은 면을 조명만 바꿔 이어 찍을 때는 자세 동작(뒤집기 등)을 다시 시키지 않는다. 뒤집기 안내를 또 따르면 면이 바뀐다(11/12 리뷰)
+KEEP_POSE = f"노트북을 움직이지 말고 그대로 두세요. 조명만 바꿔 한 장 더 찍어요. {DOOR}"
+
+
+def _pose_for(face: Face, raw: list[tuple], poses: dict[Face, str]) -> str:
+    """바로 앞 사진 단계가 같은 면이면 '그대로 두세요', 아니면 그 면의 자세 안내."""
+    for item in reversed(raw):
+        if item[0] is StepKind.SHOT:
+            return KEEP_POSE if item[2] is face else poses[face]
+        if item[0] in (StepKind.SLATE, StepKind.NOTICE):
+            break
+    return poses[face]
+
+
 _TOP_CAMS = (Camera.CAM1, Camera.CAM2)
 _SIDE_CAMS = (Camera.CAM1,)
 
@@ -140,7 +154,7 @@ def _build_mvp(lights: tuple[Light, ...] = MVP_LIGHTS, slate: bool = True) -> tu
             order = tuple(reversed(lights))
         for light in order:
             text = light_text(light, _previous_light(raw))
-            raw.append((StepKind.SHOT, f"{_POSE[face]}\n{text}", face, light, _TOP_CAMS))
+            raw.append((StepKind.SHOT, f"{_pose_for(face, raw, _POSE)}\n{text}", face, light, _TOP_CAMS))
     return tuple(Step(i, k, text, f, li, cams) for i, (k, text, f, li, cams) in enumerate(raw))
 
 
@@ -207,10 +221,9 @@ def full_inspection_shotlist(side_camera: bool = False) -> tuple[Step, ...]:
         raw.append((StepKind.NOTICE, text, None, None, (), False))
 
     def shots(face: Face, lights: tuple[Light, ...], cams: tuple[Camera, ...], optional: bool = False) -> None:
-        pose = _POSE[face]
         for light in lights:
             text = light_text(light, _previous_light(raw))
-            raw.append((StepKind.SHOT, f"{pose}\n{text}", face, light, cams, optional))
+            raw.append((StepKind.SHOT, f"{_pose_for(face, raw, _POSE)}\n{text}", face, light, cams, optional))
 
     shots(Face.BOT, MVP_LIGHTS, _TOP_CAMS)
     notice(f"노트북을 다시 뒤집어 윗면(덮개)이 위로 오게 놓으세요. {DOOR}")

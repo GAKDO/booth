@@ -65,11 +65,13 @@ def test_전체_검사는_빠른_검사와_같은_BOT_TOP_12장_뒤에_펼친_KB
     kb = [s for s in shots if s.face is Face.KB]
     assert [s.light for s in kb] == [Light.L1, Light.L2, Light.L4]
     assert all(s.cameras == (Camera.CAM1, Camera.CAM2) for s in kb)
-    assert all("열어" in s.instruction and "100°" in s.instruction for s in kb)
+    assert "열어" in kb[0].instruction and "100°" in kb[0].instruction
+    assert all("그대로 두세요" in s.instruction for s in kb[1:])  # 같은 면을 이어 찍을 땐 자세를 다시 시키지 않는다
     side = [s for s in shots if s.face in SIDE_FACES]
     assert all(s.cameras == (Camera.CAM1,) for s in side)
     assert {s.light for s in side if s.face is not Face.SCR1} == {Light.L1, Light.L2}
-    assert all("닫은 채" in s.instruction for s in side if s.face in (Face.SF, Face.SB, Face.SL, Face.SR))
+    firsts = [s for p, s in zip([None, *side], side) if p is None or p.face is not s.face]
+    assert all("닫은 채" in s.instruction for s in firsts if s.face in (Face.SF, Face.SB, Face.SL, Face.SR))
     faces = [s.face for s in shots]
     assert faces.index(Face.KB) > faces.index(Face.TOP) and min(faces.index(f) for f in SIDE_FACES) > faces.index(Face.KB)
 
@@ -420,3 +422,10 @@ def test_검사_안내에는_SF_L1_CAM1_같은_약어가_없고_첫_줄은_노�
             if s.kind is StepKind.SHOT:
                 assert "놓으세요" in first or "두세요" in first, first
                 assert s.instruction.split("\n")[1].startswith("조명:"), s.instruction
+
+
+def test_바닥면을_조명만_바꿔_이어_찍을_때는_다시_뒤집으라고_하지_않는다():
+    for steps in (QUICK_SHOTLIST, FULL_INSPECTION_SHOTLIST):
+        bot = [s for s in steps if s.kind is StepKind.SHOT and s.face is Face.BOT]
+        assert "뒤로 넘겨" in bot[0].instruction
+        assert not any("뒤로 넘겨" in s.instruction for s in bot[1:])
