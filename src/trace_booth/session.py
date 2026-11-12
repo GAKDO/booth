@@ -180,6 +180,7 @@ class CaptureService:
                 s = self.store.create_session(device_id, mode, self._now(), shotlist)
                 if mode != "TRAINING":
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
+            self._prepare(s.id)  # 이어 찍는 세션이 옆면 단계면 옆면을, 새 세션이면 위 카메라를 연다
             return s
 
     def _inspection_list(self, profile: str | None) -> str | None:
@@ -261,6 +262,7 @@ class CaptureService:
             if step.captures and not self._taken(s, step):
                 raise CaptureError("이 단계를 아직 안 찍었어요. 촬영을 누르세요")
             self.store.update_session(s.id, current_step=s.current_step + 1)
+            self._prepare(s.id)
 
     def back(self, session_id: int, expected_step: int | None = None) -> list[ShotRecord]:
         """이전 단계로 돌아간다. 돌아간 단계에서 마지막으로 찍은 사진들을 돌려준다(화면에 다시 보이게).
@@ -280,6 +282,7 @@ class CaptureService:
                 raise CaptureError("첫 단계예요. 더 돌아갈 단계가 없어요")
             prev = min(s.current_step, len(steps)) - 1
             self.store.update_session(s.id, current_step=prev)
+            self._prepare(s.id)
             latest: dict[str, ShotRecord] = {}
             for sh in self.store.shots(s.id):
                 if _same_step(sh, steps[prev]):
@@ -359,16 +362,37 @@ class CaptureService:
             futures = [pool.submit(d.capture, settings) for d in devices]
             return [f.result() for f in futures]  # 실패는 카메라 순서대로 처음 것을 올린다
 
+    @staticmethod
+    def _list_key(s: SessionRecord, step: Step) -> str:
+        if s.mode == "TRAINING":
+            return s.shotlist or ""
+        if s.mode == "QUICK" and s.shotlist and step.face in SIDE_FACES:
+            return "side"  # 전체 검사의 옆면은 옆면 카메라가 있으면 그것으로(없으면 CAM1을 내려서)
+        return ""
+
+    def _prepare(self, session_id: int) -> None:
+        """다음에 찍을 단계의 카메라를 미리 연다(11/12 위·옆면 카메라 번갈아 열기).
+
+        안내 단계(노트북을 옆면 카메라 앞에 세우기)에서 옆면 실시간 화면이 바로 보이고, 첫 옆면 촬영이
+        카메라를 바꾸느라 기다리지 않게 한다. 바꾸기는 몇 초 걸리므로 뒤에서 한다.
+        """
+        s = self.store.get_session(session_id)
+        steps = self.steps_for(s)
+        step = next((st for st in steps[s.current_step:] if st.captures), None)
+        if s.status != "IN_PROGRESS" or step is None:
+            return
+        swap = self.list_cameras.get(self._list_key(s, step), {})
+        for cam in step.cameras:
+            hook = getattr(swap.get(cam, self.cameras.get(cam)), "before_use", None)
+            if hook is not None:
+                threading.Thread(target=hook, name="cam-prepare", daemon=True).start()
+                return  # 한 묶음은 한 번만 바꾸면 된다
+
     def _capture(self, s: SessionRecord, step: Step) -> list[ShotRecord]:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
             raise DiskFull("디스크 공간이 부족해요. 찍지 않았어요")
         light = step.light or Light.L1
-        if s.mode == "TRAINING":
-            key = s.shotlist or ""
-        elif s.mode == "QUICK" and s.shotlist and step.face in SIDE_FACES:
-            key = "side"  # 전체 검사의 옆면은 옆면 카메라가 있으면 그것으로(없으면 CAM1을 내려서)
-        else:
-            key = ""
+        key = self._list_key(s, step)
         swap = self.list_cameras.get(key, {})
         presets = self.list_presets.get(key, self.presets) if swap else self.presets
         settings = presets.for_light(light)
