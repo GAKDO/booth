@@ -63,7 +63,7 @@ class SharedCamera:
         self._thread: threading.Thread | None = None
         self._paused = paused  # 쉬는 동안은 장치를 닫아 두고 열지 않는다(CameraGroups)
         self._held = False  # 지금 장치를 열고 있는지(닫기까지 끝났는지 기다릴 때 쓴다)
-        self.before_use: Callable[[], None] | None = None  # 찍기 전에 부른다(CameraGroups가 이 묶음을 연다)
+        self.before_use: Callable[[], bool] | None = None  # 찍기 전에 부른다(CameraGroups가 이 묶음을 연다)
 
     # --- 열기·받기 ---
     def start(self) -> None:
@@ -195,8 +195,10 @@ class SharedCamera:
         try:
             with self._shoot:
                 if self.before_use is not None:
-                    self.before_use()
+                    switched = self.before_use()
                     marks.lap("바꾸기")
+                    if not switched:
+                        raise CameraError(self.code, "다른 카메라가 닫히지 않아 열 수 없음. 다시 찍어 주세요")
                 if self._wait_open(OPEN_WAIT) is None:
                     marks.lap("열기")
                     raise CameraError(self.code, f"장치를 열 수 없음 ({self.device})")
@@ -284,18 +286,27 @@ class CameraGroups:
     def active(self) -> str:
         return self._active
 
-    def use(self, name: str) -> None:
+    def use(self, name: str, timeout: float = 10) -> bool:
+        """name 묶음을 연다. 앞 묶음이 제한 시간 안에 닫히지 않으면 열지 않고 앞 묶음을 되살린 뒤 False."""
         with self._lock:
             if name == self._active:
-                return
+                return True
             started = time.monotonic()
-            for cam in self._groups[self._active]:
-                cam._paused = True  # 먼저 모두 닫으라고 한 뒤 기다린다(닫기가 대당 2~4초)
+            old = self._groups[self._active]
+            for cam in old:
                 with cam._cv:
+                    cam._paused = True  # 먼저 모두 닫으라고 한 뒤 기다린다(닫기가 대당 2~4초)
                     cam._cv.notify_all()
-            for cam in self._groups[self._active]:
-                cam.pause()
+            results = [cam.pause(timeout) for cam in old]  # 하나가 늦어도 나머지는 끝까지 기다린다
+            closed = all(results)
+            if not closed:  # 아직 대역폭을 쥔 장치가 있는데 열면 또 끊긴다
+                for cam in old:
+                    cam.resume()
+                print(f"  카메라 묶음 {self._active} → {name} 실패: 앞 카메라가 {timeout:.0f}초 안에 닫히지 않음",
+                      flush=True)
+                return False
             for cam in self._groups[name]:
                 cam.resume()
             print(f"  카메라 묶음 {self._active} → {name} ({time.monotonic() - started:.1f}초)", flush=True)
             self._active = name
+            return True

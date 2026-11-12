@@ -177,7 +177,9 @@ def test_TRACE_BOOTH_KEEP_OPEN은_기본_1이고_0이면_끈다() -> None:
         _keep_open("yes")
 
 
-def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍는다(fake_cv2, started) -> None:
+def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍는다(
+    fake_cv2: type[_FakeCapture], started: list[SharedCamera]
+) -> None:
     from trace_booth.shared_camera import CameraGroups
 
     top1, top2, side = (SharedCamera(code, f"/dev/{n}", reopen_delay=0.01, set_controls=lambda d, s: None)
@@ -201,7 +203,9 @@ def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍�
     assert side._cap is None and not side._held
 
 
-def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(fake_cv2, started) -> None:
+def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(
+    fake_cv2: type[_FakeCapture], started: list[SharedCamera]
+) -> None:
     from trace_booth.shared_camera import CameraGroups
 
     top = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01)
@@ -215,7 +219,7 @@ def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(f
     assert groups.active == "top"
 
 
-def test_쉬는_중에_멈추라고_하면_스레드가_끝난다(fake_cv2) -> None:
+def test_쉬는_중에_멈추라고_하면_스레드가_끝난다(fake_cv2: type[_FakeCapture]) -> None:
     cam = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01, paused=True)
     cam.start()
     cam.stop(2)
@@ -229,3 +233,26 @@ def test_TRACE_BOOTH_SIDE_EXCLUSIVE는_기본_1이고_0이면_끈다() -> None:
     assert _side_exclusive("0") is False
     with pytest.raises(SystemExit):
         _side_exclusive("2")
+
+
+def test_앞_묶음이_제때_닫히지_않으면_새_묶음을_열지_않고_찍기를_실패로_돌려준다(
+    fake_cv2: type[_FakeCapture], started: list[SharedCamera]
+) -> None:
+    from trace_booth.shared_camera import CameraGroups
+
+    top = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01)
+    side = SharedCamera(Camera.CAM1, "/dev/side", reopen_delay=0.01)
+    groups = CameraGroups({"top": [top], "side": [side]}, active="top")
+    for cam in (top, side):
+        started.append(cam)
+        cam.start()
+    assert top._wait_open(5) is not None
+
+    assert groups.use("side", timeout=0) is False  # 닫기를 기다리지 않으면 아직 열려 있다
+    assert groups.active == "top"
+    assert side._paused  # 옆면은 열지 않았다
+    assert top.capture({})  # 위 카메라는 되살아나 그대로 찍힌다
+
+    side.before_use = lambda: False
+    with pytest.raises(CameraError, match="닫히지 않아"):
+        side.capture({})

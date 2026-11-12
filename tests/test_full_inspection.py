@@ -8,6 +8,7 @@ from __future__ import annotations
 import itertools
 import json
 import threading
+from pathlib import Path
 
 import pytest
 from conftest import run_to_end
@@ -384,9 +385,9 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는
     assert service.store.get_session(s.id).status == "ABANDONED"
 
 
-def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(tmp_path, cams, presets):
-    import threading
-
+def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(
+    tmp_path: Path, cams: dict[Camera, FakeCamera], presets: Presets
+) -> None:
     side = FakeCamera(Camera.CAM1)
     asked = threading.Event()
     side.before_use = asked.set  # CameraGroups가 다는 훅 흉내

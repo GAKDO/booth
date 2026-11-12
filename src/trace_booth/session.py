@@ -180,6 +180,7 @@ class CaptureService:
                 s = self.store.create_session(device_id, mode, self._now(), shotlist)
                 if mode != "TRAINING":
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
+            self._prepare(s.id)  # 이어 찍는 세션이 옆면 단계면 옆면을, 새 세션이면 위 카메라를 연다
             return s
 
     def _inspection_list(self, profile: str | None) -> str | None:
