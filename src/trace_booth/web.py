@@ -253,6 +253,13 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 return self._json(200, target.to_json())
             if method == "GET" and path == "/api/live":
                 return self._json(200, {"cameras": list(app.live)})  # 화면이 보일 카메라(옆면 Brio는 SIDE)
+            if method == "GET" and path.startswith("/api/live/") and path.endswith("/frame"):
+                # 한 장씩 받아 가는 실시간 보기(11/12). iPad Safari는 MJPEG 스트림의 첫 장만 그리고 멈춰서
+                # 화면이 이 경로를 되풀이해 부른다
+                feed = app.live.get(path[len("/api/live/"):-len("/frame")])
+                if feed is None:
+                    return self._problem(404, "실시간 보기를 쓸 수 없는 카메라")
+                return self._one_frame(feed())
             if method == "GET" and path.startswith("/api/live/"):
                 feed = app.live.get(path[len("/api/live/"):])
                 if feed is None:
@@ -362,6 +369,17 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if close is not None:
                     close()
             self.close_connection = True
+
+        def _one_frame(self, frames: Iterator[bytes]) -> None:
+            try:
+                jpg = next(frames, None)
+            finally:
+                close = getattr(frames, "close", None)
+                if close is not None:
+                    close()
+            if jpg is None:
+                return self._problem(503, "카메라 화면을 받지 못했어요")
+            self._send(200, jpg, "image/jpeg")
 
         def _send(self, status: int, body: bytes, content_type: str) -> None:
             self.send_response(status)

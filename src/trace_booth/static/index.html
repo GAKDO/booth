@@ -827,6 +827,32 @@ try {
   if (Array.isArray(saved.cams)) liveView.cams = saved.cams;
   else if (saved.layout && saved.layout !== "both") liveView.cams = [saved.layout];  // 예전 한 대 고르기 기억
 } catch (e) { /* 기억 못 해도 기본값 */ }
+// iPad·iPhone Safari는 MJPEG 스트림의 첫 장만 그리고 멈춘다(11/12). 그래서 한 장씩 받아 바꿔 끼운다.
+// iPadOS는 맥처럼 보이므로 터치 지점 수로 가린다. 주소에 ?live=poll|stream 을 붙이면 강제로 고른다
+const livePoll = (() => {
+  const forced = new URLSearchParams(location.search).get("live");
+  if (forced === "poll") return true;
+  if (forced === "stream") return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+})();
+async function pollLive(cam, img) {
+  let prev = null;
+  while (img.dataset.on) {
+    const started = Date.now();
+    try {
+      const r = await fetch(`/api/live/${cam}/frame?t=${started}`, { cache: "no-store" });
+      if (r.ok && img.dataset.on) {
+        const url = URL.createObjectURL(await r.blob());
+        img.src = url;
+        if (prev) URL.revokeObjectURL(prev);
+        prev = url;
+      }
+    } catch (e) { /* 잠깐 끊겨도 다음 장에서 다시 */ }
+    await new Promise(res => setTimeout(res, Math.max(100, 150 - (Date.now() - started))));  // 초당 약 6장
+  }
+  if (prev) URL.revokeObjectURL(prev);
+}
 function shownCams() {
   const picked = (liveView.cams || []).filter(c => liveCams.includes(c));
   return picked.length ? picked : liveCams;  // 고른 게 없으면(또는 없는 카메라뿐이면) 모두
@@ -849,7 +875,11 @@ function applyLive() {
     // 안 보이는 카메라는 스트림을 끊어 장치를 놓아 준다
     const want = on && show;
     const img = $("live" + cam);
-    if (want && !img.dataset.on) { img.src = `/api/live/${cam}?t=${Date.now()}`; img.dataset.on = "1"; }
+    if (want && !img.dataset.on) {
+      img.dataset.on = "1";
+      if (livePoll) pollLive(cam, img);
+      else img.src = `/api/live/${cam}?t=${Date.now()}`;
+    }
     if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
   }
 }

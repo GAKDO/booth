@@ -157,3 +157,30 @@ def test_촬영_중에도_마지막_프레임을_다시_보내_연결을_살려_
     assert FakeSource.closed == 1
     gate.leave()
     frames.close()
+
+
+def test_한_장_경로는_JPEG_한_장을_보내고_스트림을_닫는다(service) -> None:
+    closed = threading.Event()
+
+    def feed():
+        try:
+            while True:
+                yield b"\xff\xd8one"
+        finally:
+            closed.set()
+
+    server = make_server(App(service, live={"CAM1": feed}), "127.0.0.1", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        with urllib.request.urlopen(base + "/api/live/CAM1/frame", timeout=5) as r:
+            assert r.headers.get_content_type() == "image/jpeg"
+            assert r.read() == b"\xff\xd8one"
+        assert closed.wait(2)  # 한 장 보낸 뒤 장치를 놓는다
+        try:
+            urllib.request.urlopen(base + "/api/live/CAM9/frame", timeout=5)
+            raise AssertionError("404여야 함")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        server.shutdown()
