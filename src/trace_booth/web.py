@@ -115,6 +115,7 @@ def _checkout_json(c: CheckoutRecord | None) -> dict | None:
 
 
 STREAM_WRITE_TIMEOUT = 2.0  # 실시간 보기 한 프레임을 보내는 데 이보다 오래 막히면 그 연결을 끊는다(초)
+FRAME_WAIT = 2.0  # 한 장 경로가 첫 프레임을 기다리는 상한(초). 넘으면 503(쉬는 카메라·열기 실패)
 
 _UI_COOKIE = "trace_booth_ui"
 
@@ -371,12 +372,22 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             self.close_connection = True
 
         def _one_frame(self, frames: Iterator[bytes]) -> None:
-            try:
-                jpg = next(frames, None)
-            finally:
-                close = getattr(frames, "close", None)
-                if close is not None:
-                    close()
+            # 첫 프레임만 FRAME_WAIT초까지 기다린다. 쉬는 카메라처럼 프레임이 안 오면 503으로 돌려주고,
+            # 남은 읽기는 같은 카메라의 다음 요청(더 새 연결)이 오면 스스로 끝나며 그때 장치를 놓는다.
+            got: list[bytes | None] = []
+
+            def pull() -> None:
+                try:
+                    got.append(next(frames, None))
+                finally:
+                    close = getattr(frames, "close", None)
+                    if close is not None:
+                        close()
+
+            reader = threading.Thread(target=pull, name="live-frame", daemon=True)
+            reader.start()
+            reader.join(FRAME_WAIT)
+            jpg = got[0] if got else None
             if jpg is None:
                 return self._problem(503, "카메라 화면을 받지 못했어요")
             self._send(200, jpg, "image/jpeg")

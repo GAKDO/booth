@@ -836,13 +836,14 @@ const livePoll = (() => {
   const ua = navigator.userAgent;
   return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 })();
-async function pollLive(cam, img) {
+let liveGen = 0;  // 켤 때마다 새 번호. 옛 폴링 루프는 번호가 바뀌면 끝난다(다시 켜도 루프가 겹치지 않게)
+async function pollLive(cam, img, gen) {
   let prev = null;
-  while (img.dataset.on) {
+  while (img.dataset.on === gen) {
     const started = Date.now();
     try {
       const r = await fetch(`/api/live/${cam}/frame?t=${started}`, { cache: "no-store" });
-      if (r.ok && img.dataset.on) {
+      if (r.ok && img.dataset.on === gen) {
         const url = URL.createObjectURL(await r.blob());
         img.src = url;
         if (prev) URL.revokeObjectURL(prev);
@@ -876,8 +877,9 @@ function applyLive() {
     const want = on && show;
     const img = $("live" + cam);
     if (want && !img.dataset.on) {
-      img.dataset.on = "1";
-      if (livePoll) pollLive(cam, img);
+      const gen = String(++liveGen);
+      img.dataset.on = gen;
+      if (livePoll) pollLive(cam, img, gen);
       else img.src = `/api/live/${cam}?t=${Date.now()}`;
     }
     if (!want && img.dataset.on) { img.removeAttribute("src"); delete img.dataset.on; }
