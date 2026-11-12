@@ -247,10 +247,18 @@ def test_앞_묶음이_제때_닫히지_않으면_새_묶음을_열지_않고_�
         started.append(cam)
         cam.start()
     assert top._wait_open(5) is not None
+    gate = threading.Event()
 
-    assert groups.use("side", timeout=0) is False  # 닫기를 기다리지 않으면 아직 열려 있다
+    def slow_release(self: _FakeCapture) -> None:  # 닫기가 끝나지 않은 상태를 붙잡아 둔다
+        gate.wait(5)
+        type(self).release_count += 1
+
+    fake_cv2.release = slow_release  # type: ignore[method-assign]
+
+    assert groups.use("side", timeout=0.05) is False  # 앞 카메라가 아직 닫히는 중
     assert groups.active == "top"
     assert side._paused  # 옆면은 열지 않았다
+    gate.set()
     assert top.capture({})  # 위 카메라는 되살아나 그대로 찍힌다
 
     side.before_use = lambda: False
