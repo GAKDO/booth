@@ -148,6 +148,8 @@
   .step .kind { font-size:15px; font-weight:700; color:var(--muted); letter-spacing:.04em; margin-bottom:10px; }
   .step.notice .kind { color:var(--warn); }
   #instruction { font-size:32px; font-weight:800; line-height:1.35; word-break:keep-all; }
+  /* 안내 둘째 줄부터(조명 등)는 작게: 첫 줄 "노트북을 어떻게 놓을지"가 먼저 눈에 들어오게(11/12) */
+  #instruction .ins-sub { display:block; margin-top:14px; font-size:22px; font-weight:700; line-height:1.45; color:var(--muted); }
   .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
   .chip { padding:8px 14px; border-radius:10px; background:var(--panel2); font-size:17px; font-weight:700; }
   .chip small { color:var(--muted); font-weight:600; margin-right:6px; }
@@ -362,7 +364,7 @@
     <div class="phases" id="phases" hidden>
       <div class="phase" data-phase="0"><b>1</b><span>바닥면 촬영</span></div>
       <div class="phase" data-phase="1"><b>2</b><span>뒤집기</span></div>
-      <div class="phase" data-phase="2"><b>3</b><span>상판 촬영</span></div>
+      <div class="phase" data-phase="2"><b>3</b><span>윗면 촬영</span></div>
       <div class="phase" data-phase="3"><b>4</b><span>완료 · 판정</span></div>
     </div>
     <div class="progress"><span id="stepNo"></span><div class="bar"><i id="barFill"></i></div><span id="missingNo"></span></div>
@@ -412,7 +414,7 @@
   <div class="inner">
     <button id="prev" class="btn" disabled hidden>← 이전 단계</button>
     <button id="retake" class="btn" disabled>다시 찍기</button>
-    <button id="skip" class="btn" disabled hidden>SCR1 건너뛰기</button>
+    <button id="skip" class="btn" disabled hidden>켠 화면 건너뛰기</button>
     <button id="submit" class="btn" hidden>다시 올리기</button>
     <button id="redetect" class="btn" hidden>다시 탐지</button>
     <div class="spacer"></div>
@@ -430,17 +432,22 @@ let openDevice = null;  // 목록으로 돌아오며 멈춘 기기(서버에 열
 let openProfile = null;  // 멈춘 기기의 검사 범위(이어 찍을 때 화면에서 고른 범위가 달라도 그 범위로 잇는다)
 let profile = "QUICK";  // 검사 범위(QUICK·FULL). 서버 기본값(TRACE_BOOTH_INSPECTION)으로 시작
 const PROFILE_CARD = {
-  QUICK: ["빠른 검사", "위·아래 2면. 바닥 → 뒤집어 상판"],
-  FULL: ["전체 검사", "위·아래 → 펼친 키보드(바 #2를 앞 L4로) → 닫아서 옆면 5면, SCR1은 선택"],
+  QUICK: ["빠른 검사", "바닥면을 찍고, 뒤집어 윗면을 찍어요"],
+  FULL: ["전체 검사", "바닥면 → 윗면 → 열어서 키보드 → 닫아서 옆 4면과 화면까지 찍어요(켠 화면은 건너뛸 수 있어요)"],
 };
 // 진행 칸 이름: 빠른 검사는 바닥·뒤집기·상판·판정, 전체 검사는 위·아래·키보드·옆면 다음 판정
 const PHASES = {
-  QUICK: ["바닥면 촬영", "뒤집기", "상판 촬영", "완료 · 판정"],
-  FULL: ["바닥 · 상판", "펼친 키보드", "옆면", "완료 · 판정"],
+  QUICK: ["바닥면 촬영", "뒤집기", "윗면 촬영", "완료 · 판정"],
+  FULL: ["바닥면 · 윗면", "열어서 키보드", "옆면 · 화면", "완료 · 판정"],
 };
 const MODE_NAME = { TRAINING: "학습", OUT: "출고", RET: "반납", QUICK: "빠른 검사" };
 const KIND = { OUT: "출고", RCV: "수령", RET: "반납" };
-const FACE = { BOT: "바닥면", TOP: "상판", KB: "키보드", SF: "앞면", SB: "뒷면", SL: "왼쪽", SR: "오른쪽", SCR0: "화면(꺼짐)", SCR1: "화면(켜짐)" };
+const FACE = { BOT: "바닥면", TOP: "윗면(덮개)", KB: "키보드", SF: "앞쪽 모서리", SB: "뒤쪽 모서리", SL: "왼쪽 옆면", SR: "오른쪽 옆면", SCR0: "끈 화면", SCR1: "켠 화면" };
+// 조명 이름: 코드(L1~L4) 대신 위치로 부른다. shotlist.py LIGHT_NAME과 같게 둔다(11/12)
+const LIGHT = { L1: "오른쪽 큰 조명", L2: "왼쪽 막대 조명", L3: "뒤쪽 막대 조명", L4: "앞쪽 막대 조명", OFF: "모두 끔" };
+// 카메라 이름: 옆면 사진은 CAM1 이름으로 저장되지만 실제로는 옆면 카메라로 찍는다
+const camName = (step) => !step.cameras.length ? "" : step.cameras.length > 1 ? "위 카메라 2대"
+  : ["SF", "SB", "SL", "SR", "SCR0", "SCR1"].includes(step.face) || step.kind === "SLATE" ? "옆면 카메라" : "위 카메라";
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 $("error").onclick = () => { $("error").textContent = ""; };
@@ -505,14 +512,16 @@ function render() {
     $("instruction").innerHTML = '<span class="done">완료. 완료 책상으로 보내세요</span>';
     $("stepKind").textContent = "끝";
   }
-  const cams = step && step.cameras.length ? ` · ${step.cameras.join("·")}` : "";
+  const cams = step && step.cameras.length ? ` · ${camName(step)}` : "";
   $("meta").innerHTML = esc(`${MODE_NAME[s.mode]}${s.mode === "TRAINING" && s.shotlist ? " · " + ((LIST_CARD[s.shotlist] || [LIST_LABEL[s.shotlist] || s.shotlist])[0]) : ""} · ${s.deviceId} · 남은 단계 ${s.remainingSteps}${cams} · 빠진 사진 ${s.missing.length}`)
     + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>');
   renderQueue(s.queue);
 }
 
 function setInstruction(text, kind) {
-  $("instruction").textContent = text;
+  // 첫 줄은 크게(노트북 놓기), 다음 줄(조명)은 작게. 안내는 서버(shotlist.py)가 줄바꿈으로 나눠 보낸다
+  const [main, ...rest] = String(text).split("\n");
+  $("instruction").innerHTML = esc(main) + rest.map((t) => `<span class="ins-sub">${esc(t)}</span>`).join("");
   $("stepKind").textContent = kind;
 }
 
@@ -535,9 +544,9 @@ function renderStep(s, step) {
     setInstruction("목록 끝. 완료를 누르세요", "끝");
   }
   const chips = [];
-  if (step && step.face) chips.push(`<span class="chip"><small>면</small>${esc(FACE[step.face] || step.face)} ${esc(step.face)}</span>`);
-  if (step && step.light) chips.push(`<span class="chip"><small>조명</small>${esc(step.light)}</span>`);
-  if (step && step.cameras.length) chips.push(`<span class="chip"><small>카메라</small>${esc(step.cameras.join(" · "))}</span>`);
+  if (step && step.face) chips.push(`<span class="chip"><small>찍는 면</small>${esc(FACE[step.face] || step.face)}</span>`);
+  if (step && step.light) chips.push(`<span class="chip"><small>조명</small>${esc(LIGHT[step.light] || step.light)}</span>`);
+  if (step && step.cameras.length) chips.push(`<span class="chip"><small>카메라</small>${esc(camName(step))}</span>`);
   if (step && step.optional) chips.push('<span class="chip"><small>선택</small>건너뛸 수 있음</span>');
   $("chips").innerHTML = chips.join("");
   const quick = s.mode === "QUICK";
@@ -572,7 +581,7 @@ function renderQuick(s, step) {
   const shooting = s.status === "IN_PROGRESS";
   show(shooting ? "capture" : "result");
   $("meta").innerHTML = shooting
-    ? esc(`${(PROFILE_CARD[s.profile] || PROFILE_CARD.QUICK)[0]} · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + step.cameras.join("·") : ""}`
+    ? esc(`${(PROFILE_CARD[s.profile] || PROFILE_CARD.QUICK)[0]} · ${label} · 남은 단계 ${s.remainingSteps}${step && step.cameras.length ? " · " + camName(step) : ""}`
       + ` · 빠진 사진 ${s.missing.length}`) + (s.presetsConfigured ? "" : ' · <span class="notice-warn">⚠ 카메라 고정 설정 없음</span>')
     : "";
   // 전체 검사의 SCR1(선택)만 건너뛸 수 있다. 빠른 검사에는 선택 단계가 없다
@@ -623,7 +632,7 @@ function renderResult() {
 let photos = [], photosKey = "", selShot = null;
 const polysOf = (p) => p.detections.map((d) =>
   `<polygon points="${d.polygon.map((pt) => pt.join(",")).join(" ")}"><title>${esc(d.class)} ${d.confidence}</title></polygon>`).join("");
-const nameOf = (p) => `${esc(p.face)} · ${esc(p.light)} · ${esc(p.camera)}`;
+const nameOf = (p) => `${esc(FACE[p.face] || p.face)} · ${esc(LIGHT[p.light] || p.light)} · ${esc(p.camera)}`;
 function renderPhotos(list) {
   const key = JSON.stringify(list.map((p) => [p.shotId, p.detections.length]));
   if (key === photosKey) return;
@@ -1097,7 +1106,7 @@ $("prev").onclick = async () => {
   } finally { render(); }
 };
 $("skip").onclick = async () => {
-  const reason = prompt("SCR1을 건너뛰는 사유");
+  const reason = prompt("켠 화면 사진을 건너뛰는 이유(예: 화면이 켜지지 않음)");
   if (reason) { state = await call("POST", "/api/sessions/current/skip-scr1", { reason }); render(); }
 };
 $("complete").onclick = async () => {
@@ -1153,9 +1162,9 @@ async function loadProfiles() {
 const LIST_LABEL = {};
 // 카드에 보일 짧은 이름과 준비할 것. 서버 목록에 없는 이름은 서버가 준 이름 그대로
 const LIST_CARD = {
-  mvp: ["위·아래", "바닥 → 뒤집어 상판. 어제와 같은 자리"],
-  kb: ["펼친 상태", "100° 가이드에 맞추고, LED 바 #2를 앞(L4)으로"],
-  side: ["옆면", "책상 높이 옆면 카메라(없으면 CAM1을 내려서)로, 배경판은 뒤 30cm에"],
+  mvp: ["위·아래", "바닥면 → 뒤집어 윗면. 어제와 같은 자리"],
+  kb: ["펼친 상태", "화면을 100° 표시에 맞추고, 뒤쪽 막대 조명을 앞쪽 자리로"],
+  side: ["옆면", "책상 높이 옆면 카메라(없으면 앞 위 카메라를 내려서)로, 배경판은 뒤 30cm에"],
 };
 let shotlistValue = "";
 function pickShotlist(name) {

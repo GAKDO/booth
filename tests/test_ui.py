@@ -201,7 +201,7 @@ def test_빠른_검사를_끝까지_찍으면_뒤집기_안내를_거쳐_판정�
     expect(page.locator("#stepCard")).to_have_class("step notice")
     expect(page.locator("#shoot")).to_be_hidden()
     page.locator("#next").click()
-    expect(page.locator(".phase.now")).to_contain_text("상판")
+    expect(page.locator(".phase.now")).to_contain_text("윗면")
     shoot(page, 3)
     expect(page.locator("#complete")).to_have_class("btn primary big")
     page.locator("#complete").click()
@@ -283,7 +283,7 @@ def finish_quick(page: Page) -> None:
     shoot(page, 3)
     expect(page.locator("#stepCard")).to_have_class("step notice")
     page.locator("#next").click()
-    expect(page.locator(".phase.now")).to_contain_text("상판")
+    expect(page.locator(".phase.now")).to_contain_text("윗면")
     shoot(page, 3)
     page.locator("#complete").click()
     expect(page.locator("#verdict")).to_have_text("문제 있음")
@@ -569,15 +569,15 @@ def test_학습_탭과_반납_탭에는_부스_코드_칸이_없다(page):
 
 def test_촬영을_누르면_같은_단계에_머물고_다음을_눌러야_다음_조명으로_넘어간다(page):
     pick(page, "TEST-0001")
-    expect(page.locator("#chips")).to_contain_text("L1")
+    expect(page.locator("#chips")).to_contain_text("오른쪽 큰 조명")
     page.locator("#shoot").click()
     expect(page.locator("#next")).to_be_visible()
     expect(page.locator("#shoot")).to_be_hidden()
     expect(page.locator("#stepKind")).to_contain_text("사진을 확인하고 다음")
     expect(page.locator("#thumbs figure")).to_have_count(2)
-    expect(page.locator("#chips")).to_contain_text("L1")
+    expect(page.locator("#chips")).to_contain_text("오른쪽 큰 조명")
     page.locator("#next").click()
-    expect(page.locator("#chips")).to_contain_text("L2")
+    expect(page.locator("#chips")).to_contain_text("왼쪽 막대 조명")
     expect(page.locator("#shoot")).to_be_visible()
     expect(page.locator("#lastShots")).to_be_hidden()
 
@@ -598,13 +598,13 @@ def test_전체_검사를_고르면_확인_시트에_범위가_보이고_SCR1에
     expect(page.locator("#sheetTitle")).to_contain_text("전체 검사")
     page.locator("#sheetYes").click()
     expect(page.locator("#modeTag")).to_have_text("전체 검사")
-    expect(page.locator(".phase").nth(1)).to_contain_text("펼친 키보드")
+    expect(page.locator(".phase").nth(1)).to_contain_text("열어서 키보드")
     seen = set()
-    while "SCR1" not in page.locator("#instruction").inner_text():
+    while "흰 화면" not in page.locator("#instruction").inner_text():
         expect(page.locator("#skip")).to_be_hidden()
         text = page.locator("#instruction").inner_text()
-        if "펼쳐" in text and "가이드에 맞추고, 바 #2" in text:
-            expect(page.locator(".phase.now")).to_contain_text("펼친 키보드")  # 펼치기 안내는 키보드 칸
+        if "100° 표시" in text and "앞쪽 자리로 옮기" in text:
+            expect(page.locator(".phase.now")).to_contain_text("열어서 키보드")  # 펼치기 안내는 키보드 칸
             seen.add("KB")
         before = page.locator("#stepNo").inner_text()
         if page.locator("#shoot").is_visible():
