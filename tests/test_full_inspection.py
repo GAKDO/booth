@@ -382,3 +382,24 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는
         service.shoot(s.id)  # 안내와 실제 조명이 어긋난 채 이어 찍지 않는다
     assert len(service.store.shots(s.id)) == before
     assert service.store.get_session(s.id).status == "ABANDONED"
+
+
+def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(tmp_path, cams, presets):
+    import threading
+
+    side = FakeCamera(Camera.CAM1)
+    asked = threading.Event()
+    side.before_use = asked.set  # CameraGroups가 다는 훅 흉내
+    service = CaptureService(Store(tmp_path / "b.db"), cams, presets, tmp_path / "d", min_free_bytes=0,
+                             inspection_lists={"full": full_inspection_shotlist(side_camera=True)},
+                             list_cameras={"side": {Camera.CAM1: side}})
+    s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
+    while True:
+        view = service.view(s.id)
+        if not view.step.captures and "옆면 카메라" in view.step.instruction:
+            break
+        assert not asked.is_set()  # 위·아래·키보드를 찍는 동안은 옆면을 열지 않는다
+        if view.step.captures:
+            service.shoot(s.id)
+        service.advance(s.id)
+    assert asked.wait(2)  # 노트북을 옆면 카메라 앞에 세우는 동안 미리 연다
