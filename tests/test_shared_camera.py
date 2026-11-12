@@ -175,3 +175,57 @@ def test_TRACE_BOOTH_KEEP_OPEN은_기본_1이고_0이면_끈다() -> None:
     assert _keep_open("0") is False
     with pytest.raises(SystemExit):
         _keep_open("yes")
+
+
+def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍는다(fake_cv2, started) -> None:
+    from trace_booth.shared_camera import CameraGroups
+
+    top1, top2, side = (SharedCamera(code, f"/dev/{n}", reopen_delay=0.01, set_controls=lambda d, s: None)
+                        for code, n in ((Camera.CAM1, "a"), (Camera.CAM2, "b"), (Camera.CAM1, "side")))
+    groups = CameraGroups({"top": [top1, top2], "side": [side]}, active="top")
+    for cam in (top1, top2, side):
+        started.append(cam)
+        cam.start()
+
+    assert top1.capture({}) and top2.capture({})
+    assert side._cap is None  # 옆면은 처음엔 닫혀 있다
+    opens = fake_cv2.open_count
+
+    assert side.capture({})  # 옆면으로 찍으면 위 두 대를 닫고 옆면을 연다
+    assert groups.active == "side"
+    assert top1._cap is None and top2._cap is None and not top1._held and not top2._held
+    assert fake_cv2.open_count == opens + 1
+
+    assert top1.capture({})  # 다시 위로 돌아오면 옆면을 닫는다
+    assert groups.active == "top"
+    assert side._cap is None and not side._held
+
+
+def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(fake_cv2, started) -> None:
+    from trace_booth.shared_camera import CameraGroups
+
+    top = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01)
+    side = SharedCamera(Camera.CAM1, "/dev/side", reopen_delay=0.01)
+    groups = CameraGroups({"top": [top], "side": [side]}, active="top")
+    for cam in (top, side):
+        started.append(cam)
+        cam.start()
+
+    assert side.live_jpeg() is None
+    assert groups.active == "top"
+
+
+def test_쉬는_중에_멈추라고_하면_스레드가_끝난다(fake_cv2) -> None:
+    cam = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01, paused=True)
+    cam.start()
+    cam.stop(2)
+    assert cam._thread is not None and not cam._thread.is_alive()
+
+
+def test_TRACE_BOOTH_SIDE_EXCLUSIVE는_기본_1이고_0이면_끈다() -> None:
+    from trace_booth.__main__ import _side_exclusive
+
+    assert _side_exclusive("") is True
+    assert _side_exclusive("0") is False
+    with pytest.raises(SystemExit):
+        _side_exclusive("2")

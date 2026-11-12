@@ -6,6 +6,10 @@ jetson2에서 C920을 닫는 데(cap.release) 2~4초가 걸려, 실시간 보기
 - 실시간 보기는 다음 프레임을 받아 줄여 보내고,
 - 촬영은 프리셋을 넣고 프레임 몇 장을 흘려보낸 뒤 다음 프레임을 저장한다.
 장치가 빠지거나 읽기가 끊기면 닫고 1초 뒤 다시 연다.
+
+11/12 jetson2: 위 C920 두 대와 옆면 Brio가 같은 USB2 허브에 있으면 셋을 동시에 열어 둘 대역폭이 없다
+(dmesg "Not enough bandwidth"). CameraGroups로 위 카메라 묶음과 옆면 카메라 묶음 중 한쪽만 열어 두고,
+다른 묶음의 카메라로 찍을 때 한 번만 바꾼다(전체 검사의 옆면 앞뒤 두 번).
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ class SharedCamera:
         rotate: int = 0,
         live_width: int = 1280,
         reopen_delay: float = 1.0,
+        paused: bool = False,
     ) -> None:
         self.code = code
         self.device = device
@@ -56,6 +61,9 @@ class SharedCamera:
         self._shoot = threading.Lock()  # 촬영은 한 번에 하나
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._paused = paused  # 쉬는 동안은 장치를 닫아 두고 열지 않는다(CameraGroups)
+        self._held = False  # 지금 장치를 열고 있는지(닫기까지 끝났는지 기다릴 때 쓴다)
+        self.before_use: Callable[[], None] | None = None  # 찍기 전에 부른다(CameraGroups가 이 묶음을 연다)
 
     # --- 열기·받기 ---
     def start(self) -> None:
@@ -65,8 +73,22 @@ class SharedCamera:
 
     def stop(self, timeout: float = 10) -> None:
         self._stop.set()
+        with self._cv:
+            self._cv.notify_all()
         if self._thread is not None:
             self._thread.join(timeout)
+
+    def pause(self, timeout: float = 10) -> bool:
+        """장치를 닫고 resume() 전까지 열지 않는다. 닫기가 끝나면 True(C920은 2~4초)."""
+        with self._cv:
+            self._paused = True
+            self._cv.notify_all()
+            return self._cv.wait_for(lambda: not self._held, timeout)
+
+    def resume(self) -> None:
+        with self._cv:
+            self._paused = False
+            self._cv.notify_all()
 
     def _open(self) -> Any:
         import cv2  # Jetson은 시스템 OpenCV를 쓰므로 필요할 때만 불러온다
@@ -83,12 +105,20 @@ class SharedCamera:
     def _run(self) -> None:
         """장치는 이 스레드만 만진다. 받기를 계속하고, 누가 프레임을 원하면 방금 받은 것을 풀어 둔다."""
         while not self._stop.is_set():
+            with self._cv:
+                self._cv.wait_for(lambda: not self._paused or self._stop.is_set())
+                if self._stop.is_set():
+                    return
+                self._held = True
             try:
                 cap = self._open()
             except Exception as e:  # noqa: BLE001 - 열기 실패로 스레드가 죽으면 재시작 전까지 못 찍는다
                 print(f"  {self.code.value} 열기 실패: {type(e).__name__}: {e}", flush=True)
                 cap = None
             if cap is None:
+                with self._cv:
+                    self._held = False
+                    self._cv.notify_all()
                 self._stop.wait(self._reopen_delay)
                 continue
             print(f"  {self.code.value} 카메라를 열어 둠 ({self.device})", flush=True)
@@ -105,10 +135,14 @@ class SharedCamera:
                     self._frame = None
                     self._cv.notify_all()
                 cap.release()
-            self._stop.wait(self._reopen_delay)
+                with self._cv:
+                    self._held = False
+                    self._cv.notify_all()
+            if not self._paused:
+                self._stop.wait(self._reopen_delay)
 
     def _pump(self, cap: Any) -> None:
-        while not self._stop.is_set():
+        while not self._stop.is_set() and not self._paused:
             if not cap.grab():
                 print(f"  {self.code.value} 프레임이 끊김. 다시 열어요", flush=True)
                 return
@@ -160,6 +194,9 @@ class SharedCamera:
         marks = _Marks()
         try:
             with self._shoot:
+                if self.before_use is not None:
+                    self.before_use()
+                    marks.lap("바꾸기")
                 if self._wait_open(OPEN_WAIT) is None:
                     marks.lap("열기")
                     raise CameraError(self.code, f"장치를 열 수 없음 ({self.device})")
@@ -222,3 +259,43 @@ class SharedCamera:
                 yield last
             sleep(interval)
             quiet += interval
+
+
+class CameraGroups:
+    """카메라 묶음 중 한 묶음만 열어 둔다(위 CAM1·CAM2 / 옆면). 다른 묶음으로 찍을 때 앞 묶음을 닫고 연다.
+
+    실시간 보기는 묶음을 바꾸지 않는다(모두 보기 화면이 위·옆면을 같이 열어 둬도 서로 뺏지 않게).
+    쉬는 카메라의 실시간 보기는 마지막 장면을 그대로 보여 준다.
+    """
+
+    def __init__(self, groups: dict[str, list[SharedCamera]], active: str) -> None:
+        if active not in groups:
+            raise ValueError(f"없는 묶음: {active}")
+        self._groups = groups
+        self._active = active
+        self._lock = threading.Lock()
+        for name, cams in groups.items():
+            for cam in cams:
+                if name != active:
+                    cam._paused = True
+                cam.before_use = lambda name=name: self.use(name)
+
+    @property
+    def active(self) -> str:
+        return self._active
+
+    def use(self, name: str) -> None:
+        with self._lock:
+            if name == self._active:
+                return
+            started = time.monotonic()
+            for cam in self._groups[self._active]:
+                cam._paused = True  # 먼저 모두 닫으라고 한 뒤 기다린다(닫기가 대당 2~4초)
+                with cam._cv:
+                    cam._cv.notify_all()
+            for cam in self._groups[self._active]:
+                cam.pause()
+            for cam in self._groups[name]:
+                cam.resume()
+            print(f"  카메라 묶음 {self._active} → {name} ({time.monotonic() - started:.1f}초)", flush=True)
+            self._active = name
