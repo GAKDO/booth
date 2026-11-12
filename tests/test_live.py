@@ -1,11 +1,18 @@
 """실시간 카메라 보기: 촬영과 장치 나눠 쓰기, MJPEG 응답."""
 
 import threading
+import time
+import urllib.error
 import urllib.request
+from collections.abc import Iterator
 
+import pytest
+
+from trace_booth import web
 from trace_booth.camera import CameraError
 from trace_booth.codes import Camera
 from trace_booth.live import CameraGate, live_frames
+from trace_booth.session import CaptureService
 from trace_booth.web import App, make_server
 
 
@@ -157,3 +164,54 @@ def test_촬영_중에도_마지막_프레임을_다시_보내_연결을_살려_
     assert FakeSource.closed == 1
     gate.leave()
     frames.close()
+
+
+def test_한_장_경로는_JPEG_한_장을_보내고_스트림을_닫는다(service: CaptureService) -> None:
+    closed = threading.Event()
+
+    def feed() -> Iterator[bytes]:
+        try:
+            while True:
+                yield b"\xff\xd8one"
+        finally:
+            closed.set()
+
+    server = make_server(App(service, live={"CAM1": feed}), "127.0.0.1", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        with urllib.request.urlopen(base + "/api/live/CAM1/frame", timeout=5) as r:
+            assert r.headers.get_content_type() == "image/jpeg"
+            assert r.read() == b"\xff\xd8one"
+        assert closed.wait(2)  # 한 장 보낸 뒤 장치를 놓는다
+        try:
+            urllib.request.urlopen(base + "/api/live/CAM9/frame", timeout=5)
+            raise AssertionError("404여야 함")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        server.shutdown()
+
+
+def test_한_장_경로는_첫_프레임이_제때_안_오면_503을_돌려준다(
+    service: CaptureService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(web, "FRAME_WAIT", 0.1)
+    release = threading.Event()
+
+    def feed() -> Iterator[bytes]:  # 쉬는 카메라: 프레임을 내지 않고 기다린다
+        release.wait(5)
+        yield b"\xff\xd8late"
+
+    server = make_server(App(service, live={"SIDE": feed}), "127.0.0.1", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        started = time.monotonic()
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(base + "/api/live/SIDE/frame", timeout=5)
+        assert e.value.code == 503
+        assert time.monotonic() - started < 2
+    finally:
+        release.set()
+        server.shutdown()
