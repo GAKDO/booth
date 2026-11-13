@@ -311,7 +311,9 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_BOOTH_UI_TOKEN이 없어 같은 망 누구나 부스 화면을 쓸 수 있어요(부스 자격으로 촬영 세트를 올림)")
     else:
         print(f"부스 화면 접속 비밀이 켜져 있어요. 태블릿에서 http://<부스 주소>:{port}/?token=<비밀> 로 한 번 여세요")
-    server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token), host, port)
+    required = rentals.required_profile if rentals else None  # 수령·반납 검사 방식 고정(11/13)
+    server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token,
+                             required_profile=required), host, port)
     for cam in opened:
         cam.start()
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")
