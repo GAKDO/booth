@@ -35,6 +35,7 @@ MBA = WaitingDevice("Ws0HLv6QRbDILPWOcz5I2", "aAXQFO2Vz6ZTFbPctC2dq", "TEST-0001
 GRAM = WaitingDevice("Xs0HLv6QRbDILPWOcz5I2", "bAXQFO2Vz6ZTFbPctC2dq", "GRAM-0002", "LG-GRAM16",
                      "i40b9AN9xMQhXRHrOyJWB", "RET")
 TABLET = {"width": 1280, "height": 800}
+LOCKED: dict[str, str] = {}  # 렌탈 → 출고 때 검사 방식(가짜 capture-server)
 
 
 def _redeem(code: str) -> WaitingDevice:
@@ -54,7 +55,10 @@ def base(tmp_path):
                              min_free_bytes=0)
     quick = QuickInspector(service.store, lambda: (SquareDetector(), INFO), _loader("BOT_L1_CAM1"), lambda: NOW,
                            background=False)
-    server = make_server(App(service, None, None, quick, lambda: [MBA, GRAM], _redeem), "127.0.0.1", 0)
+    # 출고 때 방식(11/13 검사 방식 고정). 시험이 LOCKED에 넣은 렌탈만 고정된다
+    required = lambda rental, checkpoint: LOCKED.get(rental)
+    server = make_server(App(service, None, None, quick, lambda: [MBA, GRAM], _redeem, required_profile=required),
+                         "127.0.0.1", 0)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     yield f"http://127.0.0.1:{server.server_address[1]}"
@@ -616,3 +620,28 @@ def test_전체_검사를_고르면_확인_시트에_범위가_보이고_SCR1에
     expect(page.locator(".phase.now")).to_contain_text("옆면")
     expect(page.locator("#skip")).to_be_visible()
     expect(page.locator("#skip")).to_be_enabled()
+
+
+@pytest.fixture
+def locked_gram():
+    LOCKED[GRAM.rental_id] = "FULL"  # 반납 기기(GRAM)는 출고를 전체 검사로 했다
+    yield
+    LOCKED.clear()
+
+
+def test_반납_기기는_출고_때_방식만_고를_수_있고_다른_방식은_꺼지고_이유가_보인다(page, locked_gram):
+    page.locator("#reload").click()
+    card = device(page, "GRAM-0002")
+    expect(card).to_contain_text("전체 검사만")
+    card.click()
+    expect(page.locator("#sheetTitle")).to_contain_text("반납 전체 검사")
+    expect(page.locator("#sheetBody")).to_contain_text("다른 방식은 고를 수 없어요")
+    expect(page.locator('#profiles [data-name="QUICK"]')).to_be_disabled()
+    expect(page.locator('#profiles [data-name="FULL"]')).to_have_attribute("aria-checked", "true")
+    expect(page.locator("#profileHelp")).to_contain_text("출고 때 고른 전체 검사로만")
+    page.locator("#sheetNo").click()
+    expect(page.locator('#profiles [data-name="QUICK"]')).to_be_enabled()
+    expect(page.locator('#profiles [data-name="QUICK"]')).to_have_attribute("aria-checked", "true")
+    device(page, "GRAM-0002").click()
+    page.locator("#sheetYes").click()
+    expect(page.locator("#modeTag")).to_have_text("전체 검사")

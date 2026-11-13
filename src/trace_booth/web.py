@@ -38,6 +38,15 @@ Submitter = Callable[[int], CheckoutRecord]
 LiveFeed = Callable[[], Iterator[bytes]]  # 카메라 하나의 실시간 JPEG 프레임
 WaitingList = Callable[[], list[WaitingDevice]]  # 빠른 검사의 검사 기다리는 기기
 CodeRedeemer = Callable[[str], WaitingDevice]  # 부스 6자리 코드 → 기기·렌탈·시점
+ProfileLookup = Callable[[str, str], str | None]  # (렌탈, 시점) → 출고 때 고른 검사 방식(FULL·QUICK), 기준이 없으면 None
+
+PROFILE_LABELS = {PROFILE_QUICK: "빠른 검사", PROFILE_FULL: "전체 검사"}
+
+
+def profile_mismatch_message(required: str) -> str:
+    """수령·반납에서 출고와 다른 방식을 고르면 보일 문장(서버 capture-server의 400과 같은 뜻)."""
+    name = PROFILE_LABELS.get(required, required)
+    return f"이 렌탈은 출고를 {name}로 했어요. 수령·반납도 {name}로만 찍어야 출고 기록과 비교할 수 있어요"
 
 
 def result_json(store, session_id: int, shooting: bool) -> dict:
@@ -58,6 +67,7 @@ class App:
         waiting: WaitingList | None = None,
         redeem: CodeRedeemer | None = None,
         ui_token: str | None = None,
+        required_profile: ProfileLookup | None = None,
     ) -> None:
         self.service = service
         # 운영 화면 접속 비밀(TRACE_BOOTH_UI_TOKEN). 있으면 쿠키나 X-Booth-Token 헤더가 맞아야 화면·API를 쓴다.
@@ -68,8 +78,28 @@ class App:
         self.quick = quick  # 빠른 검사 탐지. 없으면 QUICK 모드를 막음
         self.waiting = waiting  # 렌탈 목록. 서버 설정이 없으면 None
         self.redeem = redeem  # 부스 코드 조회. 서버 설정이 없으면 None
+        # 수령·반납의 검사 방식 고정(11/13). 서버 설정이 없으면 None(막지 않음, 서버도 세트 생성에서 다시 막는다)
+        self.required_profile = required_profile
         self.current: int | None = None  # 내부 id. 화면에는 publicId만 보낸다
         self.lock = threading.Lock()
+
+
+def _required(app: App, rental: str, checkpoint: str) -> str | None:
+    """출고 때 고른 검사 방식. 못 물어보면(서버가 아직 옛 버전이거나 연결 실패) None으로 두고, 서버가 세트 생성에서 다시 막는다."""
+    if app.required_profile is None:
+        return None
+    try:
+        return app.required_profile(rental, checkpoint)
+    except (ApiError, OSError, ValueError, KeyError, TypeError) as e:
+        print(f"검사 방식을 못 물어봤어요(막지 않음): {type(e).__name__}: {e}")
+        return None
+
+
+def _device_json(app: App, w: WaitingDevice) -> dict:
+    """기기 한 줄 + 수령·반납이면 출고 때 방식(requiredProfile). 화면은 그 방식만 고르게 한다."""
+    out: dict = w.to_json()
+    out["requiredProfile"] = _required(app, w.rental_id, w.checkpoint_id) if w.checkpoint_type != "OUT" else None
+    return out
 
 
 def _shot_json(s: ShotRecord) -> dict:
@@ -238,7 +268,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     items = app.waiting()
                 except (ApiError, OSError, ValueError, KeyError, TypeError) as e:  # 서버 응답 문제는 502
                     return self._problem(502, f"기기 목록을 못 불러왔어요: {type(e).__name__}: {e}")
-                return self._json(200, {"items": [w.to_json() for w in items]})
+                return self._json(200, {"items": [_device_json(app, w) for w in items]})
             if method == "POST" and path == "/api/booth-code":
                 if app.redeem is None:
                     return self._problem(503, "서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 부스 코드를 못 써요")
@@ -251,7 +281,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     return self._problem(e.status if e.status in (400, 410, 429) else 502, redeem_message(e))
                 except (OSError, ValueError, KeyError, TypeError) as e:
                     return self._problem(502, f"부스 코드를 확인하지 못했어요: {type(e).__name__}: {e}")
-                return self._json(200, target.to_json())
+                return self._json(200, _device_json(app, target))
             if method == "GET" and path == "/api/live":
                 return self._json(200, {"cameras": list(app.live)})  # 화면이 보일 카메라(옆면 Brio는 SIDE)
             if method == "GET" and path.startswith("/api/live/") and path.endswith("/frame"):
@@ -274,6 +304,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 if mode in ("OUT", "RET") and app.submitter is None:
                     raise InvalidInput("서버 연결 설정(TRACE_API_URL·부스 자격)이 없어 출고·반납 모드를 쓸 수 없어요")
                 rental, checkpoint = body.get("rentalId"), body.get("checkpointId")
+                if mode == "QUICK" and rental and checkpoint:
+                    # 수령·반납은 출고와 같은 검사 방식만(11/13). 반납은 앞 시점과 면·사진을 맞춰 비교하므로
+                    wanted = str(body.get("profile") or svc.default_profile)
+                    required = _required(app, str(rental), str(checkpoint))
+                    if required is not None and required != wanted:
+                        raise InvalidInput(profile_mismatch_message(required))
                 with app.lock:
                     shotlist, profile = body.get("shotlist"), body.get("profile")
                     app.current = svc.start(

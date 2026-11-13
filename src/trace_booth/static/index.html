@@ -105,6 +105,9 @@
   .lists button[aria-checked="true"] { border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent); }
   .lists button[aria-checked="true"] .n { color:#fca5a5; }
   .lists.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .lists button:disabled { opacity:.4; cursor:not-allowed; }
+  .profilepick .help.locked { color:#fcd34d; font-weight:700; }
+  .tag.lock { background:rgba(245,185,59,.16); color:#fcd34d; }
   .profilepick { margin-bottom:18px; }
   @media (max-width:560px) { .lists, .lists.two { grid-template-columns:minmax(0,1fr); } .lists button { min-height:0; } }
   .form input { width:100%; min-width:0; }
@@ -710,6 +713,7 @@ function emptyList(text) {
 }
 
 async function loadWaiting() {
+  unlockProfile();
   emptyList("불러오는 중…");
   try {
     const res = await fetch("/api/rentals/waiting");
@@ -721,8 +725,9 @@ async function loadWaiting() {
       const b = document.createElement("button");
       b.className = "device";
       const kind = KIND[w.checkpointType] || w.checkpointType;
+      const lock = w.requiredProfile ? ` <span class="tag lock">${esc(profileName(w.requiredProfile))}만</span>` : "";
       b.innerHTML = `<div><div class="model">${esc(w.modelCode)}</div><div class="serial">${esc(w.serial)}</div></div>`
-        + `<div class="foot"><span><span class="tag ${esc(w.checkpointType)}">${esc(kind)}</span> &nbsp;렌탈 ${esc(w.rentalId.slice(0, 6))}…</span>`
+        + `<div class="foot"><span><span class="tag ${esc(w.checkpointType)}">${esc(kind)}</span>${lock} &nbsp;렌탈 ${esc(w.rentalId.slice(0, 6))}…</span>`
         + `<span class="go">촬영 시작 →</span></div>`;
       const resume = openDevice === w.deviceId;
       if (resume) {
@@ -738,7 +743,7 @@ async function loadWaiting() {
 
 async function startQuick(w, resume) {
   label = `${w.modelCode} · ${w.serial}`;
-  const p = resume && openProfile ? openProfile : profile;
+  const p = w.requiredProfile || (resume && openProfile ? openProfile : profile);
   state = await call("POST", "/api/sessions",
     { mode: "QUICK", profile: p, deviceId: w.deviceId, rentalId: w.rentalId, checkpointId: w.checkpointId });
   if (openDevice === w.deviceId) { openDevice = null; openProfile = null; }  // 시작이 실패하면 '이어 찍기' 표시를 남긴다
@@ -749,16 +754,19 @@ async function startQuick(w, resume) {
 // 기기를 누르면 바로 시작하지 않고 한 번 확인한다(잘못 누름 방지). 찍던 기기는 이어 찍는다고 알려 준다
 async function pickDevice(w, resume) {
   const kind = KIND[w.checkpointType] || w.checkpointType;
-  const p = resume && openProfile ? openProfile : profile;
+  if (w.requiredProfile) lockProfile(w.requiredProfile, lockReason(w));
+  const p = w.requiredProfile || (resume && openProfile ? openProfile : profile);
   const range = p === "FULL" ? "전체 검사(28장)" : "빠른 검사";
+  const locked = w.requiredProfile ? ` 출고를 ${profileName(w.requiredProfile)}로 해서 ${kind}도 ${profileName(w.requiredProfile)}로만 찍어요(다른 방식은 고를 수 없어요).` : "";
   const ok = await ask({
     title: resume ? "찍던 기기를 이어 찍을까요?" : `${kind} ${range}를 시작할까요?`,
     lead: `${w.modelCode} · ${w.serial}`,
     body: resume ? "앞에서 찍은 사진은 그대로 두고 멈춘 단계부터 이어서 찍어요."
-      : "부스에 올린 노트북 바닥 라벨의 시리얼과 같은지 확인하세요.",
+      : "부스에 올린 노트북 바닥 라벨의 시리얼과 같은지 확인하세요." + locked,
     yes: resume ? "이어 찍기" : "촬영 시작", no: "다시 고르기",
   });
   if (ok) startQuick(w, resume);
+  else unlockProfile();
 }
 
 // 확인 시트. 누른 버튼이 '확인'이면 true. 바깥이나 Esc는 취소
@@ -1135,7 +1143,26 @@ async function restore() {
   } catch (e) { applyMode(); }
 }
 // 검사 범위(빠른·전체)를 불러와 카드로 보인다. 못 불러오면 칸을 숨기고 빠른 검사로 찍는다
+// 수령·반납은 출고 때 방식으로 고정(11/13): 그 기기를 고르면 다른 방식 버튼을 끄고 이유를 보인다
+let profileLock = null, profileBeforeLock = null;
+function lockProfile(name, reason) {
+  if (profileLock === null) profileBeforeLock = profile;
+  profileLock = name; pickProfile(name);
+  for (const b of $("profiles").children) { b.disabled = b.dataset.name !== name; b.setAttribute("aria-disabled", String(b.disabled)); }
+  $("profileHelp").textContent = reason; $("profileHelp").classList.add("locked");
+}
+function unlockProfile() {
+  if (profileLock === null) return;
+  profileLock = null;
+  for (const b of $("profiles").children) { b.disabled = false; b.removeAttribute("aria-disabled"); }
+  $("profileHelp").classList.remove("locked");
+  pickProfile(profileBeforeLock || profile); profileBeforeLock = null;
+}
+const profileName = (p) => (PROFILE_CARD[p] || [p])[0];
+const lockReason = (w) => `${KIND[w.checkpointType] || "이 시점"}은 출고 때 고른 ${profileName(w.requiredProfile)}로만 찍어요. `
+  + `방식이 다르면 출고 기록과 면·사진이 맞지 않아 비교할 수 없어서 다른 방식은 고를 수 없어요.`;
 function pickProfile(name) {
+  if (profileLock !== null && name !== profileLock) return;
   profile = name;
   for (const b of $("profiles").children) b.setAttribute("aria-checked", String(b.dataset.name === name));
   $("profileHelp").textContent = (PROFILE_CARD[name] || ["", ""])[1];

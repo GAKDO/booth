@@ -299,3 +299,87 @@ def test_학습_모드_세션에는_결과_API가_409(quick_base):
 def test_학습_데이터_모드는_ID_카드_코드만_받는다(service):
     with pytest.raises(InvalidInput):
         service.start(DEVICE, "TRAINING")
+
+
+# --- 검사 방식 고정(11/13): 수령·반납은 출고와 같은 방식만 ---
+
+class FakeProfile(FakeRentals):
+    """capture-server 렌탈 검사 방식 조회: 출고를 profile로 했다고 답한다"""
+
+    def __init__(self, profile: str | None) -> None:
+        super().__init__([])
+        self.profile = profile
+        self.urls: list[str] = []
+
+    def __call__(self, method, url, headers, body):
+        if "/api/v1/captures/rentals/" in url:
+            self.urls.append(url)
+            return Response(200, json.dumps({"rentalId": RENTAL, "profile": self.profile,
+                                             "checkpointId": "O" * 21 if self.profile else None}).encode())
+        return super().__call__(method, url, headers, body)
+
+
+def test_렌탈_검사_방식은_capture_server에_지금_시점을_빼고_묻는다():
+    server = FakeProfile("FULL")
+    client = RentalClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
+
+    assert client.required_profile(RENTAL, CHECKPOINT) == "FULL"
+    assert server.urls[0].endswith(f"/api/v1/captures/rentals/{RENTAL}/profile?checkpointId={CHECKPOINT}")
+    server.profile = None
+    assert client.required_profile(RENTAL, CHECKPOINT) is None
+
+
+def _profile_app(service, required: str | None, kind: str = "RCV", fail: bool = False):
+    waiting = [WaitingDevice(RENTAL, DEVICE, "C02EXAMPLE01", "MBA13-M2", CHECKPOINT, kind)]
+
+    def lookup(rental: str, checkpoint: str) -> str | None:
+        if fail:
+            raise ApiError("검사 방식", 404, "NOT_FOUND")
+        return required
+
+    app = App(service, quick=_inspector(service), waiting=lambda: waiting, required_profile=lookup)
+    server = make_server(app, "127.0.0.1", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def test_수령_기기_목록에는_출고_때_방식이_실리고_다른_방식으로는_시작할_수_없다(service):
+    server, base = _profile_app(service, "FULL")
+    try:
+        item = json.loads(call(base, "GET", "/api/rentals/waiting")[2])["items"][0]
+        assert item["requiredProfile"] == "FULL"
+        status, _, body = call(base, "POST", "/api/sessions", {
+            "mode": "QUICK", "profile": "QUICK", "deviceId": DEVICE, "rentalId": RENTAL, "checkpointId": CHECKPOINT})
+        assert status == 400 and "전체 검사로만" in json.loads(body)["detail"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_출고를_빠른_검사로_했으면_수령도_빠른_검사로_시작된다(service):
+    server, base = _profile_app(service, "QUICK")
+    try:
+        status, _, body = call(base, "POST", "/api/sessions", {
+            "mode": "QUICK", "profile": "QUICK", "deviceId": DEVICE, "rentalId": RENTAL, "checkpointId": CHECKPOINT})
+        assert status == 201 and json.loads(body)["profile"] == "QUICK"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_출고_기기는_방식을_묻지_않고_서버가_옛_버전이면_막지_않는다(service):
+    server, base = _profile_app(service, "FULL", kind="OUT")
+    try:
+        assert json.loads(call(base, "GET", "/api/rentals/waiting")[2])["items"][0]["requiredProfile"] is None
+    finally:
+        server.shutdown()
+        server.server_close()
+    server, base = _profile_app(service, None, fail=True)
+    try:
+        assert json.loads(call(base, "GET", "/api/rentals/waiting")[2])["items"][0]["requiredProfile"] is None
+        status, _, _ = call(base, "POST", "/api/sessions", {
+            "mode": "QUICK", "deviceId": DEVICE, "rentalId": RENTAL, "checkpointId": CHECKPOINT})
+        assert status == 201
+    finally:
+        server.shutdown()
+        server.server_close()
