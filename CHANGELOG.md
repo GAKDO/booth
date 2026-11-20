@@ -6,6 +6,9 @@ main에 버전이 적힌 CHANGELOG가 올라가면 release.yml이 태그와 GitH
 
 ## [Unreleased]
 
+### 바꿈
+- CI(python-ci)에서 pytest 커버리지를 재고 70% 아래면 실패하게 했다. Jetson과 같은 Python 3.10으로도 테스트를 돌린다.
+
 ### 추가
 - 수령·반납 검사 방식 고정(11/13): 수령·반납 기기는 출고 때 방식(capture-server `GET /api/v1/captures/rentals/{rentalId}/profile`)만 고를 수 있고, 다른 방식 버튼은 꺼지며 이유를 보임. 로컬 API `POST /api/sessions`도 다른 방식이면 400. 서버가 옛 버전이면 막지 않음(서버 세트 생성이 다시 막음)
 - BO1 조명 손 전환 줄이기: 전체 검사 옆면을 면마다 L1→L2 / L2→L1로 번갈아 찍어 조명 전환 17번 → 13번(VL49 손 스위치 13번 → 9번), 앞 사진과 같은 조명이면 "그대로"와 켜져 있어야 할 조명을 함께 안내, 완료 확인은 단계 번호와 면·조명을 함께 대조
