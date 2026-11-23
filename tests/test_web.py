@@ -44,6 +44,7 @@ def test_운영_화면_HTML을_돌려준다(base):
 
 # [상황] 잘못된 기기 ID로 촬영을 시작한다.
 # [기대] 400과 표준 오류 형식(Problem Details)이 온다.
+#        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
 def test_잘못된_기기_ID는_400_Problem_Details(base):
     status, ctype, body = call(base, "POST", "/api/sessions", {"deviceId": "x"})
     assert status == 400 and ctype == "application/problem+json"
@@ -52,6 +53,7 @@ def test_잘못된_기기_ID는_400_Problem_Details(base):
 
 # [상황] 촬영을 시작하지 않고 현재 세션을 묻는다.
 # [기대] 404.
+#        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
 def test_시작하지_않고_현재_세션을_물으면_404(base):
     assert call(base, "GET", "/api/sessions/current")[0] == 404
 
@@ -59,6 +61,7 @@ def test_시작하지_않고_현재_세션을_물으면_404(base):
 # [상황] 시작 → 기기 ID 판 찍기 → 미리보기 → 빠진 채 완료 시도 → 끝까지 찍고 완료한다.
 # [기대] 찍어도 단계는 그대로이고, 작은·큰 미리보기가 JPEG로 온다. 빠진 사진이 있으면 409와 빠진 목록,
 #        끝까지 찍으면 COMPLETE이고 대기열에 29장이 올라갈 차례로 있다.
+#        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
 def test_시작_찍기_미리보기_완료_흐름(base):
     status, _, body = call(base, "POST", "/api/sessions", {"deviceId": "MB01"})
     assert status == 201 and json.loads(body)["step"]["kind"] == "SLATE"
@@ -95,6 +98,7 @@ def test_시작_찍기_미리보기_완료_흐름(base):
 
 # [상황] CAM1이 고장 난 채 찍는다.
 # [기대] 503과 함께 실패한 카메라(CAM1)를 알려 준다.
+#        ※ 응답 코드: 503 = 서버를 지금 쓸 수 없음(점검·장애)
 def test_카메라가_실패하면_503과_실패한_카메라를_알린다(base, cams):
     from trace_booth.codes import Camera
 
@@ -106,6 +110,7 @@ def test_카메라가_실패하면_503과_실패한_카메라를_알린다(base,
 
 # [상황] 세션·사진 정보를 받고, 내부 번호(1)로 미리보기를 연다.
 # [기대] 화면엔 21자 공개 ID만 나가고, 내부 번호로는 찾을 수 없다(404).
+#        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
 def test_화면과_API에는_NanoID_21자_publicId만_나가고_내부_정수_id는_나가지_않는다(base):
     import re
 
@@ -144,6 +149,7 @@ def _raw(base, method, path, data=b"{}", headers=None):
 
 # [상황] JSON이 아닌 형식으로 POST한다.
 # [기대] 415로 막는다(다른 사이트가 몰래 보내는 단순 요청 차단).
+#        ※ 응답 코드: 415 = 받지 않는 데이터 형식
 def test_JSON이_아닌_POST는_415로_막아_다른_사이트의_단순_요청을_받지_않는다(base):
     status, _, _ = _raw(base, "POST", "/api/sessions", b'{"deviceId":"MB01"}', {"Content-Type": "text/plain"})
     assert status == 415
@@ -151,6 +157,7 @@ def test_JSON이_아닌_POST는_415로_막아_다른_사이트의_단순_요청�
 
 # [상황] 다른 사이트(Origin)에서 POST가 온다.
 # [기대] 403.
+#        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
 def test_다른_출처에서_온_POST는_403(base):
     status, _, _ = _raw(base, "POST", "/api/sessions", b'{"deviceId":"MB01"}',
                         {"Content-Type": "application/json", "Origin": "http://evil.example"})
@@ -178,6 +185,7 @@ def guarded(service):
 
 # [상황] 접속 비밀(TRACE_BOOTH_UI_TOKEN)을 설정했는데 비밀 없이 요청한다.
 # [기대] 화면·API 모두 401.
+#        ※ 응답 코드: 401 = 로그인 필요(토큰이 없거나 만료·위조됨)
 def test_접속_비밀이_있으면_비밀_없는_요청은_401(guarded):
     assert _raw(guarded, "GET", "/api/queue")[0] == 401
     assert _raw(guarded, "GET", "/")[0] == 401
@@ -187,6 +195,7 @@ def test_접속_비밀이_있으면_비밀_없는_요청은_401(guarded):
 # [상황] 비밀이 든 주소로 첫 화면을 연다.
 # [기대] 303으로 넘기며 쿠키를 심고(HttpOnly·SameSite=Strict, 비밀 원문은 쿠키에 없음), 그 쿠키나 헤더로 API를 쓴다.
 #        비밀 원문을 쿠키에 넣거나 틀린 헤더면 401.
+#        ※ 응답 코드: 303 = 다른 주소로 가라는 안내(리디렉션), 401 = 로그인 필요(토큰이 없거나 만료·위조됨)
 def test_접속_비밀로_첫_화면을_열면_쿠키를_심고_쿠키로_API를_쓴다(guarded):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *a, **k):
@@ -209,6 +218,7 @@ def test_접속_비밀로_첫_화면을_열면_쿠키를_심고_쿠키로_API를
 
 # [상황] 한 장 찍고 다음으로 간 뒤 "이전 단계"를 누른다.
 # [기대] 돌아간 단계와 그 단계에서 찍은 사진을 돌려준다. 첫 단계에서 또 누르면 409.
+#        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
 def test_이전_단계를_누르면_돌아간_단계와_그_단계_사진을_돌려준다(base):
     call(base, "POST", "/api/sessions", {"deviceId": "MB01"})
     shot = json.loads(call(base, "POST", "/api/sessions/current/shoot")[2])["shots"]

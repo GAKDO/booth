@@ -239,6 +239,7 @@ class FakeBoothCode(FakeRentals):
 
 # [상황] 관리자가 발급한 6자리 부스 코드를 넣는다. 틀린 코드, 5자리 코드도 넣는다.
 # [기대] 맞으면 기기·렌탈·시점을 받고, 틀리면 400 BOOTH_CODE_INVALID, 5자리는 서버에 보내기 전에 거른다.
+#        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
 def test_부스_코드를_rental_server에_보내_기기_렌탈_시점을_받는다():
     server = FakeBoothCode()
     client = RentalClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
@@ -268,6 +269,7 @@ def quick_base(service):
 
 # [상황] 부스 화면의 코드 입력 API를 여러 상황으로 부른다.
 # [기대] 서버 설정이 없으면 503, 형식이 틀리면 400, 만료된 코드는 410과 "다시 발급하세요" 안내.
+#        ※ 응답 코드: 503 = 서버를 지금 쓸 수 없음(점검·장애), 400 = 요청 내용이 형식에 맞지 않음, 410 = 이미 쓰였거나 만료되어 더는 쓸 수 없음
 def test_부스_코드_API는_서버_설정이_없으면_503_형식이_틀리면_400_만료는_410으로_알린다(service):
     def redeem(code: str) -> WaitingDevice:
         raise ApiError("부스 코드", 410, "BOOTH_CODE_EXPIRED")
@@ -316,6 +318,7 @@ def test_태블릿에서_기기를_골라_찍고_완료하면_결과_API가_판�
 
 # [상황] 서버 설정이 없거나, 탐지 엔진 설정이 없다.
 # [기대] 기기 목록은 503, 엔진이 없으면 빠른 검사 시작을 400(TRACE_BOOTH_ENGINE 필요)으로 막는다.
+#        ※ 응답 코드: 503 = 서버를 지금 쓸 수 없음(점검·장애), 400 = 요청 내용이 형식에 맞지 않음
 def test_서버_설정이_없으면_기기_목록은_503이고_엔진이_없으면_빠른_검사를_막는다(service):
     server = make_server(App(service), "127.0.0.1", 0)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -332,6 +335,7 @@ def test_서버_설정이_없으면_기기_목록은_503이고_엔진이_없으�
 
 # [상황] 학습 데이터 촬영 세션에서 판정 결과를 묻는다.
 # [기대] 409(판정이 없는 세션).
+#        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
 def test_학습_모드_세션에는_결과_API가_409(quick_base):
     call(quick_base, "POST", "/api/sessions", {"deviceId": "MB01"})
     assert call(quick_base, "GET", "/api/sessions/current/result")[0] == 409
@@ -392,6 +396,7 @@ def _profile_app(service, required: str | None, kind: str = "RCV", fail: bool = 
 
 # [상황] 출고를 전체 검사로 한 기기를 수령 때 빠른 검사로 시작하려 한다.
 # [기대] 기기 목록에 "전체 검사"가 실리고, 다른 방식은 400 "전체 검사로만"으로 막는다(같은 방식이어야 비교 가능).
+#        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
 def test_수령_기기_목록에는_출고_때_방식이_실리고_다른_방식으로는_시작할_수_없다(service):
     server, base = _profile_app(service, "FULL")
     try:

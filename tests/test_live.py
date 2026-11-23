@@ -99,6 +99,7 @@ def test_장치를_열지_못하면_잠시_뒤_다시_연다():
 
 # [상황] 부스 웹 서버의 실시간 보기 주소를 연다. 없는 카메라 주소도 연다.
 # [기대] MJPEG 스트림이 오고, 없는 카메라는 404.
+#        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
 def test_실시간_보기_경로는_MJPEG를_보낸다(service):
     gate = CameraGate()
     live = {"CAM1": lambda: live_frames(FakeSource, gate, sleep=lambda _: None)}
@@ -186,6 +187,7 @@ def test_촬영_중에도_마지막_프레임을_다시_보내_연결을_살려_
 
 # [상황] 한 장만 받는 주소를 연다.
 # [기대] JPEG 한 장을 보내고 장치를 놓는다. 없는 카메라는 404.
+#        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
 def test_한_장_경로는_JPEG_한_장을_보내고_스트림을_닫는다(service: CaptureService) -> None:
     closed = threading.Event()
 
@@ -215,6 +217,7 @@ def test_한_장_경로는_JPEG_한_장을_보내고_스트림을_닫는다(serv
 
 # [상황] 카메라가 프레임을 내지 않는다.
 # [기대] 오래 기다리지 않고(2초 안) 503을 돌려준다.
+#        ※ 응답 코드: 503 = 서버를 지금 쓸 수 없음(점검·장애)
 def test_한_장_경로는_첫_프레임이_제때_안_오면_503을_돌려준다(
     service: CaptureService, monkeypatch: pytest.MonkeyPatch
 ) -> None:

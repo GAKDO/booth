@@ -113,6 +113,7 @@ def web(service, submitter):
 
 # [상황] 서버 주소 설정 없이 화면에서 출고 모드를 시작한다.
 # [기대] 400과 함께 TRACE_API_URL 설정이 필요하다고 알린다.
+#        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
 def test_서버_연결_설정이_없으면_출고_모드_시작은_400(web):
     _, base = web(with_server=False)
 
