@@ -1,3 +1,7 @@
+# 이 파일이 확인하는 것: 카메라를 열어 둔 채 실시간 보기와 촬영이 같이 쓰기(11/11 속도 개선, TRACE_BOOTH_KEEP_OPEN).
+# 카메라마다 뒤에서 도는 스레드 하나만 장치를 만지고, 실시간 보기와 촬영은 그 스레드에서 프레임을 받아 간다.
+# 위 카메라 2대와 옆면 카메라는 USB 대역폭 때문에 한 묶음씩만 연다.
+
 """카메라를 열어 둔 채 실시간 보기와 촬영이 같이 쓰기(11/11)."""
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ class _Frame:
         self.shape = (720, 1280, 3)
 
 
+# 테스트 도구: 가짜 OpenCV 카메라. 프레임 번호를 내고, 정한 장수 뒤 끊기거나 예외를 내며, 어느 스레드가 만졌는지 기록한다.
 class _FakeCapture:
     opened = True
     open_count = 0
@@ -86,6 +91,7 @@ def started() -> Iterator[list[SharedCamera]]:
         cam.stop()
 
 
+# 테스트 도구: 열어 둔 채 쓰는 카메라를 만들고 시작한다.
 def _camera(started: list[SharedCamera], set_controls=lambda d, s: None, warmup: int = 4) -> SharedCamera:
     cam = SharedCamera(Camera.CAM1, "/dev/fake", warmup_frames=warmup, set_controls=set_controls,
                        reopen_delay=0.01)
@@ -94,6 +100,8 @@ def _camera(started: list[SharedCamera], set_controls=lambda d, s: None, warmup:
     return cam
 
 
+# [상황] 설정을 넣고 사진을 찍는다.
+# [기대] 설정 뒤 4장을 버리고 그다음 새 프레임을 쓴다(설정이 반영된 사진). 찍고 나서 장치를 닫지 않는다.
 def test_촬영은_설정을_넣은_뒤_버리는_프레임_다음의_새_프레임을_쓴다(fake_cv2, started) -> None:
     at_set: list[int] = []
     cam = _camera(started, warmup=4)
@@ -106,6 +114,8 @@ def test_촬영은_설정을_넣은_뒤_버리는_프레임_다음의_새_프레
     assert fake_cv2.release_count == 0  # 찍고 나서 닫지 않는다
 
 
+# [상황] 촬영이 설정을 넣는 동안 실시간 보기를 받는다.
+# [기대] 실시간 보기 프레임이 계속 오고, 장치는 한 번만 열었다.
 def test_촬영_중에도_실시간_보기가_멈추지_않는다(fake_cv2, started) -> None:
     go = threading.Event()
     cam = _camera(started, set_controls=lambda d, s: go.wait(5))
@@ -122,6 +132,8 @@ def test_촬영_중에도_실시간_보기가_멈추지_않는다(fake_cv2, star
     assert fake_cv2.open_count == 1  # 장치는 한 번만 열었다
 
 
+# [상황] 몇 장 뒤 프레임이 끊긴다.
+# [기대] 장치를 닫고 다시 열어, 다시 찍을 수 있다.
 def test_프레임이_끊기면_닫고_다시_연다(fake_cv2, started) -> None:
     fake_cv2.fail_after = 3
     cam = _camera(started)
@@ -133,6 +145,8 @@ def test_프레임이_끊기면_닫고_다시_연다(fake_cv2, started) -> None:
     assert cam.capture({})  # 다시 열린 뒤 찍힌다
 
 
+# [상황] 프레임을 읽다가 예외가 난다.
+# [기대] 장치를 닫고 다시 열어, 다시 찍을 수 있다.
 def test_읽다가_예외가_나도_닫고_다시_연다(fake_cv2, started) -> None:
     fake_cv2.raise_after = 3
     cam = _camera(started)
@@ -144,6 +158,8 @@ def test_읽다가_예외가_나도_닫고_다시_연다(fake_cv2, started) -> N
     assert cam.capture({})
 
 
+# [상황] 촬영과 실시간 보기를 한다.
+# [기대] 장치를 만진 스레드는 카메라 전용 스레드(cam-CAM1) 하나뿐이다(동시 접근 오류 방지).
 def test_장치는_뒤_스레드만_만진다(fake_cv2, started) -> None:
     cam = _camera(started)
     cam.capture({})
@@ -151,6 +167,8 @@ def test_장치는_뒤_스레드만_만진다(fake_cv2, started) -> None:
     assert fake_cv2.threads == {"cam-CAM1"}
 
 
+# [상황] 장치를 열 수 없다.
+# [기대] 촬영은 "장치를 열 수 없음"으로 실패하고 실시간 보기는 빈 값.
 def test_장치를_열지_못하면_촬영은_실패로_돌려준다(fake_cv2, started, monkeypatch) -> None:
     fake_cv2.opened = False
     monkeypatch.setattr(shared_camera, "OPEN_WAIT", 0.1)
@@ -160,6 +178,8 @@ def test_장치를_열지_못하면_촬영은_실패로_돌려준다(fake_cv2, s
     assert cam.live_jpeg() is None
 
 
+# [상황] 실시간 보기 중 더 새 연결이 온다.
+# [기대] 옛 연결은 끝난다.
 def test_실시간_보기는_더_새_연결이_오면_끝난다(fake_cv2, started) -> None:
     cam = _camera(started)
     alive = [True]
@@ -169,6 +189,8 @@ def test_실시간_보기는_더_새_연결이_오면_끝난다(fake_cv2, starte
     assert list(frames) == []
 
 
+# [상황] 열어 두기 설정을 비우거나 1·0·이상한 값으로 준다.
+# [기대] 기본은 켬, 0이면 끔, 이상한 값이면 시작하지 않는다.
 def test_TRACE_BOOTH_KEEP_OPEN은_기본_1이고_0이면_끈다() -> None:
     assert _keep_open("") is True
     assert _keep_open("1") is True
@@ -177,6 +199,8 @@ def test_TRACE_BOOTH_KEEP_OPEN은_기본_1이고_0이면_끈다() -> None:
         _keep_open("yes")
 
 
+# [상황] 위 카메라 2대로 찍다가 옆면 카메라로 찍고, 다시 위로 돌아온다.
+# [기대] 옆면으로 갈 때 위 두 대를 닫고 옆면을 열며, 돌아오면 옆면을 닫는다(한 번에 한 묶음만).
 def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍는다(
     fake_cv2: type[_FakeCapture], started: list[SharedCamera]
 ) -> None:
@@ -203,6 +227,8 @@ def test_묶음을_바꾸면_앞_묶음을_닫은_뒤_새_묶음을_열어_찍�
     assert side._cap is None and not side._held
 
 
+# [상황] 위 묶음이 열린 상태에서 옆면 카메라의 실시간 보기를 연다.
+# [기대] 실시간 보기만으로는 묶음을 바꾸지 않는다(촬영 중인 카메라를 빼앗지 않게).
 def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(
     fake_cv2: type[_FakeCapture], started: list[SharedCamera]
 ) -> None:
@@ -219,6 +245,8 @@ def test_쉬는_카메라의_실시간_보기는_묶음을_바꾸지_않는다(
     assert groups.active == "top"
 
 
+# [상황] 쉬는 카메라에 멈추라고 한다.
+# [기대] 카메라 스레드가 끝난다.
 def test_쉬는_중에_멈추라고_하면_스레드가_끝난다(fake_cv2: type[_FakeCapture]) -> None:
     cam = SharedCamera(Camera.CAM1, "/dev/a", reopen_delay=0.01, paused=True)
     cam.start()
@@ -226,6 +254,8 @@ def test_쉬는_중에_멈추라고_하면_스레드가_끝난다(fake_cv2: type
     assert cam._thread is not None and not cam._thread.is_alive()
 
 
+# [상황] 묶음 하나씩만 열기 설정을 비우거나 0·이상한 값으로 준다.
+# [기대] 기본은 켬, 0이면 끔, 이상한 값이면 시작하지 않는다.
 def test_TRACE_BOOTH_SIDE_EXCLUSIVE는_기본_1이고_0이면_끈다() -> None:
     from trace_booth.__main__ import _side_exclusive
 
@@ -235,6 +265,8 @@ def test_TRACE_BOOTH_SIDE_EXCLUSIVE는_기본_1이고_0이면_끈다() -> None:
         _side_exclusive("2")
 
 
+# [상황] 위 카메라가 제때 닫히지 않는 상태에서 옆면으로 바꾸려 한다.
+# [기대] 옆면을 열지 않고 위 묶음을 유지하며(위 카메라는 그대로 찍힘), 옆면 촬영은 "닫히지 않아" 오류로 실패한다.
 def test_앞_묶음이_제때_닫히지_않으면_새_묶음을_열지_않고_찍기를_실패로_돌려준다(
     fake_cv2: type[_FakeCapture], started: list[SharedCamera]
 ) -> None:

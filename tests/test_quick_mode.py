@@ -1,3 +1,7 @@
+# 이 파일이 확인하는 것: 빠른 검사(QUICK) 모드(11/3 MVP) 수용 시나리오. 대회 시연의 핵심 흐름이다.
+# 흐름: 태블릿에서 기다리는 기기 고르기(또는 6자리 부스 코드) → 바닥(BOT) 찍기 → 뒤집어 윗면(TOP) 찍기(12장)
+# → Jetson에서 흠집 탐지 → "문제 있음/없음" 판정. 수령·반납은 출고 때와 같은 검사 방식만 허용한다(11/13).
+
 """빠른 검사 모드(11/3 MVP) 수용 시나리오: 기기 목록 → BOT → 뒤집어 TOP → 탐지 → 문제 있음/없음."""
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ NOW = "2026-11-05T10:00:00+09:00"
 INFO = ModelInfo("yolo11s-seg-v001-trt-fp16", DEFECT_CLASSES)
 
 
+# 테스트 도구: 검은 가짜 사진을 만들고, 이름이 맞는 사진에만 흰 네모(흠집 하나)를 넣는다.
 def _loader(defect_on: str | None):
     """1920×1080 검은 사진(흑백). defect_on(파일명 일부)이 맞는 사진에만 흰 사각형(흠집 하나)."""
     def load(path: str):
@@ -39,17 +44,21 @@ def _loader(defect_on: str | None):
     return load
 
 
+# 테스트 도구: 가짜 탐지기와 가짜 사진으로 빠른 검사 판정기를 만든다.
 def _inspector(service, defect_on: str | None = "BOT_L1_CAM1", source=None) -> QuickInspector:
     return QuickInspector(service.store, source or (lambda: (SquareDetector(), INFO)), _loader(defect_on),
                           lambda: NOW, background=False)
 
 
+# 테스트 도구: 빠른 검사 12장을 끝까지 찍고 완료한다.
 def _shoot_quick(service):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT)
     run_to_end(service, s.id)
     return service.complete(s.id)
 
 
+# [상황] 빠른 검사 목록을 본다.
+# [기대] 기기 ID 판 없이, 바닥 3단계 → 뒤집기 안내 → 윗면 3단계, 두 카메라로 12장이다.
 def test_빠른_검사_목록은_ID_카드_없이_BOT을_먼저_찍고_뒤집어_TOP을_찍는_12장이다():
     shots = [s for s in QUICK_SHOTLIST if s.kind is StepKind.SHOT]
     assert all(s.kind is not StepKind.SLATE for s in QUICK_SHOTLIST)
@@ -59,6 +68,8 @@ def test_빠른_검사_목록은_ID_카드_없이_BOT을_먼저_찍고_뒤집어
     assert QUICK_SHOTLIST[flip - 1].face.value == "BOT" and QUICK_SHOTLIST[flip + 1].face.value == "TOP"
 
 
+# [상황] 목록에서 고른 기기(21자 공개 ID)로 빠른 검사를 찍는다.
+# [기대] 12장으로 완료되고, 파일 이름에서 기기 ID·면을 다시 읽을 수 있다.
 def test_빠른_검사는_목록에서_고른_기기_publicId로_찍고_파일명을_다시_읽을_수_있다(service):
     done = _shoot_quick(service)
     shots = service.store.shots(done.id)
@@ -67,11 +78,15 @@ def test_빠른_검사는_목록에서_고른_기기_publicId로_찍고_파일�
     assert parsed is not None and parsed.device_id == DEVICE and parsed.face.value == "BOT"
 
 
+# [상황] 렌탈·시점 ID 없이 빠른 검사를 시작한다.
+# [기대] 시작하지 않는다.
 def test_빠른_검사는_렌탈_시점_ID가_없으면_시작하지_않는다(service):
     with pytest.raises(InvalidInput):
         service.start(DEVICE, "QUICK")
 
 
+# [상황] 바닥 L1 CAM1 사진에만 흠집이 있다.
+# [기대] "문제 있음"(DEFECT), 흠집 1개(바닥 1·윗면 0). 흠집 위치는 원본 사진 좌표와 사진 크기(1920×1080)로 돌려준다.
 def test_흠집이_하나라도_있으면_문제_있음이고_폴리곤은_원본_px와_사진_크기로_돌려준다(service):
     done = _shoot_quick(service)
     _inspector(service).start(done.id)
@@ -87,6 +102,8 @@ def test_흠집이_하나라도_있으면_문제_있음이고_폴리곤은_원�
     assert min(xs) == pytest.approx(200, abs=1) and max(xs) == pytest.approx(259, abs=1)
 
 
+# [상황] 흠집이 하나도 없다.
+# [기대] "문제 없음"(CLEAN).
 def test_흠집이_없으면_문제_없음(service):
     done = _shoot_quick(service)
     _inspector(service, defect_on=None).start(done.id)
@@ -94,6 +111,7 @@ def test_흠집이_없으면_문제_없음(service):
     assert r["verdict"] == "CLEAN" and r["count"] == 0
 
 
+# 테스트 도구: 같은 자리를 오염(stain)으로 잡는 가짜 탐지기.
 class StainDetector(SquareDetector):
     """SquareDetector와 같은 곳을 잡되 클래스를 오염(stain)으로 낸다."""
 
@@ -101,6 +119,8 @@ class StainDetector(SquareDetector):
         return [RawDetection(DEFECT_CLASSES.index("stain"), d.confidence, d.polygon) for d in super().infer(tile)]
 
 
+# [상황] 오염만 잡혔다.
+# [기대] 위치는 남기되 판정은 "문제 없음"(오염은 닦으면 되므로 흠집으로 보지 않음).
 def test_오염만_잡히면_폴리곤은_남기고_문제_없음으로_저장한다(service):
     done = _shoot_quick(service)
     _inspector(service, source=lambda: (StainDetector(), INFO)).start(done.id)
@@ -110,6 +130,8 @@ def test_오염만_잡히면_폴리곤은_남기고_문제_없음으로_저장�
     assert len(hit) == 1 and hit[0]["class"] == "stain"
 
 
+# [상황] 진짜 엔진 없이 시험 모드로 판정한다.
+# [기대] "문제 없음"에 시험(testOnly) 표시가 붙는다.
 def test_엔진_없이_시험하면_문제_없음에_시험_표시가_붙는다(service):
     done = _shoot_quick(service)
     _inspector(service, source=no_engine_source).start(done.id)
@@ -117,6 +139,8 @@ def test_엔진_없이_시험하면_문제_없음에_시험_표시가_붙는다(
     assert r["verdict"] == "CLEAN" and r["testOnly"]
 
 
+# [상황] 엔진 파일이 없어 탐지가 실패했다가, 엔진이 생긴다.
+# [기대] 실패와 사유가 남고, 사진은 그대로라 다시 돌리면 정상 판정된다.
 def test_엔진을_못_부르면_실패를_남기고_사진은_그대로_다시_돌릴_수_있다(service):
     done = _shoot_quick(service)
     tries = []
@@ -136,6 +160,8 @@ def test_엔진을_못_부르면_실패를_남기고_사진은_그대로_다시_
     assert result_json(service.store, done.id, shooting=False)["verdict"] == "DEFECT"
 
 
+# [상황] 탐지가 끝난다.
+# [기대] 다음 할 일(서버로 올리기)을 그 세션으로 부른다.
 def test_탐지가_끝나면_다음_할_일을_부른다(service):
     done = _shoot_quick(service)
     called = []
@@ -147,6 +173,7 @@ def test_탐지가_끝나면_다음_할_일을_부른다(service):
 
 # --- 기기 목록(rental-server GET /api/v1/rentals) ---
 
+# 테스트 도구: rental-server 렌탈 목록의 한 줄을 만든다.
 def _rental(rid: str, cp_status: str | None, status: str = "OPEN") -> dict:
     cp = None if cp_status is None else {"checkpointId": CHECKPOINT, "type": "OUT", "status": cp_status,
                                           "occurredAt": None}
@@ -154,6 +181,7 @@ def _rental(rid: str, cp_status: str | None, status: str = "OPEN") -> dict:
             "status": status, "createdAt": NOW, "currentCheckpoint": cp}
 
 
+# 테스트 도구: 렌탈 목록을 두 쪽으로 나눠 주는 가짜 rental-server.
 class FakeRentals(FakeCapture):
     """부스 토큰은 FakeCapture가, 렌탈 목록은 두 쪽으로 나눠 준다."""
 
@@ -174,6 +202,8 @@ class FakeRentals(FakeCapture):
         return super().__call__(method, url, headers, body)
 
 
+# [상황] 진행 중 렌탈 목록이 두 쪽에 걸쳐 있고, 시점이 열린 것·닫힌 것이 섞여 있다.
+# [기대] 열린 시점이 있는 렌탈만 다음 쪽까지 모아 기기·시리얼·기종·시점 정보로 보여 준다.
 def test_기다리는_기기는_진행_중_렌탈의_열린_시점만_다음_쪽까지_모은다():
     server = FakeRentals([
         [_rental("R" * 21, "OPEN"), _rental("S" * 21, "CAPTURED"), _rental("T" * 21, None)],
@@ -188,6 +218,7 @@ def test_기다리는_기기는_진행_중_렌탈의_열린_시점만_다음_쪽
     assert "status=OPEN" in server.queries[0] and "cursor=p2" in server.queries[1]
 
 
+# 테스트 도구: 부스 코드 305718만 맞는 가짜 rental-server.
 class FakeBoothCode(FakeRentals):
     """rental-server 부스 코드 조회: 305718만 맞음"""
 
@@ -206,6 +237,8 @@ class FakeBoothCode(FakeRentals):
         return super().__call__(method, url, headers, body)
 
 
+# [상황] 관리자가 발급한 6자리 부스 코드를 넣는다. 틀린 코드, 5자리 코드도 넣는다.
+# [기대] 맞으면 기기·렌탈·시점을 받고, 틀리면 400 BOOTH_CODE_INVALID, 5자리는 서버에 보내기 전에 거른다.
 def test_부스_코드를_rental_server에_보내_기기_렌탈_시점을_받는다():
     server = FakeBoothCode()
     client = RentalClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
@@ -233,6 +266,8 @@ def quick_base(service):
     server.server_close()
 
 
+# [상황] 부스 화면의 코드 입력 API를 여러 상황으로 부른다.
+# [기대] 서버 설정이 없으면 503, 형식이 틀리면 400, 만료된 코드는 410과 "다시 발급하세요" 안내.
 def test_부스_코드_API는_서버_설정이_없으면_503_형식이_틀리면_400_만료는_410으로_알린다(service):
     def redeem(code: str) -> WaitingDevice:
         raise ApiError("부스 코드", 410, "BOOTH_CODE_EXPIRED")
@@ -252,6 +287,8 @@ def test_부스_코드_API는_서버_설정이_없으면_503_형식이_틀리면
             assert "다시 발급하세요" in json.loads(body)["detail"]
 
 
+# [상황] 태블릿 화면에서 기기를 골라 빠른 검사를 찍고 완료한다.
+# [기대] 기종이 보이고, 찍는 중엔 SHOOTING, 완료 뒤 결과 API가 "문제 있음" 판정을 준다. 미리보기도 열린다.
 def test_태블릿에서_기기를_골라_찍고_완료하면_결과_API가_판정을_준다(quick_base):
     status, _, body = call(quick_base, "GET", "/api/rentals/waiting")
     item = json.loads(body)["items"][0]
@@ -277,6 +314,8 @@ def test_태블릿에서_기기를_골라_찍고_완료하면_결과_API가_판�
     assert call(quick_base, "GET", f"/api/shots/{shot}/thumbnail")[0] == 200
 
 
+# [상황] 서버 설정이 없거나, 탐지 엔진 설정이 없다.
+# [기대] 기기 목록은 503, 엔진이 없으면 빠른 검사 시작을 400(TRACE_BOOTH_ENGINE 필요)으로 막는다.
 def test_서버_설정이_없으면_기기_목록은_503이고_엔진이_없으면_빠른_검사를_막는다(service):
     server = make_server(App(service), "127.0.0.1", 0)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -291,11 +330,15 @@ def test_서버_설정이_없으면_기기_목록은_503이고_엔진이_없으�
         server.server_close()
 
 
+# [상황] 학습 데이터 촬영 세션에서 판정 결과를 묻는다.
+# [기대] 409(판정이 없는 세션).
 def test_학습_모드_세션에는_결과_API가_409(quick_base):
     call(quick_base, "POST", "/api/sessions", {"deviceId": "MB01"})
     assert call(quick_base, "GET", "/api/sessions/current/result")[0] == 409
 
 
+# [상황] 학습 데이터 모드에 21자 공개 ID 같은 값을 기기 ID로 준다.
+# [기대] 거절한다(학습용은 MB01 같은 ID 카드 코드만).
 def test_학습_데이터_모드는_ID_카드_코드만_받는다(service):
     with pytest.raises(InvalidInput):
         service.start(DEVICE, "TRAINING")
@@ -303,6 +346,7 @@ def test_학습_데이터_모드는_ID_카드_코드만_받는다(service):
 
 # --- 검사 방식 고정(11/13): 수령·반납은 출고와 같은 방식만 ---
 
+# 테스트 도구: 렌탈의 출고 검사 방식을 정해 둔 값으로 답하는 가짜 capture-server.
 class FakeProfile(FakeRentals):
     """capture-server 렌탈 검사 방식 조회: 출고를 profile로 했다고 답한다"""
 
@@ -319,6 +363,8 @@ class FakeProfile(FakeRentals):
         return super().__call__(method, url, headers, body)
 
 
+# [상황] 렌탈의 검사 방식을 capture-server에 묻는다.
+# [기대] 지금 시점을 빼고 앞 시점의 방식(FULL)을 받는다. 정해진 게 없으면 없음.
 def test_렌탈_검사_방식은_capture_server에_지금_시점을_빼고_묻는다():
     server = FakeProfile("FULL")
     client = RentalClient(BASE, BoothAuth(BASE, "booth-1", SECRET, http=server), http=server)
@@ -329,6 +375,7 @@ def test_렌탈_검사_방식은_capture_server에_지금_시점을_빼고_묻�
     assert client.required_profile(RENTAL, CHECKPOINT) is None
 
 
+# 테스트 도구: 정해진 검사 방식을 답하는 부스 화면 서버를 띄운다.
 def _profile_app(service, required: str | None, kind: str = "RCV", fail: bool = False):
     waiting = [WaitingDevice(RENTAL, DEVICE, "C02EXAMPLE01", "MBA13-M2", CHECKPOINT, kind)]
 
@@ -343,6 +390,8 @@ def _profile_app(service, required: str | None, kind: str = "RCV", fail: bool = 
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
+# [상황] 출고를 전체 검사로 한 기기를 수령 때 빠른 검사로 시작하려 한다.
+# [기대] 기기 목록에 "전체 검사"가 실리고, 다른 방식은 400 "전체 검사로만"으로 막는다(같은 방식이어야 비교 가능).
 def test_수령_기기_목록에는_출고_때_방식이_실리고_다른_방식으로는_시작할_수_없다(service):
     server, base = _profile_app(service, "FULL")
     try:
@@ -356,6 +405,8 @@ def test_수령_기기_목록에는_출고_때_방식이_실리고_다른_방식
         server.server_close()
 
 
+# [상황] 출고를 빠른 검사로 한 기기의 수령을 시작한다.
+# [기대] 빠른 검사로 시작된다.
 def test_출고를_빠른_검사로_했으면_수령도_빠른_검사로_시작된다(service):
     server, base = _profile_app(service, "QUICK")
     try:
@@ -367,6 +418,8 @@ def test_출고를_빠른_검사로_했으면_수령도_빠른_검사로_시작�
         server.server_close()
 
 
+# [상황] 출고 기기이거나, 서버가 방식 조회를 지원하지 않는 옛 버전이다.
+# [기대] 정해진 방식 없이 보여 주고 시작을 막지 않는다.
 def test_출고_기기는_방식을_묻지_않고_서버가_옛_버전이면_막지_않는다(service):
     server, base = _profile_app(service, "FULL", kind="OUT")
     try:

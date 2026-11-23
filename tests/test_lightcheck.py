@@ -1,3 +1,6 @@
+# 이 파일이 확인하는 것: 새 부스 밝기·빛샘 확인 도구(11/10). 조명마다 사진 가운데 밝기와 하얗게 날린 픽셀 비율을 재서
+# 11월 5일 기준 범위와 비교하고, 문을 닫았을 때 빛이 새는지(빛샘)도 본다. 가짜 사진·가짜 카메라로 확인한다.
+
 """새 부스 밝기·빛샘 확인(11/10). 카메라 없이 가짜 사진과 가짜 촬영으로 확인한다."""
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from trace_booth.codes import Camera, Light
 from trace_booth.lightcheck import LightStats, judge_light, measure_light, summarize
 
 
+# 테스트 도구: 가운데만 정한 밝기이고, 일부 픽셀을 하얗게 날린 1920×1080 가짜 사진.
 def _photo(center: int, background: int = 10, clipped: int = 0) -> np.ndarray:
     """1920×1080 BGR. 가운데 40% 칸만 center 밝기, 왼쪽 위 clipped 픽셀은 255."""
     img = np.full((1080, 1920, 3), background, np.uint8)
@@ -21,12 +25,16 @@ def _photo(center: int, background: int = 10, clipped: int = 0) -> np.ndarray:
     return img
 
 
+# [상황] 가운데 밝기 40, 날린 픽셀 207개인 사진을 잰다.
+# [기대] 가운데 밝기 40, 날린 비율 약 0.00998%가 나온다.
 def test_가운데_칸의_밝기와_날린_픽셀_비율을_잰다() -> None:
     stats = measure_light(_photo(40, clipped=207))  # 207 / 2,073,600 ≈ 0.00998%
     assert stats.center == pytest.approx(40, abs=0.01)
     assert stats.clipped_pct == pytest.approx(0.00998, abs=1e-4)
 
 
+# [상황] L1 밝기가 기준 안, 너무 어두움, 너무 밝음, 날림 많음인 경우.
+# [기대] 기준 안이면 통과, 아니면 "램프 쪽으로"·"멀리"·"날림"처럼 어떻게 고칠지 알려 준다.
 def test_11월5일_범위_안이면_통과하고_밖이면_어느_쪽으로_옮길지_알려_준다() -> None:
     assert judge_light(Light.L1, LightStats(38, 0.0))[0]
     ok, text = judge_light(Light.L1, LightStats(30, 0.0))
@@ -37,27 +45,37 @@ def test_11월5일_범위_안이면_통과하고_밖이면_어느_쪽으로_옮�
     assert not ok and "날림" in text
 
 
+# [상황] 기준 범위가 없는 조명.
+# [기대] "기준 없음"과 숫자만 보여 주고 통과로 본다.
 def test_기준이_없는_조명은_숫자만_보여_주고_통과() -> None:
     ok, text = judge_light(Light.L4, LightStats(80, 0.0))
     assert ok and "기준 없음" in text
 
 
+# [상황] 기본 기준으론 어두운 값(31)을, 따로 준 범위(29~35)로 판정한다.
+# [기대] 따로 준 범위로는 통과한다.
 def test_11월5일_사진으로_잰_기준을_주면_그_범위로_판정한다() -> None:
     assert not judge_light(Light.L1, LightStats(31, 0.0))[0]
     assert judge_light(Light.L1, LightStats(31, 0.0), center_range=(29, 35))[0]
 
 
+# [상황] 모든 조명을 끄고 문을 닫은 사진(빛샘 확인).
+# [기대] 가운데 밝기 5 이하면 통과, 넘으면 "틈"으로 빛이 샌다고 알린다.
 def test_빛샘은_가운데_5_이하면_통과() -> None:
     assert judge_light(None, LightStats(3.5, 0.0), leak=True)[0]
     ok, text = judge_light(None, LightStats(9.0, 0.0), leak=True)
     assert not ok and "틈" in text
 
 
+# [상황] 같은 면·조명·카메라 사진 여러 장의 측정값.
+# [기대] 묶음별로 장수와 중앙값을 낸다.
 def test_묶음별_중앙값() -> None:
     rows = [("TOP L1 CAM1", LightStats(30, 0.0)), ("TOP L1 CAM1", LightStats(40, 0.02)), ("TOP L1 CAM1", LightStats(36, 0.0))]
     assert summarize(rows) == {"TOP L1 CAM1": (3, 36, 0.0)}
 
 
+# [상황] 저장된 사진 파일들을 이름에 적힌 조명 기준으로 판정한다.
+# [기대] 묶음별 결과를 찍고, 하나라도 기준 밖(예: L3 어두움, 기준 98~105)이면 1로 끝난다.
 def test_사진_파일은_이름의_조명으로_판정하고_하나라도_밖이면_1(tmp_path, capsys) -> None:
     images = {"MB95_TOP_L1_CAM1_01.jpg": _photo(38), "MB95_TOP_L3_CAM2_01.jpg": _photo(60)}
     rc = light_check(None, False, list(images), ["CAM1"], load=images.__getitem__)
@@ -67,6 +85,8 @@ def test_사진_파일은_이름의_조명으로_판정하고_하나라도_밖�
     assert "어두움(기준 98~105)" in out
 
 
+# [상황] 빛샘 확인을 위쪽 카메라 2대로 직접 찍어 판정한다.
+# [기대] CAM1·CAM2를 같은 설정으로 찍어 사진을 저장하고, 어두우니 "통과".
 def test_위_카메라로_찍어_저장하고_판정한다(tmp_path, monkeypatch, capsys) -> None:
     import cv2
 
@@ -87,16 +107,22 @@ def test_위_카메라로_찍어_저장하고_판정한다(tmp_path, monkeypatch
     assert "통과" in capsys.readouterr().out
 
 
+# [상황] 조명도 빛샘도 고르지 않고 찍기를 실행한다.
+# [기대] 시작하지 않는다.
 def test_찍을_때는_조명이나_빛샘을_골라야_한다(monkeypatch) -> None:
     with pytest.raises(SystemExit):
         main(["light-check"])
 
 
+# [상황] 이름 규칙에 안 맞아 조명을 알 수 없는 사진 파일.
+# [기대] 통과로 치지 않고 멈춘다.
 def test_이름에서_조명을_못_읽은_사진은_통과로_치지_않는다() -> None:
     with pytest.raises(SystemExit):
         light_check(None, False, ["photo.jpg"], ["CAM1"], load=lambda _p: _photo(38))
 
 
+# [상황] 카메라 설정 파일에 고른 조명이 없다.
+# [기대] "프리셋" 안내와 함께 멈춘다.
 def test_프리셋에_그_조명이_없으면_안내하고_멈춘다(tmp_path, monkeypatch) -> None:
     presets = tmp_path / "presets.json"
     presets.write_text(json.dumps({"L1": {"exposure_time_absolute": 1250}}))
@@ -105,6 +131,8 @@ def test_프리셋에_그_조명이_없으면_안내하고_멈춘다(tmp_path, m
         light_check("L4", False, [], ["CAM1"], capture=lambda _c, _s: b"")
 
 
+# [상황] 새 부스용 촬영 목록 안내를 본다.
+# [기대] 면을 찍는 단계마다 "앞문 닫기" 안내가 있다(바깥 빛 차단).
 def test_새_부스_안내는_면을_찍을_때마다_앞문_닫기를_말한다() -> None:
     from trace_booth.shotlist import DOOR, QUICK_SHOTLIST, SHOTLISTS, StepKind, full_inspection_shotlist
 
@@ -114,6 +142,8 @@ def test_새_부스_안내는_면을_찍을_때마다_앞문_닫기를_말한다
         assert shots and all(DOOR in s.instruction for s in shots)
 
 
+# [상황] CAM1만 골라 확인한다.
+# [기대] CAM1 장치만 연다(다른 카메라 설정이 없어도 동작).
 def test_고른_카메라의_장치_이름만_읽는다(tmp_path, monkeypatch) -> None:
     presets = tmp_path / "presets.json"
     presets.write_text(json.dumps({"L1": {"exposure_time_absolute": 1250}}))

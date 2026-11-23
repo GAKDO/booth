@@ -1,3 +1,7 @@
+# 이 파일이 확인하는 것: 전체 검사(FULL, 11/8) 수용 시나리오.
+# 검사 범위 고르기 → 빠른 검사와 같은 바닥·윗면 12장 + 펼친 키보드 + 옆면 = 필수 28장 → 사진 전부 탐지 → FULL 세트로 올리기.
+# 켜진 흰 화면(SCR1)만 선택이다. 조명 바꾸는 손이 덜 가도록 순서를 짜고, 처음 쓰는 사람도 알아듣게 안내한다.
+
 """전체 검사(FULL, 11/8) 수용 시나리오: 검사 범위 고르기 → 위·아래·펼친 KB·옆면 28장 → 전체 사진 탐지 → FULL 세트로 올리기.
 
 기본은 지금처럼 빠른 검사(QUICK)여야 하고, 가짜 카메라·가짜 탐지기·가짜 capture-server로 돈다.
@@ -39,16 +43,20 @@ from trace_booth.web import App, make_server
 SCR1_REASON = "화면 흰색을 띄울 수 없음(잠김)"
 
 
+# 테스트 도구: 전체 검사로 끝까지 찍는다(기본은 SCR1을 사유와 함께 건너뜀).
 def _shoot_full(service, skip_scr1: str | None = SCR1_REASON):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
     run_to_end(service, s.id, skip_scr1=skip_scr1)
     return service.complete(s.id)
 
 
+# 테스트 도구: 세션에서 올릴 사진 목록을 고른다.
 def _photos(service, session_id):
     return [s for s in service.store.shots(session_id) if s.kind == "SHOT"]
 
 
+# [상황] 전체 검사 목록을 본다.
+# [기대] 기기 ID 판 없이 필수 28장이고, 선택 단계는 켜진 화면(SCR1)뿐이다.
 def test_전체_검사_목록은_ID_카드_없이_필수_28장이고_SCR1만_선택이다():
     steps = FULL_INSPECTION_SHOTLIST
     shots = [s for s in steps if s.kind is StepKind.SHOT]
@@ -58,6 +66,9 @@ def test_전체_검사_목록은_ID_카드_없이_필수_28장이고_SCR1만_선
     assert {s.face for s in shots if not s.optional} == set(FACE_REQUIRED_BOOTH)
 
 
+# [상황] 전체 검사 단계 순서를 본다.
+# [기대] 앞 6단계는 빠른 검사와 같고, 그 뒤 키보드(L1·L2·L4, 두 카메라, "100° 열어" 안내 후 "그대로 두세요"),
+#        그 뒤 옆면(CAM1, L1·L2, "닫은 채")을 찍는다.
 def test_전체_검사는_빠른_검사와_같은_BOT_TOP_12장_뒤에_펼친_KB와_옆면을_찍는다():
     shots = [s for s in FULL_INSPECTION_SHOTLIST if s.kind is StepKind.SHOT]
     quick = [s for s in QUICK_SHOTLIST if s.kind is StepKind.SHOT]
@@ -76,6 +87,8 @@ def test_전체_검사는_빠른_검사와_같은_BOT_TOP_12장_뒤에_펼친_KB
     assert faces.index(Face.KB) > faces.index(Face.TOP) and min(faces.index(f) for f in SIDE_FACES) > faces.index(Face.KB)
 
 
+# [상황] 키보드 앞·옆면 앞 안내 단계를 본다(옆면 카메라 있을 때·없을 때).
+# [기대] 키보드 전에 막대 조명 2를 앞으로, 옆면 전에 뒤로 되돌리라고 안내한다. 옆면 카메라가 있으면 CAM1을 내리라고 하지 않는다.
 def test_전체_검사는_펼치기_전에_바_2를_앞으로_옮기고_옆면_전에_뒤쪽으로_되돌리라고_안내한다():
     for side_camera in (False, True):
         steps = full_inspection_shotlist(side_camera)
@@ -90,6 +103,8 @@ def test_전체_검사는_펼치기_전에_바_2를_앞으로_옮기고_옆면_�
         assert cam1_down is (not side_camera)  # 옆면 카메라가 있으면 CAM1을 내리지 않는다
 
 
+# [상황] 검사 범위를 고르지 않고 시작한다.
+# [기대] 빠른 검사 12장으로 찍는다.
 def test_검사_범위를_고르지_않으면_지금처럼_빠른_검사_12장이다(service):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT)
     assert s.shotlist is None
@@ -98,6 +113,8 @@ def test_검사_범위를_고르지_않으면_지금처럼_빠른_검사_12장�
     assert len(_photos(service, done.id)) == 12
 
 
+# [상황] 전체 검사를 고르고 SCR1을 사유와 함께 건너뛴다.
+# [기대] 28장으로 완료되고 사유가 남는다.
 def test_전체_검사를_고르면_28장을_찍고_SCR1은_사유를_적어_건너뛴다(service):
     done = _shoot_full(service)
     photos = _photos(service, done.id)
@@ -106,11 +123,15 @@ def test_전체_검사를_고르면_28장을_찍고_SCR1은_사유를_적어_건
     assert done.scr1_skip_reason == SCR1_REASON
 
 
+# [상황] SCR1까지 찍는다.
+# [기대] 29장이고 건너뛴 사유는 없다.
 def test_전체_검사는_SCR1을_찍어도_되고_그러면_29장이다(service):
     done = _shoot_full(service, skip_scr1=None)
     assert len(_photos(service, done.id)) == 29 and done.scr1_skip_reason is None
 
 
+# [상황] 바닥·윗면까지만 찍고 완료한다.
+# [기대] 완료하지 않고 빠진 키보드·옆면 사진을 알린다(바닥·윗면은 빠진 목록에 없음).
 def test_전체_검사에서_필수_면이_빠지면_완료하지_않고_빠진_사진을_알린다(service):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="FULL")
     for _ in range(7):  # BOT 3단계 → 뒤집기 안내 → TOP 3단계까지만
@@ -124,6 +145,8 @@ def test_전체_검사에서_필수_면이_빠지면_완료하지_않고_빠진_
     assert not any(m.startswith(("BOT_", "TOP_")) for m in e.value.missing)
 
 
+# [상황] 부스 서버 기본 검사 범위를 FULL로 켠다.
+# [기대] 고르지 않으면 전체 검사, 화면에서 빠른 검사를 고르면 빠른 검사로 새 세션.
 def test_서버_기본_범위를_FULL로_켜면_고르지_않은_검사도_전체_검사다(tmp_path, cams, presets):
     service = CaptureService(Store(tmp_path / "b.db"), cams, presets, tmp_path / "d", min_free_bytes=0,
                              default_profile="FULL")
@@ -134,6 +157,8 @@ def test_서버_기본_범위를_FULL로_켜면_고르지_않은_검사도_전�
     assert q.id != s.id and service.view(q.id).remaining_steps == len(QUICK_SHOTLIST)
 
 
+# [상황] 없는 검사 범위를 주거나, 키보드용 L4 카메라 설정이 없는 채 전체 검사를 시작한다.
+# [기대] 시작하지 않는다. 빠른 검사는 L4가 없어도 된다.
 def test_모르는_검사_범위나_빠진_조명_프리셋이면_시작하지_않는다(tmp_path, cams, service):
     with pytest.raises(InvalidInput):
         service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT, profile="HALF")
@@ -144,6 +169,8 @@ def test_모르는_검사_범위나_빠진_조명_프리셋이면_시작하지_�
     svc.start(DEVICE, "QUICK", RENTAL, CHECKPOINT)  # 빠른 검사는 L4가 없어도 된다
 
 
+# [상황] 옆면 카메라가 있는 부스에서 전체 검사를 찍는다.
+# [기대] 옆면 11장만 옆면 카메라로, 바닥·윗면·키보드는 위 카메라로 찍고, 옆면 사진 이름은 CAM1이다.
 def test_옆면_카메라가_있으면_전체_검사의_옆면만_그_카메라로_CAM1_이름으로_찍는다(tmp_path, cams, presets):
     side = FakeCamera(Camera.CAM1)
     service = CaptureService(Store(tmp_path / "b.db"), cams, presets, tmp_path / "d", min_free_bytes=0,
@@ -156,6 +183,8 @@ def test_옆면_카메라가_있으면_전체_검사의_옆면만_그_카메라�
     assert all(p.camera == "CAM1" for p in photos if p.face in {f.value for f in SIDE_FACES})
 
 
+# [상황] 판정 조명을 L3만 고른 채 전체 검사를 판정한다.
+# [기대] 전체 검사는 28장 모두 탐지한다(키보드 흠집도 잡힘). 조명 고르기는 빠른 검사에만 적용.
 def test_전체_검사는_판정_조명을_골라도_세트_사진_전부를_탐지한다(service):
     done = _shoot_full(service)
     inspector = _inspector(service, defect_on="_KB_L4_CAM2_")
@@ -167,6 +196,8 @@ def test_전체_검사는_판정_조명을_골라도_세트_사진_전부를_탐
     assert len(r["photos"]) == 28 and r["faces"]["KB"] == 1
 
 
+# [상황] 판정 조명을 L3만 고른 채 빠른 검사를 판정한다.
+# [기대] L3 사진 4장만 판정한다.
 def test_빠른_검사는_판정_조명_옵션을_그대로_따른다(service):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT)
     run_to_end(service, s.id)
@@ -191,6 +222,8 @@ def upload(service, server):
                                     sleep=lambda _: None)
 
 
+# [상황] 전체 검사 결과를 서버로 올린다.
+# [기대] FULL 세트로 28장, SCR1 건너뛴 사유, 분석한 사진 28장 목록과 탐지(예: 왼쪽 옆면 L2)를 보낸다.
 def test_전체_검사는_FULL_세트로_28장을_올리고_SCR1_사유와_전체_탐지를_보낸다(service, server, upload):
     done = _shoot_full(service)
     _inspector(service, defect_on="_SL_L2_CAM1_").start(done.id)
@@ -207,6 +240,8 @@ def test_전체_검사는_FULL_세트로_28장을_올리고_SCR1_사유와_전�
     assert service.store.quick_sessions_to_upload() == []
 
 
+# [상황] 빠른 검사 결과를 올린다.
+# [기대] 그대로 QUICK 세트 12장으로 올린다.
 def test_빠른_검사는_여전히_QUICK_세트로_올린다(service, server, upload):
     s = service.start(DEVICE, "QUICK", RENTAL, CHECKPOINT)
     run_to_end(service, s.id)
@@ -226,6 +261,8 @@ def web(service):
     server.server_close()
 
 
+# [상황] 부스 화면이 검사 범위 정보를 받고 전체 검사로 시작한다. 없는 범위(HALF)도 보낸다.
+# [기대] 빠른(12장)·전체(28장)와 기본값(빠른)을 받고, 고른 범위로 바닥부터 시작한다. 없는 범위는 400.
 def test_화면은_검사_범위_두_가지와_기본_빠른_검사를_받고_고른_범위로_시작한다(web):
     status, _, body = call(web, "GET", "/api/inspection-profiles")
     data = json.loads(body)
@@ -239,6 +276,8 @@ def test_화면은_검사_범위_두_가지와_기본_빠른_검사를_받고_�
     assert call(web, "POST", "/api/sessions", {**start, "profile": "HALF"})[0] == 400
 
 
+# [상황] 전체 검사의 안내 단계에 도착한다.
+# [기대] 다음에 찍을 면을 알려 줘 화면이 진행 표시를 맞출 수 있다(예: "열어" 키보드 안내).
 def test_전체_검사의_안내_단계는_다음에_찍을_면을_알려_화면이_진행_칸을_고른다(web):
     start = {"mode": "QUICK", "profile": "FULL", "deviceId": DEVICE, "rentalId": RENTAL, "checkpointId": CHECKPOINT}
     state = json.loads(call(web, "POST", "/api/sessions", start)[2])
@@ -249,6 +288,8 @@ def test_전체_검사의_안내_단계는_다음에_찍을_면을_알려_화면
     assert "열어" in state["step"]["instruction"]
 
 
+# [상황] 기본 검사 범위 설정을 비우거나 full·Quick·이상한 값으로 준다.
+# [기대] 비우면 빠른 검사, 대소문자·공백은 정리하고, 이상한 값이면 시작하지 않는다.
 def test_TRACE_BOOTH_INSPECTION은_quick_full만_받고_비우면_빠른_검사다():
     assert _inspection_profile("") == "QUICK"
     assert _inspection_profile("full") == "FULL"
@@ -257,12 +298,15 @@ def test_TRACE_BOOTH_INSPECTION은_quick_full만_받고_비우면_빠른_검사�
         _inspection_profile("half")
 
 
+# 테스트 도구: 앞 사진과 조명이 달라 손으로 스위치를 바꿔야 하는 횟수를 센다.
 def _hand_switches(steps) -> int:
     """조명을 손으로 바꾸는 횟수(앞 사진과 조명이 다른 사진 단계 수)."""
     lights = [s.light for s in steps if s.kind is StepKind.SHOT]
     return sum(1 for a, b in itertools.pairwise(lights) if a is not b)
 
 
+# [상황] 전체 검사 옆면 순서를 본다.
+# [기대] 면마다 L1→L2, L2→L1을 번갈아 조명 바꾸기가 13번이다(예전 순서는 17번). 필수는 여전히 28장.
 def test_전체_검사_옆면은_면마다_L1_L2_순서를_뒤집어_조명을_덜_바꾼다():
     for side_camera in (False, True):
         steps = full_inspection_shotlist(side_camera)
@@ -277,6 +321,8 @@ def test_전체_검사_옆면은_면마다_L1_L2_순서를_뒤집어_조명을_�
         assert _hand_switches(steps) == 13  # 예전 순서(면마다 L1→L2)는 17번
 
 
+# [상황] 단계마다 앞 사진과 조명이 같은지 본다.
+# [기대] 같으면 "그대로(앞 사진과 같음)", 다르면 "켜세요/끄세요"로 안내한다.
 def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안내한다():
     steps = FULL_INSPECTION_SHOTLIST
     shots = [s for s in steps if s.kind is StepKind.SHOT]
@@ -289,12 +335,16 @@ def test_앞_사진과_조명이_같으면_스위치를_만지지_말라고_안�
     assert [("그대로(앞 사진과 같음)" in s.instruction) for s in quick] == [False, False, False, True, False, False]
 
 
+# [상황] "그대로" 안내 단계를 본다.
+# [기대] 어느 조명만 켜져 있는지 확인하라고 적는다.
 def test_같은_조명_안내도_어느_조명이_켜져_있어야_하는지_적는다():
     shots = [s for s in FULL_INSPECTION_SHOTLIST if s.kind is StepKind.SHOT]
     same = [s for s in shots if "그대로(앞 사진과 같음)" in s.instruction]
     assert same and all(f"{LIGHT_NAME[s.light]}만 켜져 있는지 확인" in s.instruction for s in same)
 
 
+# [상황] 다 찍은 뒤 서버를 다시 켜면서 옆면 단계의 조명 순서가 바뀌었다.
+# [기대] 조명이 달라진 단계는 찍은 것으로 치지 않고 빠진 사진으로 본다.
 def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진을_찍은_것으로_치지_않는다(service):
     from dataclasses import replace
 
@@ -310,6 +360,8 @@ def test_서버를_다시_켜_옆면_순서가_바뀌어도_다른_조명_사진
     assert sorted(service.missing(s.id)) == ["SB_L1_CAM1", "SB_L2_CAM1"]
 
 
+# [상황] 찍던 중 서버를 다시 켜서 지금 단계의 조명 순서가 바뀌었고, 다시 찍기를 누른다.
+# [기대] "처음부터" 안내로 막고 세션을 닫는다(ABANDONED). 같은 기기를 다시 고르면 새로 시작한다.
 def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고_그_단계를_안_찍은_것으로_본다(service):
     from dataclasses import replace
 
@@ -337,6 +389,8 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_다시_찍기를_막고
     assert again.id != s.id and again.current_step == 0  # 같은 기기를 다시 고르면 새로 시작한다
 
 
+# [상황] 순서가 바뀐 세션에서 완료를 누르거나 기기를 다시 고른다.
+# [기대] 닫히고 새로 시작한다. 같은 번호 단계의 조명이 그대로면 이어 간다.
 def test_순서가_바뀐_세션은_기기를_다시_고르거나_완료를_누르면_닫히고_새로_시작한다(service):
     from dataclasses import replace
 
@@ -363,6 +417,8 @@ def test_순서가_바뀐_세션은_기기를_다시_고르거나_완료를_누�
     assert u.id != t.id and service.store.get_session(t.id).status == "ABANDONED"
 
 
+# [상황] 순서가 바뀐 단계에서 촬영을 누른다.
+# [기대] "처음부터" 안내로 막고 세션을 닫는다(안내와 실제 조명이 어긋난 사진 방지).
 def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는다(service):
     from dataclasses import replace
 
@@ -388,6 +444,8 @@ def test_서버를_다시_켜_순서가_바뀐_단계는_이어_찍기를_막는
     assert service.store.get_session(s.id).status == "ABANDONED"
 
 
+# [상황] 바닥·윗면·키보드를 찍고 옆면 안내 단계로 넘어간다.
+# [기대] 그전엔 옆면 카메라를 열지 않다가, 안내 단계에서 미리 연다(노트북을 세우는 동안 준비).
 def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(
     tmp_path: Path, cams: dict[Camera, FakeCamera], presets: Presets
 ) -> None:
@@ -409,6 +467,8 @@ def test_옆면_안내_단계로_넘어가면_옆면_카메라를_미리_연다(
     assert asked.wait(2)  # 노트북을 옆면 카메라 앞에 세우는 동안 미리 연다
 
 
+# [상황] 모든 단계 안내 문구를 본다.
+# [기대] 첫 줄에 SF·L1 같은 약어가 없고 "놓으세요/두세요"처럼 행동으로 말하며, 둘째 줄은 "조명:"으로 시작한다.
 def test_검사_안내에는_SF_L1_CAM1_같은_약어가_없고_첫_줄은_노트북을_어떻게_놓는지_말한다():
     """11/12: 처음 쓰는 사람이 "어느 면을 어떻게 놓고 찍는지" 바로 알도록 행동 지시형으로 쓴다."""
     import re
@@ -424,6 +484,8 @@ def test_검사_안내에는_SF_L1_CAM1_같은_약어가_없고_첫_줄은_노�
                 assert s.instruction.split("\n")[1].startswith("조명:"), s.instruction
 
 
+# [상황] 바닥면 단계들의 안내를 본다.
+# [기대] 첫 단계만 "뒤로 넘겨"라고 하고, 조명만 바꾸는 다음 단계에선 다시 뒤집으라고 하지 않는다.
 def test_바닥면을_조명만_바꿔_이어_찍을_때는_다시_뒤집으라고_하지_않는다():
     for steps in (QUICK_SHOTLIST, FULL_INSPECTION_SHOTLIST):
         bot = [s for s in steps if s.kind is StepKind.SHOT and s.face is Face.BOT]
