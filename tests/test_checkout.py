@@ -136,6 +136,7 @@ def test_연결이_계속_끊기면_실패를_알리고_세트를_완료하지_�
 
 # [상황] 부스 로그인 토큰으로 여러 요청을 보내다 한 번 401(만료)을 받는다.
 # [기대] 토큰은 한 번 받아 재사용하고, 401이면 한 번만 새로 받아 이어 간다.
+#        ※ 응답 코드: 401 = 로그인 필요(토큰이 없거나 만료·위조됨)
 def test_부스_토큰은_한_번_받아_다시_쓰고_401이면_한_번만_새로_받는다(shots, client, server):
     _submit(shots, client, server)
     assert server.token_count == 1
@@ -147,6 +148,7 @@ def test_부스_토큰은_한_번_받아_다시_쓰고_401이면_한_번만_새�
 
 # [상황] 부스 자격(client id/secret)이 틀렸다.
 # [기대] 401 CLIENT_CREDENTIALS_INVALID로 실패하고 오류 문구에 비밀 값이 나오지 않는다.
+#        ※ 응답 코드: 401 = 로그인 필요(토큰이 없거나 만료·위조됨)
 def test_부스_자격이_틀리면_코드와_함께_실패한다(server):
     auth = BoothAuth(BASE, "booth-out", "wrong", http=server)
 

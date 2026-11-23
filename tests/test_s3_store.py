@@ -33,6 +33,7 @@ def test_객체가_있으면_메타데이터를_돌려준다(s3):
 
 # [상황] 저장소가 권한 오류(403)를 낸다.
 # [기대] "없음"으로 착각하지 않고 오류로 알린다(나중에 다시 시도하도록).
+#        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
 def test_권한_오류는_다시_시도하도록_예외로_올린다(s3):
     store, stub = s3
     stub.add_client_error("head_object", service_error_code="403", http_status_code=403)

@@ -25,6 +25,7 @@ class FakeCapture:
         self.calls: list[tuple[str, str]] = []
         self.token_count = 0
         # 세대(0=세트 생성, 1부터=다시 받기)마다 URL로 성공할 수 있는 PUT 수. 넘으면 403(만료). 없으면 무제한.
+        # ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
         self.url_budget: list[int] = []
         self.put_ok: dict[tuple[str, int], int] = {}
         self.detections: dict[str, list[dict]] = {}  # 세트마다 마지막 요청의 부스 탐지
