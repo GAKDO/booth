@@ -1,3 +1,7 @@
+# 테스트 도구(테스트 자체는 아님): 부스 테스트가 함께 쓰는 준비물.
+#   - cams: 가짜 카메라 2대(CAM1 위쪽, CAM2), presets: 조명별 카메라 설정(노출·게인 등)
+#   - service: 임시 폴더에 기록하는 촬영 서비스, run_to_end: 촬영 목록 끝까지 진행하기
+
 from __future__ import annotations
 
 import pytest

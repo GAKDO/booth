@@ -1,3 +1,7 @@
+# 테스트 도구(테스트 자체는 아님): auth-server·capture-server·MinIO를 흉내 내는 가짜 서버(contracts C1 응답 모양).
+# 촬영 세트 만들기, 업로드 URL 다시 받기, 사진 올리기(PUT), 탐지 결과 보내기, 세트 완료를 메모리에서 처리하고,
+# 연결 실패·토큰 거절·URL 만료·느린 업로드 같은 문제 상황을 일부러 만들 수 있다.
+
 """auth-server·capture-server·MinIO를 흉내 내는 가짜 HTTP. contracts C1의 응답 모양만 따른다."""
 
 from __future__ import annotations

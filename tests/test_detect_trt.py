@@ -1,3 +1,7 @@
+# 이 파일이 확인하는 것: 부스 Jetson의 흠집 탐지(BO2). YOLO11-seg TensorRT 엔진 출력 풀기, 엔진 만들기 명령,
+# 버튼부터 판정까지 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로 확인한다.
+# 흠집 종류: scratch 긁힘, dent 찌그러짐, crack 갈라짐, stain 오염(오염은 흠집으로 등급을 깎지 않음).
+
 """BO2 Jetson 탐지: YOLO11-seg 출력 풀기, 엔진 빌드 명령, 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로."""
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from trace_booth.detect.yolo_seg import decode, letterbox
 NC = 4
 
 
+# 테스트 도구: (중심·크기·종류·점수) 목록으로 가짜 엔진 출력을 만든다.
 def _outputs(rows: list[tuple[float, float, float, float, int, float]]) -> tuple[np.ndarray, np.ndarray]:
     """(cx, cy, w, h, 클래스, 점수) 줄로 가짜 output0, 계수 0번만 켠 마스크 원형 output1."""
     out0 = np.zeros((1, 4 + NC + 32, 8400), dtype=np.float32)
@@ -29,6 +34,8 @@ def _outputs(rows: list[tuple[float, float, float, float, int, float]]) -> tuple
     return out0, out1
 
 
+# [상황] 세로로 긴 조각을 엔진 입력(640×640)으로 바꾼다.
+# [기대] 비율을 지켜 넣고 양옆 빈 곳은 회색(114)으로 채운다.
 def test_세로로_긴_타일은_비율을_지켜_640에_넣고_양옆을_회색으로_채운다():
     tile = np.zeros((640, 320, 3), dtype=np.uint8)
     blob, box = letterbox(tile)
@@ -37,6 +44,8 @@ def test_세로로_긴_타일은_비율을_지켜_640에_넣고_양옆을_회색
     assert blob[0, 0, 0, 0] == pytest.approx(114 / 255) and blob[0, 0, 0, 320] == 0.0
 
 
+# [상황] 같은 종류로 거의 겹친 두 결과, 다른 종류 하나, 신뢰도 낮은 하나가 나왔다.
+# [기대] 신뢰도 낮은 것은 버리고, 같은 종류 겹침은 하나만 남기며(다른 종류는 남김), 다각형을 조각 좌표로 되돌린다.
 def test_엔진_출력은_신뢰도로_거르고_같은_클래스만_겹침을_지우고_폴리곤을_타일_px로_되돌린다():
     _, box = letterbox(np.zeros((640, 320, 3), dtype=np.uint8))
     out0, out1 = _outputs([
@@ -56,11 +65,14 @@ def test_엔진_출력은_신뢰도로_거르고_같은_클래스만_겹침을_�
     assert min(ys) == pytest.approx(80, abs=4) and max(ys) == pytest.approx(120, abs=4)
 
 
+# [상황] 엔진이 아무것도 잡지 않았다.
+# [기대] 빈 목록.
 def test_잡힌_것이_없으면_빈_목록():
     _, box = letterbox(np.zeros((640, 640, 3), dtype=np.uint8))
     assert decode(*_outputs([]), box) == []
 
 
+# 테스트 도구: 첫 조각에 긁힘 하나를 내는 가짜 탐지기.
 class OneScratch:
     def infer(self, tile) -> list[RawDetection]:
         return [RawDetection(0, 0.8, [(1, 1), (20, 1), (20, 5)])] if tile[0, 0] == 255 else []
@@ -69,6 +81,8 @@ class OneScratch:
 INFO = ModelInfo("v001", ("scratch", "dent", "crack", "stain"))
 
 
+# [상황] 사진 4장을 탐지한다.
+# [기대] 사진마다 면·카메라와 원본 좌표 다각형이 오고, 하나라도 잡히면 "문제 있음", 시간도 기록된다.
 def test_사진_4장을_넘기면_사진마다_면_카메라와_원본_px_폴리곤이_오고_하나라도_잡히면_문제_있음():
     clean = np.zeros((1080, 1920), dtype=np.uint8)
     dirty = clean.copy()
@@ -86,6 +100,8 @@ def test_사진_4장을_넘기면_사진마다_면_카메라와_원본_px_폴리
     assert not detect_photos(photos[:1], OneScratch(), INFO).has_problem
 
 
+# [상황] 시험용(testOnly) model.json을 읽는다.
+# [기대] 종류 검사를 건너뛰고, 이름 없는 종류는 "class5"처럼 번호로 부른다.
 def test_시험용_모델은_클래스_검사를_건너뛰고_이름이_없으면_번호로_부른다(tmp_path):
     path = tmp_path / "model.json"
     path.write_text(json.dumps({"modelVersion": "yolo11n-seg-test", "classes": [], "testOnly": True}))
@@ -103,6 +119,8 @@ def _fake_trtexec(calls):
     return run
 
 
+# [상황] ONNX로 엔진을 만든다.
+# [기대] trtexec를 FP16으로 부르고, 검사한 model.json을 엔진 옆에 둔다.
 def test_엔진_빌드는_trtexec를_FP16으로_부르고_검사한_model_json을_엔진_옆에_둔다(tmp_path):
     onnx = tmp_path / "best.onnx"
     onnx.write_bytes(b"onnx")
@@ -116,6 +134,8 @@ def test_엔진_빌드는_trtexec를_FP16으로_부르고_검사한_model_json�
     assert ModelInfo.load(engine.parent / "model.json").model_version == "v001"
 
 
+# [상황] model.json이 없거나 종류가 codes.yaml과 다르다.
+# [기대] trtexec를 부르지 않고 안내(--test, codes.yaml)와 함께 멈춘다.
 def test_엔진_빌드는_model_json이_없거나_클래스가_다르면_trtexec를_부르지_않는다(tmp_path):
     onnx = tmp_path / "best.onnx"
     onnx.write_bytes(b"onnx")
@@ -128,6 +148,8 @@ def test_엔진_빌드는_model_json이_없거나_클래스가_다르면_trtexec
     assert calls == []
 
 
+# [상황] 시험용 기본 모델로 엔진을 만든다.
+# [기대] testOnly 표시가 붙은 model.json으로 만든다.
 def test_시험용_기본_모델은_testOnly_model_json으로_엔진을_만든다(tmp_path):
     onnx = tmp_path / "yolo11n-seg.onnx"
     onnx.write_bytes(b"onnx")
@@ -136,6 +158,8 @@ def test_시험용_기본_모델은_testOnly_model_json으로_엔진을_만든�
     assert info.test_only and info.model_version == "yolo11n-seg-test-trt-fp16"
 
 
+# [상황] trtexec가 실패한다.
+# [기대] 로그 위치를 알려 주며 멈춘다.
 def test_trtexec가_실패하면_로그_위치와_함께_멈춘다(tmp_path):
     onnx = tmp_path / "best.onnx"
     onnx.write_bytes(b"onnx")
@@ -143,6 +167,8 @@ def test_trtexec가_실패하면_로그_위치와_함께_멈춘다(tmp_path):
         build_engine(onnx, tmp_path / "out", test=True, trtexec="true", run=lambda cmd, log: 1)
 
 
+# [상황] "촬영 BOT → 촬영 TOP → 탐지" 구간 시간을 기록한다.
+# [기대] 합계와 구간별 시간이 남고, 30초 이하 OK, 30초 초과 SLOW, 60초 초과 OVER(심사 목표 30초·한도 60초).
 def test_버튼에서_판정까지_구간별_시간과_목표_기준_판정을_남긴다():
     ticks = iter([100.0, 104.0, 109.5, 112.0])
     t = Timeline(clock=lambda: next(ticks))
@@ -155,6 +181,8 @@ def test_버튼에서_판정까지_구간별_시간과_목표_기준_판정을_�
     assert (grade(30.0), grade(30.1), grade(60.1)) == ("OK", "SLOW", "OVER")
 
 
+# [상황] bench로 같은 사진을 여러 번 탐지한다. 느린 경우도 흉내 낸다.
+# [기대] 중간값으로 판정해 기준 안이면 0, 넘으면 OVER와 종료 코드 2.
 def test_bench는_사진을_여러_번_탐지해_중간값으로_판정하고_기준을_넘으면_종료_코드_2(tmp_path, capsys):
     from trace_booth.__main__ import bench
 
@@ -179,6 +207,8 @@ def test_bench는_사진을_여러_번_탐지해_중간값으로_판정하고_�
     assert code == 2 and "OVER" in capsys.readouterr().out
 
 
+# [상황] 시험용 엔진으로 탐지했고, 서버에 올린 세트가 있다.
+# [기대] 탐지 결과를 서버에 보내지 않는다(가짜 결과가 기록에 들어가지 않게).
 def test_시험용_모델로_탐지하면_올린_세트가_있어도_서버에_보내지_않는다(service, tmp_path, monkeypatch):
     from test_detect import _submitted
 
@@ -196,6 +226,8 @@ def test_시험용_모델로_탐지하면_올린_세트가_있어도_서버에_�
     assert set_id not in server.detections
 
 
+# [상황] 다른 모델의 엔진이 있는 폴더에 엔진을 만들려 한다. 같은 모델이면 다시 만든다.
+# [기대] 다른 모델이면 "폴더를 따로" 쓰라며 멈추고, 같은 모델이면 다시 만든다(잘못 덮어쓰기 방지).
 def test_다른_엔진이_있는_폴더에는_만들지_않고_같은_엔진은_다시_만든다(tmp_path):
     onnx = tmp_path / "best.onnx"
     onnx.write_bytes(b"onnx")
@@ -208,11 +240,14 @@ def test_다른_엔진이_있는_폴더에는_만들지_않고_같은_엔진은_
         build_engine(other, out, test=True, trtexec="true", run=_fake_trtexec([]))
 
 
+# 테스트 도구: 오염(stain) 하나만 내는 가짜 탐지기.
 class OneStain:
     def infer(self, tile) -> list[RawDetection]:
         return [RawDetection(3, 0.8, [(1, 1), (20, 1), (20, 5)])] if tile[0, 0] == 255 else []
 
 
+# [상황] 오염만 잡혔다.
+# [기대] 결과에는 남기되 "문제 없음"(문제 개수 0). 서버 등급 규칙과 같다.
 def test_오염만_잡히면_흠집은_남기되_서버_등급처럼_문제_없음이다():
     dirty = np.zeros((1080, 1920), dtype=np.uint8)
     dirty[0, 0] = 255
@@ -224,11 +259,14 @@ def test_오염만_잡히면_흠집은_남기되_서버_등급처럼_문제_없�
     assert result.to_json()["hasProblem"] is False and result.to_json()["problemCount"] == 0
 
 
+# 테스트 도구: 모델에 없는 종류 번호(9)를 내는 가짜 탐지기.
 class OutOfRange:
     def infer(self, tile) -> list[RawDetection]:
         return [RawDetection(9, 0.8, [(1, 1), (20, 1), (20, 5)])] if tile[0, 0] == 255 else []
 
 
+# [상황] 엔진이 모르는 종류(class9)를 냈다.
+# [기대] 정상으로 넘기지 않고 "문제 있음"으로 본다(놓치는 것보다 사람이 확인하게).
 def test_엔진이_모르는_클래스를_내면_정상으로_넘기지_않고_문제_있음이다():
     odd = np.zeros((1080, 1920), dtype=np.uint8)
     odd[0, 0] = 255

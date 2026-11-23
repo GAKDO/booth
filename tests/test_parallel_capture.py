@@ -1,3 +1,6 @@
+# 이 파일이 확인하는 것: CAM1·CAM2 동시 촬영(11/9 속도 개선). 두 카메라를 동시에 찍어 시간을 줄이되,
+# 한 대라도 실패하면 그 단계 사진을 하나도 남기지 않는다(한쪽만 남은 반쪽 기록 방지).
+
 """CAM1·CAM2 동시 촬영(11/9): 두 대를 같이 찍고, 한 대라도 실패하면 아무것도 남기지 않는다."""
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from trace_booth.session import CaptureService
 from trace_booth.store import Store
 
 
+# 테스트 도구: 찍는 데 0.3초 걸리는 가짜 카메라. 동시에 몇 대가 찍고 있었는지 센다.
 class SlowCamera(FakeCamera):
     """찍는 데 0.3초 걸리고, 두 대가 동시에 찍는 중인지 센다."""
 
@@ -49,6 +53,8 @@ def _to_two_camera_step(service: CaptureService, sid: str) -> None:
         service.advance(sid)
 
 
+# [상황] 동시 촬영을 켜고/끄고 두 카메라 단계를 찍는다.
+# [기대] 켜면 두 대가 동시에, 끄면 한 대씩 찍는다. 어느 쪽이든 저장 순서는 CAM1·CAM2이고 사진이 제 카메라 것이다.
 @pytest.mark.parametrize("parallel, peak", [(True, 2), (False, 1)])
 def test_동시_촬영을_켜면_두_카메라를_같이_찍고_끄면_한_대씩_찍는다(tmp_path, presets, parallel, peak) -> None:
     service, _ = _service(tmp_path, presets, parallel)
@@ -61,6 +67,8 @@ def test_동시_촬영을_켜면_두_카메라를_같이_찍고_끄면_한_대�
     assert SlowCamera.peak == peak  # 동시에 찍는 중이던 카메라 수(시간 대신 세어 본다)
 
 
+# [상황] 동시 촬영 중 CAM1이 고장 난다.
+# [기대] CAM1 오류를 알리고, 성공한 CAM2 사진도 남기지 않는다.
 def test_동시_촬영에서_한_대가_실패하면_다른_카메라_사진도_남기지_않는다(tmp_path, presets) -> None:
     service, cams = _service(tmp_path, presets, True)
     sid = service.start("MB01").id
@@ -73,6 +81,8 @@ def test_동시_촬영에서_한_대가_실패하면_다른_카메라_사진도_
     assert len(list((tmp_path / "data").rglob("*.jpg"))) == before
 
 
+# [상황] 카메라 예열용으로 버리는 프레임 수와 동시 촬영 여부를 환경 변수로 준다.
+# [기대] 기본은 4프레임·동시 촬영 켬, 값을 주면 그대로 쓰고, 잘못된 값이면 시작하지 않는다.
 def test_버리는_프레임과_동시_촬영은_환경_변수로_정한다() -> None:
     assert _warmup_frames("") == 4 and _warmup_frames("10") == 10
     assert _parallel_capture("") is True and _parallel_capture("0") is False
