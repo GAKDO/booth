@@ -1,6 +1,7 @@
-# 이 파일이 확인하는 것: 부스가 사진을 올리는 저장소(MinIO) 응답을 제대로 해석하는지. 네트워크 없이 가짜 응답으로 확인한다.
+"""이 파일이 확인하는 것: 부스가 사진을 올리는 저장소(MinIO) 응답을 제대로 해석하는지. 네트워크 없이 가짜 응답으로 확인한다.
 
-"""S3ObjectStore가 MinIO 응답을 해석하는 방식 (botocore Stubber, 네트워크 없음)."""
+S3ObjectStore가 MinIO 응답을 해석하는 방식 (botocore Stubber, 네트워크 없음).
+"""
 
 import pytest
 from botocore.stub import Stubber

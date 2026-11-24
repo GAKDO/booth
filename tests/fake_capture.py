@@ -1,8 +1,9 @@
-# 테스트 도구(테스트 자체는 아님): auth-server·capture-server·MinIO를 흉내 내는 가짜 서버(contracts C1 응답 모양).
-# 촬영 세트 만들기, 업로드 URL 다시 받기, 사진 올리기(PUT), 탐지 결과 보내기, 세트 완료를 메모리에서 처리하고,
-# 연결 실패·토큰 거절·URL 만료·느린 업로드 같은 문제 상황을 일부러 만들 수 있다.
+"""테스트 도구(테스트 자체는 아님): auth-server·capture-server·MinIO를 흉내 내는 가짜 서버(contracts C1 응답 모양).
+촬영 세트 만들기, 업로드 URL 다시 받기, 사진 올리기(PUT), 탐지 결과 보내기, 세트 완료를 메모리에서 처리하고,
+연결 실패·토큰 거절·URL 만료·느린 업로드 같은 문제 상황을 일부러 만들 수 있다.
 
-"""auth-server·capture-server·MinIO를 흉내 내는 가짜 HTTP. contracts C1의 응답 모양만 따른다."""
+auth-server·capture-server·MinIO를 흉내 내는 가짜 HTTP. contracts C1의 응답 모양만 따른다.
+"""
 
 from __future__ import annotations
 
@@ -14,11 +15,17 @@ import time
 from trace_booth.capture_client import Response
 from trace_booth.codes import FACE_REQUIRED_BOOTH
 
-BASE = "https://api.test"
-SECRET = "test-only-secret"
+BASE = "https://api.test"  # 가짜 서버 주소(실제로 접속하지 않음)
+SECRET = "test-only-secret"  # 테스트에서만 쓰는 가짜 부스 비밀값(실제 값 아님)
 
 
 class FakeCapture:
+    """부스가 부르는 서버 API를 메모리에서 흉내 낸다. 부스 코드에 http 함수 대신 이 객체를 넘겨 쓴다.
+
+    sets·objects·calls로 서버에 무엇이 남았는지 확인하고, fail_puts·reject_token·url_budget 등으로
+    연결 실패·토큰 거절·URL 만료 같은 문제 상황을 만든다.
+    """
+
     def __init__(self) -> None:
         self.sets: dict[str, dict] = {}
         self.objects: dict[str, bytes] = {}

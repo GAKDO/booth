@@ -1,6 +1,7 @@
-# 이 파일이 확인하는 것: 전체(full) 촬영 목록. 학습 데이터용으로 기기 하나를 면·조명·카메라별로 빠짐없이 찍는 순서.
-# 면: TOP 윗면, BOT 바닥, KB 키보드, SCR0 꺼진 화면, SCR1 켜진 흰 화면(선택), SF·SB·SL·SR 앞·뒤·왼쪽·오른쪽 옆면.
-# 조명: L1 램프, L2 왼쪽 막대, L3 뒤쪽 막대, L4 키보드용(스침광 = 비스듬히 비춰 흠집을 드러내는 빛).
+"""이 파일이 확인하는 것: 전체(full) 촬영 목록. 학습 데이터용으로 기기 하나를 면·조명·카메라별로 빠짐없이 찍는 순서.
+면: TOP 윗면, BOT 바닥, KB 키보드, SCR0 꺼진 화면, SCR1 켜진 흰 화면(선택), SF·SB·SL·SR 앞·뒤·왼쪽·오른쪽 옆면.
+조명: L1 램프, L2 왼쪽 막대, L3 뒤쪽 막대, L4 키보드용(스침광 = 비스듬히 비춰 흠집을 드러내는 빛).
+"""
 
 from trace_booth.codes import Camera, Face, Light
 from trace_booth.shotlist import DEFAULT_SHOTLIST, LIGHT_NAME, REQUIRED_FACES, StepKind, required_photo_count
