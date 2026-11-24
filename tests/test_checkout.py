@@ -1,8 +1,9 @@
-# 이 파일이 확인하는 것: 부스 출고·반납(BO1 스토리 3) 사진 올리기. 부스가 capture-server에 촬영 세트를 만들고,
-# 받은 사전 서명 URL(잠깐만 쓸 수 있는 업로드 주소)로 MinIO에 사진을 올린 뒤 세트를 완료한다.
-# URL 만료·연결 끊김·토큰 만료 같은 상황에서도 사진이 빠지지 않는지 본다. 서버들은 가짜(fake_capture.py)다.
+"""이 파일이 확인하는 것: 부스 출고·반납(BO1 스토리 3) 사진 올리기. 부스가 capture-server에 촬영 세트를 만들고,
+받은 사전 서명 URL(잠깐만 쓸 수 있는 업로드 주소)로 MinIO에 사진을 올린 뒤 세트를 완료한다.
+URL 만료·연결 끊김·토큰 만료 같은 상황에서도 사진이 빠지지 않는지 본다. 서버들은 가짜(fake_capture.py)다.
 
-"""BO1 스토리 3(출고·반납) 올리기 수용 시나리오: 가짜 auth·capture-server·MinIO로 확인한다."""
+BO1 스토리 3(출고·반납) 올리기 수용 시나리오: 가짜 auth·capture-server·MinIO로 확인한다.
+"""
 
 from __future__ import annotations
 

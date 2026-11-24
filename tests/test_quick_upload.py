@@ -1,7 +1,8 @@
-# 이 파일이 확인하는 것: 빠른 검사(QUICK) 올리기(contracts 1.1.0). 부스가 12장을 찍어 Jetson에서 흠집을 찾은 뒤,
-# 사진 세트와 탐지 결과를 capture-server로 보낸다. 서버가 안 되면 부스에 남겨 두고 나중에 다시 보낸다.
+"""이 파일이 확인하는 것: 빠른 검사(QUICK) 올리기(contracts 1.1.0). 부스가 12장을 찍어 Jetson에서 흠집을 찾은 뒤,
+사진 세트와 탐지 결과를 capture-server로 보낸다. 서버가 안 되면 부스에 남겨 두고 나중에 다시 보낸다.
 
-"""빠른 검사 2부(contracts 1.1.0): QUICK 세트·탐지 올리기와 로컬 재시도 큐."""
+빠른 검사 2부(contracts 1.1.0): QUICK 세트·탐지 올리기와 로컬 재시도 큐.
+"""
 
 from __future__ import annotations
 

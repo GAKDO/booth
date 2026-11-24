@@ -1,8 +1,9 @@
-# 이 파일이 확인하는 것: 11/3 방향 전환 뒤의 MVP 촬영 목록과 보조 목록들.
-#   - mvp: 바닥(BOT)을 L1·L2·L3로 → 뒤집어 윗면(TOP)을 L3·L2·L1로, CAM1·CAM2 두 대 = 12장
-#   - kb: 펼친 키보드를 L1·L2·L4로 두 대 = 6장 / side: 네 옆면과 꺼진 화면을 CAM1으로
+"""이 파일이 확인하는 것: 11/3 방향 전환 뒤의 MVP 촬영 목록과 보조 목록들.
+  - mvp: 바닥(BOT)을 L1·L2·L3로 → 뒤집어 윗면(TOP)을 L3·L2·L1로, CAM1·CAM2 두 대 = 12장
+  - kb: 펼친 키보드를 L1·L2·L4로 두 대 = 6장 / side: 네 옆면과 꺼진 화면을 CAM1으로
 
-"""11/3 방향 전환: MVP 촬영 목록은 BOT(L1·L2·L3) → 뒤집어 TOP(L3·L2·L1), CAM1·CAM2."""
+11/3 방향 전환: MVP 촬영 목록은 BOT(L1·L2·L3) → 뒤집어 TOP(L3·L2·L1), CAM1·CAM2.
+"""
 
 from conftest import run_to_end
 

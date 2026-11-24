@@ -1,8 +1,9 @@
-# 이 파일이 확인하는 것: 부스 Jetson의 흠집 탐지(BO2). YOLO11-seg TensorRT 엔진 출력 풀기, 엔진 만들기 명령,
-# 버튼부터 판정까지 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로 확인한다.
-# 흠집 종류: scratch 긁힘, dent 찌그러짐, crack 갈라짐, stain 오염(오염은 흠집으로 등급을 깎지 않음).
+"""이 파일이 확인하는 것: 부스 Jetson의 흠집 탐지(BO2). YOLO11-seg TensorRT 엔진 출력 풀기, 엔진 만들기 명령,
+버튼부터 판정까지 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로 확인한다.
+흠집 종류: scratch 긁힘, dent 찌그러짐, crack 갈라짐, stain 오염(오염은 흠집으로 등급을 깎지 않음).
 
-"""BO2 Jetson 탐지: YOLO11-seg 출력 풀기, 엔진 빌드 명령, 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로."""
+BO2 Jetson 탐지: YOLO11-seg 출력 풀기, 엔진 빌드 명령, 시간 재기. GPU·TensorRT 없이 가짜 출력과 가짜 탐지기로.
+"""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-# 이 파일이 확인하는 것: 부스 출고·반납 모드(BO1 스토리 3). 렌탈의 시점(출고·반납)에 맞춰 촬영 세션을 열고,
-# 완료하면 capture-server가 준 사전 서명 URL로 사진을 올린다. 학습용 저장소(trace-raw)와는 완전히 분리된다.
+"""이 파일이 확인하는 것: 부스 출고·반납 모드(BO1 스토리 3). 렌탈의 시점(출고·반납)에 맞춰 촬영 세션을 열고,
+완료하면 capture-server가 준 사전 서명 URL로 사진을 올린다. 학습용 저장소(trace-raw)와는 완전히 분리된다.
 
-"""BO1 스토리 3(출고·반납 모드) 수용 시나리오: 세션 열기, 완료 때 올리기, trace-raw와 분리, 운영 API."""
+BO1 스토리 3(출고·반납 모드) 수용 시나리오: 세션 열기, 완료 때 올리기, trace-raw와 분리, 운영 API.
+"""
 
 from __future__ import annotations
 
@@ -23,15 +24,19 @@ from trace_booth.web import App, make_server
 RENTAL = "Ws0HLv6QRbDILPWOcz5I2"
 CHECKPOINT = "IPv6mcQOlTkKj6mOecAQt"
 NOW = "2026-11-06T10:00:00+09:00"
+# 렌탈·시점 ID 길이. 팀 ID 규칙(publicId = NanoID 21자)이라 이 길이가 아니면 출고 모드를 시작하지 않는다.
+CHECKPOINT_ID_LEN = 21
 
 
 @pytest.fixture
 def server() -> FakeCapture:
+    """가짜 auth-server·capture-server·MinIO(fake_capture.py)."""
     return FakeCapture()
 
 
 @pytest.fixture
 def submitter(service, server):
+    """끝난 촬영 세션 ID를 받아 서버로 올리는 함수. 부스 로그인(booth-out)·시각·재시도 대기를 가짜로 고정한다."""
     client = CaptureClient(BASE, BoothAuth(BASE, "booth-out", SECRET, http=server), http=server)
     return lambda sid: submit_session(service.store, sid, client, lambda: NOW, http=server, sleep=lambda _: None)
 
@@ -77,7 +82,7 @@ def test_같은_기기에_다른_시점의_촬영이_진행_중이면_막고_같
 
     assert service.start("MB01", "OUT", RENTAL, CHECKPOINT).id == first.id
     with pytest.raises(CaptureError, match="다른 렌탈·시점"):
-        service.start("MB01", "OUT", RENTAL, "A" * 21)
+        service.start("MB01", "OUT", RENTAL, "A" * CHECKPOINT_ID_LEN)
 
 
 # [상황] 올리다가 실패하고, 다시 올린다.
