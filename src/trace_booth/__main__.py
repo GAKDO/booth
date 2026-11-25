@@ -29,7 +29,7 @@ from .quick import DetectorSource, QuickInspector, no_engine_source
 from .quick_upload import QuickRetryWorker, upload_quick
 from .rentals import RentalClient
 from .session import CaptureService, _now
-from .shared_camera import SharedCamera
+from .shared_camera import CameraGroups, SharedCamera
 from .shotlist import (
     FULL_INSPECTION,
     MVP_SHOTLIST,
@@ -166,6 +166,18 @@ def _keep_open(raw: str | None = None) -> bool:
     return value == "1"
 
 
+def _side_exclusive(raw: str | None = None) -> bool:
+    """TRACE_BOOTH_SIDE_EXCLUSIVE: 1(기본)이면 열어 둘 때 위 카메라 두 대와 옆면 카메라 중 한쪽만 연다(11/12).
+
+    세 대가 같은 USB2 허브에 있으면 동시에 열 대역폭이 없다(2호기 dmesg "Not enough bandwidth").
+    옆면 카메라가 USB3(5000M)로 따로 잡히는 부스는 0으로 두면 세 대를 모두 열어 둔다.
+    """
+    value = (os.environ.get("TRACE_BOOTH_SIDE_EXCLUSIVE", "") if raw is None else raw).strip() or "1"
+    if value not in ("0", "1"):
+        raise SystemExit(f"TRACE_BOOTH_SIDE_EXCLUSIVE는 0 또는 1이에요: {value}")
+    return value == "1"
+
+
 def _shared_feed(cam: SharedCamera) -> LiveFeed:
     """열어 둔 카메라의 실시간 보기. 카메라마다 가장 최근 연결 하나만 프레임을 받는다."""
     latest = itertools.count(1)
@@ -225,6 +237,9 @@ def serve(host: str, port: int) -> int:
             list_presets["side"] = side_presets
             live["SIDE"] = _shared_feed(side_shared)
             opened.append(side_shared)
+            if _side_exclusive():
+                CameraGroups({"top": list(shared.values()), "side": [side_shared]}, active="top")
+                print("옆면 카메라: 위 카메라와 번갈아 열어 둠(USB 대역폭, TRACE_BOOTH_SIDE_EXCLUSIVE)")
     else:
         cameras = {code: OpenCvCamera(code, dev, gate=gate, warmup_frames=warmup) for code, dev in devices.items()}
         live = {code.value: _live_feed(code, dev, gate) for code, dev in devices.items()}
@@ -296,7 +311,9 @@ def serve(host: str, port: int) -> int:
         print("경고: TRACE_BOOTH_UI_TOKEN이 없어 같은 망 누구나 부스 화면을 쓸 수 있어요(부스 자격으로 촬영 세트를 올림)")
     else:
         print(f"부스 화면 접속 비밀이 켜져 있어요. 태블릿에서 http://<부스 주소>:{port}/?token=<비밀> 로 한 번 여세요")
-    server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token), host, port)
+    required = rentals.required_profile if rentals else None  # 수령·반납 검사 방식 고정(11/13)
+    server = make_server(App(service, submitter, live, quick, waiting, redeem, ui_token=ui_token,
+                             required_profile=required), host, port)
     for cam in opened:
         cam.start()
     print(f"trace-booth {__version__}: http://{host}:{port} (데이터 {data_dir}, 촬영 목록 {shotlist_name})")

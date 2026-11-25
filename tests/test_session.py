@@ -1,4 +1,8 @@
-"""스토리 1: 학습 데이터 모드로 노트북 한 대 찍기 (수용 시나리오 문장을 테스트 이름으로)."""
+"""이 파일이 확인하는 것: 학습 데이터 촬영(BO2 스토리 1) 수용 시나리오. 노트북 한 대를 촬영 목록대로 찍는 흐름.
+테스트 이름이 곧 수용 시나리오 문장이다. 기본 목록은 전체(full) 28장 목록이다.
+
+스토리 1: 학습 데이터 모드로 노트북 한 대 찍기 (수용 시나리오 문장을 테스트 이름으로).
+"""
 
 import hashlib
 import json
@@ -15,6 +19,7 @@ from trace_booth.shotlist import StepKind, required_photo_count
 from trace_booth.store import Store
 
 
+# 테스트 도구: 원하는 면·조명 단계까지 찍으며 넘어간다.
 def go_to(service: CaptureService, sid: str, face: Face, light: Light) -> None:
     while True:
         step = service.view(sid).step
@@ -25,14 +30,18 @@ def go_to(service: CaptureService, sid: str, face: Face, light: Light) -> None:
         service.advance(sid)
 
 
+# [상황] 기기 ID MB01로 촬영을 시작한다.
+# [기대] 첫 단계는 기기 ID 판이고, "큰 조명을 켜고" 같은 안내와 남은 단계 수가 보인다.
 def test_기기_ID_MB01로_시작하면_첫_단계에_자세와_켤_조명과_남은_단계_수가_보인다(service):
     s = service.start("MB01")
     v = service.view(s.id)
     assert v.step.kind is StepKind.SLATE
-    assert "L1을 켜고" in v.step.instruction
+    assert "큰 조명을 켜고" in v.step.instruction
     assert v.remaining_steps == len(service.steps)
 
 
+# [상황] 윗면 L2 단계에서 촬영 버튼을 누른다.
+# [기대] CAM1·CAM2 사진이 한 장씩 저장되고 이름이 규칙대로다.
 def test_TOP_L2_단계에서_버튼을_한_번_누르면_CAM1_CAM2_사진이_한_장씩_저장되고_이름이_규칙을_따른다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L2)
@@ -42,6 +51,8 @@ def test_TOP_L2_단계에서_버튼을_한_번_누르면_CAM1_CAM2_사진이_한
     assert service.view(sid).step.light is Light.L2 and service.view(sid).taken
 
 
+# [상황] 목록을 끝까지 찍는다.
+# [기대] 완료되고 빠진 면이 없으며, 필수 28장(8면)이 모두 이름 규칙대로다.
 def test_목록을_끝까지_찍으면_완료가_뜨고_빠진_면이_0개이며_장수가_목록과_같다(service):
     sid = service.start("MB01").id
     run_to_end(service, sid)
@@ -55,6 +66,8 @@ def test_목록을_끝까지_찍으면_완료가_뜨고_빠진_면이_0개이며
     assert all(FILENAME_RE.match(s.filename) for s in shots)
 
 
+# [상황] 찍은 사진 파일을 다시 읽어 해시를 계산한다.
+# [기대] 기록된 해시와 같다(저장 중 손상 없음).
 def test_찍은_사진을_다시_읽어_계산한_SHA256이_기록과_같다(service):
     sid = service.start("MB01").id
     run_to_end(service, sid)
@@ -62,19 +75,23 @@ def test_찍은_사진을_다시_읽어_계산한_SHA256이_기록과_같다(ser
         assert hashlib.sha256(Path(s.local_path).read_bytes()).hexdigest() == s.sha256
 
 
+# [상황] 왼쪽 옆면(SL) 단계를 찍는다.
+# [기대] L1 → L2 순서로 그 조명만 켜라고 안내하고, CAM1으로만 찍는다(CAM2는 안 찍음).
 def test_패스_2_SL_단계는_L1_한_장_L2_한_장을_차례로_안내하고_CAM1만_찍는다(service, cams):
     sid = service.start("MB01").id
     go_to(service, sid, Face.SL, Light.L1)
-    assert "L1만 켜세요" in service.view(sid).step.instruction
+    assert "오른쪽 큰 조명만 켜세요" in service.view(sid).step.instruction
     cam2_before = cams[Camera.CAM2].count
     first = service.shoot(sid)
     service.advance(sid)
-    assert "L2만 켜세요" in service.view(sid).step.instruction
+    assert "왼쪽 막대 조명만 켜세요" in service.view(sid).step.instruction
     second = service.shoot(sid)
     assert [s.filename for s in first + second] == ["MB01_SL_L1_CAM1_01.jpg", "MB01_SL_L2_CAM1_01.jpg"]
     assert cams[Camera.CAM2].count == cam2_before
 
 
+# [상황] 켜진 화면(SCR1)을 사유와 함께 건너뛴다.
+# [기대] SCR1 없이 완료되고 사유가 기록된다.
 def test_SCR1_건너뛰기에_사유를_넣으면_SCR1_없이도_완료되고_사유가_남는다(service):
     sid = service.start("MB01").id
     run_to_end(service, sid, skip_scr1="로그인 없이 흰 화면을 못 띄움")
@@ -84,6 +101,8 @@ def test_SCR1_건너뛰기에_사유를_넣으면_SCR1_없이도_완료되고_�
     assert not any(s.face == "SCR1" for s in service.store.shots(sid))
 
 
+# [상황] SCR1을 찍지도 건너뛰지도 않고 완료한다.
+# [기대] 완료되지 않고 빠진 사진으로 SCR1을 알려 준다.
 def test_SCR1을_찍지도_건너뛰지도_않으면_완료되지_않는다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.SCR1, Light.OFF)
@@ -92,6 +111,8 @@ def test_SCR1을_찍지도_건너뛰지도_않으면_완료되지_않는다(serv
     assert e.value.missing == ["SCR1_OFF_CAM1"]
 
 
+# [상황] 사유 없이 SCR1을 건너뛰거나, 필수 면을 건너뛰려 한다.
+# [기대] 둘 다 거절된다.
 def test_사유_없이는_SCR1을_건너뛸_수_없고_필수_면은_건너뛸_수_없다(service):
     sid = service.start("MB01").id
     service.shoot(sid)  # SLATE
@@ -101,6 +122,8 @@ def test_사유_없이는_SCR1을_건너뛸_수_없고_필수_면은_건너뛸_�
         service.skip_optional(sid, "  ")
 
 
+# [상황] 일부 단계를 빼고 완료한다.
+# [기대] 완료되지 않고 빠진 사진(TOP_L1_CAM1 등)을 알려 준다.
 def test_빠진_면이_있으면_완료되지_않고_빠진_사진을_알려_준다(service):
     sid = service.start("MB01").id
     service.shoot(sid)
@@ -109,6 +132,8 @@ def test_빠진_면이_있으면_완료되지_않고_빠진_사진을_알려_준
     assert "TOP_L1_CAM1" in e.value.missing and "SCR0_L2_CAM1" in e.value.missing
 
 
+# [상황] 윗면 L1에서 CAM2가 고장 났다가 고쳐진다.
+# [기대] 실패한 카메라(CAM2)를 알리고 단계는 그대로다. 실패한 촬영은 CAM1 사진도 남기지 않아 다시 찍으면 둘 다 01번이다.
 def test_카메라_한_대가_실패하면_단계가_넘어가지_않고_실패한_카메라를_알린다(service, cams):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L1)
@@ -123,6 +148,8 @@ def test_카메라_한_대가_실패하면_단계가_넘어가지_않고_실패�
     assert [s.filename for s in shots] == ["MB01_TOP_L1_CAM1_01.jpg", "MB01_TOP_L1_CAM2_01.jpg"]
 
 
+# [상황] 한 단계를 다시 찍는다.
+# [기대] 새 번호(02)로 남고 이전 파일은 지우지 않는다. 단계는 다음을 눌러야 넘어간다.
 def test_다시_찍으면_새_번호로_남고_이전_파일은_그대로다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L1)
@@ -137,6 +164,8 @@ def test_다시_찍으면_새_번호로_남고_이전_파일은_그대로다(ser
     assert service.view(sid).step.light is Light.L2
 
 
+# [상황] 잘못 찍은 채 다음을 눌렀다가 이전 단계로 돌아가 다시 찍는다.
+# [기대] 돌아간 단계 사진을 다시 보여 주고, 다시 찍은 02번이 남으며 앞 사진은 지우지 않는다.
 def test_잘못_찍고_다음을_눌렀으면_이전_단계로_돌아가_다시_찍고_마지막_장만_쓴다(service):
     from trace_booth.store import latest_shots
 
@@ -157,6 +186,8 @@ def test_잘못_찍고_다음을_눌렀으면_이전_단계로_돌아가_다시_
     assert service.view(sid).step.light is Light.L2
 
 
+# [상황] 첫 단계에서 이전을 누르거나, 화면의 단계 번호가 실제와 다르다.
+# [기대] 둘 다 막는다(두 화면에서 눌러 엉키는 것 방지).
 def test_첫_단계에서는_이전_단계로_못_가고_단계_번호가_다르면_막는다(service):
     sid = service.start("MB01").id
     with pytest.raises(CaptureError):
@@ -168,6 +199,8 @@ def test_첫_단계에서는_이전_단계로_못_가고_단계_번호가_다르
     assert service.view(sid).step.index == 1
 
 
+# [상황] 키보드 L1을 찍은 뒤 이전으로 와서 안내 단계에 있다.
+# [기대] 안내 단계에서 다시 찍기를 해도 키보드 사진을 다시 찍지 않는다(조명·자세가 바뀐 채 찍히지 않게).
 def test_이전_단계로_돌아와_안내_단계에_있으면_뒤쪽_단계를_다시_찍지_않는다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.KB, Light.L1)  # 바로 앞(7번)이 안내 단계
@@ -179,6 +212,8 @@ def test_이전_단계로_돌아와_안내_단계에_있으면_뒤쪽_단계를_
     assert [s.seq for s in service.store.shots(sid) if s.face == "KB"] == [1, 1]
 
 
+# [상황] 목록 끝에서 이전을 누르고, 완료한 뒤에도 누른다.
+# [기대] 마지막 단계로 돌아가고, 완료한 뒤에는 못 간다.
 def test_목록_끝에서_이전_단계로_가면_마지막_단계로_돌아가고_완료한_뒤에는_못_간다(service):
     sid = service.start("MB01").id
     run_to_end(service, sid)
@@ -192,6 +227,8 @@ def test_목록_끝에서_이전_단계로_가면_마지막_단계로_돌아가�
         service.back(sid)
 
 
+# [상황] 찍다가 부스 앱을 껐다 켜고 같은 기기로 시작한다.
+# [기대] 같은 세션의 마지막으로 끝난 단계 다음부터 이어 간다.
 def test_도구를_다시_켜면_그_기기의_마지막으로_끝난_단계_다음부터_이어_간다(tmp_path, cams, presets):
     db = tmp_path / "booth.db"
     a = CaptureService(Store(db), cams, presets, tmp_path / "data", min_free_bytes=0)
@@ -206,11 +243,15 @@ def test_도구를_다시_켜면_그_기기의_마지막으로_끝난_단계_다
     assert b.view(sid).step.light is Light.L2
 
 
+# [상황] 잘못된 기기 ID로 시작한다.
+# [기대] 시작하지 않는다.
 def test_잘못된_기기_ID로는_촬영을_시작하지_않는다(service):
     with pytest.raises(InvalidInput):
         service.start("mb1")
 
 
+# [상황] 부스 디스크가 가득 찼다.
+# [기대] 찍지 않고 디스크 부족을 알린다. 기록도 남지 않는다.
 def test_디스크가_가득_차면_찍지_않는다(tmp_path, cams, presets):
     svc = CaptureService(Store(tmp_path / "b.db"), cams, presets, tmp_path, min_free_bytes=1 << 62)
     sid = svc.start("MB01").id
@@ -219,6 +260,8 @@ def test_디스크가_가득_차면_찍지_않는다(tmp_path, cams, presets):
     assert svc.store.shots(sid) == []
 
 
+# [상황] 조명별 카메라 설정으로 찍는다.
+# [기대] 카메라에 그 설정이 들어가고 사진 기록에도 남는다.
 def test_조명별_고정_설정을_적용하고_사진_기록에_남긴다(service, cams):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L2)
@@ -227,6 +270,8 @@ def test_조명별_고정_설정을_적용하고_사진_기록에_남긴다(serv
     assert json.loads(shot.camera_settings) == {"exposure_time_absolute": 101}
 
 
+# [상황] 안내 단계에서 촬영을 누른다.
+# [기대] 찍지 않고, 다음으로만 넘어간다.
 def test_안내_단계에서는_찍지_않고_다음으로만_넘어간다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.BOT, Light.L3)
@@ -239,6 +284,8 @@ def test_안내_단계에서는_찍지_않고_다음으로만_넘어간다(servi
     assert service.view(sid).step.face is Face.KB
 
 
+# [상황] 촬영을 누른다.
+# [기대] 찍힘 표시만 되고 단계는 그대로다. 다음을 눌러야 넘어간다(찍은 사진을 확인할 시간).
 def test_촬영을_눌러도_단계는_그대로고_다음을_눌러야_넘어간다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L1)
@@ -250,6 +297,8 @@ def test_촬영을_눌러도_단계는_그대로고_다음을_눌러야_넘어�
     assert service.view(sid).step.light is Light.L2 and not service.view(sid).taken
 
 
+# [상황] 같은 단계에서 촬영을 두 번 누른다.
+# [기대] 같은 이름에 01·02 번호가 붙는다.
 def test_촬영을_두_번_눌러도_같은_단계_이름으로_새_번호가_붙는다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L1)
@@ -258,6 +307,8 @@ def test_촬영을_두_번_눌러도_같은_단계_이름으로_새_번호가_�
         "MB01_TOP_L1_CAM1_01.jpg", "MB01_TOP_L1_CAM2_01.jpg", "MB01_TOP_L1_CAM1_02.jpg", "MB01_TOP_L1_CAM2_02.jpg"]
 
 
+# [상황] 찍지 않았거나, 한 카메라만 찍힌 채 다음을 누른다.
+# [기대] 넘어가지 않는다.
 def test_찍지_않은_단계는_다음으로_넘어가지_않는다(service, cams):
     sid = service.start("MB01").id
     go_to(service, sid, Face.TOP, Light.L1)
@@ -271,6 +322,8 @@ def test_찍지_않은_단계는_다음으로_넘어가지_않는다(service, ca
     assert service.view(sid).step.light is Light.L1
 
 
+# [상황] 다음 요청이 같은 단계 번호로 두 번 온다(더블 클릭).
+# [기대] 안내 단계를 건너뛰지 않는다.
 def test_다음을_두_번_보내도_안내_단계를_건너뛰지_않는다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.BOT, Light.L3)
@@ -282,6 +335,8 @@ def test_다음을_두_번_보내도_안내_단계를_건너뛰지_않는다(ser
     assert service.view(sid).step.kind is StepKind.NOTICE
 
 
+# [상황] SCR1을 찍은 뒤 건너뛰기를 누른다.
+# [기대] 거절되고 건너뛴 사유도 남지 않는다.
 def test_찍은_선택_단계는_건너뛰기로_넘길_수_없다(service):
     sid = service.start("MB01").id
     go_to(service, sid, Face.SCR1, Light.OFF)

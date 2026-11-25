@@ -107,6 +107,15 @@ python -m ruff check . && python -m pytest
 
 카메라·엔진·서버는 함수 하나로 감싸 테스트에서 가짜로 바꿔 끼우므로 GPU·카메라 없이 돕니다.
 
+건너뛸 수 있는 테스트는 아래뿐이고, 나머지는 어디서나 다 돕니다.
+
+| 테스트 | 건너뛰는 조건 | 켜는 법 |
+|---|---|---|
+| `tests/test_ui.py` (운영 화면을 Chromium으로 눌러 보기) | playwright가 없을 때 | `pip install -e ".[dev,ui]"` 뒤 `python -m playwright install chromium`, `TRACE_UI_TESTS=1 python -m pytest tests/test_ui.py` |
+| `tests/test_side_camera.py`의 옆면 사진 뒤집기 | numpy·OpenCV가 없을 때(`.[dev]`에 들어 있음) | `pip install -e ".[dev]"` |
+
+CI는 둘 다 깔고 돌립니다. 테스트 파일마다 맨 위 설명(docstring)에 무엇을 확인하는지, 테스트마다 `[상황]`·`[기대]`를 적어 두었습니다.
+
 ## CI
 
 | 워크플로 | 언제 | 하는 일 |

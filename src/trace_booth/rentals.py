@@ -37,6 +37,7 @@ class WaitingDevice:
 class RentalClient:
     def __init__(self, base_url: str, auth: BoothAuth, http: HttpCall = http_call) -> None:
         self._url = base_url.rstrip("/") + "/api/v1/rentals"
+        self._captures = base_url.rstrip("/") + "/api/v1/captures/rentals"
         self._auth = auth
         self._http = http
 
@@ -74,6 +75,18 @@ class RentalClient:
             str(item["rentalId"]), str(item["deviceId"]), str(item.get("serial") or ""),
             str(item.get("modelCode") or ""), str(item["checkpointId"]), str(item["checkpointType"]),
         )
+
+
+    def required_profile(self, rental_id: str, checkpoint_id: str) -> str | None:
+        """이 렌탈이 써야 하는 검사 방식(capture-server getRentalCaptureProfile, 11/13).
+
+        수령·반납은 출고와 같은 방식(FULL·QUICK)만 찍는다. 기준이 없으면(출고 전) None. 지금 시점은 서버가 기준에서 뺀다.
+        """
+        query = urllib.parse.urlencode({"checkpointId": checkpoint_id})
+        url = f"{self._captures}/{urllib.parse.quote(rental_id, safe='')}/profile?{query}"
+        data = authed_call(self._http, self._auth, "검사 방식", "GET", url, None, (200,)).json()
+        profile = data.get("profile")
+        return str(profile) if profile else None
 
 
 # 서버 오류 code → 부스 화면 문장

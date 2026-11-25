@@ -82,6 +82,16 @@ def _write_new(path: Path, data: bytes) -> None:
         os.fsync(f.fileno())
 
 
+def _same_step(shot: ShotRecord, step: Step) -> bool:
+    """사진이 이 단계의 것인지. 단계 번호만이 아니라 면·조명까지 맞춰 본다.
+
+    서버를 다시 켜 목록 순서가 바뀌어도(11/11 옆면 순서) 같은 번호의 다른 조명 사진을 이 단계 것으로 치지 않는다.
+    """
+    face = step.face.value if step.face else None
+    light = step.light.value if step.light else None
+    return shot.step_index == step.index and shot.face == face and shot.light == light
+
+
 class CaptureService:
     def __init__(
         self,
@@ -158,6 +168,10 @@ class CaptureService:
         with self._lock:
             # 학습은 같은 목록의 열린 세션만 이어 간다. 다른 목록으로 찍던 세션은 그대로 두고 새로 연다
             s = self.store.find_open_session(device_id, mode, shotlist)
+            if s is not None and not self._list_matches(s):
+                # 서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)은 닫고 처음부터 새로 찍는다
+                self.store.update_session(s.id, status="ABANDONED")
+                s = None
             if s is not None and mode != "TRAINING":
                 c = self.store.get_checkout(s.id)
                 if c is None or (c.rental_id, c.checkpoint_id) != (rental_id, checkpoint_id):
@@ -166,6 +180,7 @@ class CaptureService:
                 s = self.store.create_session(device_id, mode, self._now(), shotlist)
                 if mode != "TRAINING":
                     self.store.add_checkout(s.id, str(rental_id), str(checkpoint_id))
+            self._prepare(s.id)  # 이어 찍는 세션이 옆면 단계면 옆면을, 새 세션이면 위 카메라를 연다
             return s
 
     def _inspection_list(self, profile: str | None) -> str | None:
@@ -205,6 +220,7 @@ class CaptureService:
     def shoot(self, session_id: int) -> list[ShotRecord]:
         with self._lock:
             s = self.store.get_session(session_id)
+            self._check_list_unchanged(s)
             step = self._current(s)
             if not step.captures:
                 raise CaptureError("이 단계는 찍지 않는 안내 단계예요. '다음'을 누르세요")
@@ -221,10 +237,12 @@ class CaptureService:
             taken = self.store.shots(s.id)
             if not taken:
                 raise CaptureError("다시 찍을 사진이 없어요")
+            self._check_list_unchanged(s)
             steps = self.steps_for(s)
             if s.status == "IN_PROGRESS" and s.current_step < len(steps) and self._taken(s, steps[s.current_step]):
                 return self._capture(s, steps[s.current_step])
-            if taken[-1].step_index >= len(steps):
+            if taken[-1].step_index >= len(steps) or not _same_step(taken[-1], steps[taken[-1].step_index]):
+                # 서버를 다시 켜 목록 순서가 바뀌면(11/11 옆면 순서) 같은 번호가 다른 조명을 가리킨다
                 raise CaptureError("촬영 목록이 바뀌어 다시 찍을 수 없어요. 새 촬영을 시작하세요")
             if s.status == "IN_PROGRESS" and taken[-1].step_index > s.current_step:
                 # 이전 단계로 돌아온 뒤 뒤쪽 단계를 지금 조명으로 다시 찍으면 사진이 엉뚱한 이름으로 남는다
@@ -244,6 +262,7 @@ class CaptureService:
             if step.captures and not self._taken(s, step):
                 raise CaptureError("이 단계를 아직 안 찍었어요. 촬영을 누르세요")
             self.store.update_session(s.id, current_step=s.current_step + 1)
+            self._prepare(s.id)
 
     def back(self, session_id: int, expected_step: int | None = None) -> list[ShotRecord]:
         """이전 단계로 돌아간다. 돌아간 단계에서 마지막으로 찍은 사진들을 돌려준다(화면에 다시 보이게).
@@ -263,16 +282,33 @@ class CaptureService:
                 raise CaptureError("첫 단계예요. 더 돌아갈 단계가 없어요")
             prev = min(s.current_step, len(steps)) - 1
             self.store.update_session(s.id, current_step=prev)
+            self._prepare(s.id)
             latest: dict[str, ShotRecord] = {}
             for sh in self.store.shots(s.id):
-                if sh.step_index == prev:
+                if _same_step(sh, steps[prev]):
                     latest[sh.camera] = sh  # 찍은 차례대로라 마지막 것이 남는다
             return list(latest.values())
+
+    def _check_list_unchanged(self, s: SessionRecord) -> None:
+        """찍은 사진이 지금 목록의 같은 번호 단계와 면·조명이 다르면 이 세션을 닫고 멈춘다.
+
+        서버를 다시 켜 목록 순서가 바뀐 세션(11/11 옆면 순서)에서 화면 안내와 실제 조명이 어긋난 채 찍히는 것을 막는다.
+        세션을 ABANDONED로 닫아 두므로 같은 기기를 다시 고르면 새 세션으로 처음부터 찍는다.
+        """
+        if not self._list_matches(s):
+            if s.status == "IN_PROGRESS":
+                self.store.update_session(s.id, status="ABANDONED")
+            raise CaptureError("촬영 목록이 바뀌어 이 촬영을 닫았어요. 처음 화면에서 기기를 다시 골라 처음부터 찍어 주세요")
+
+    def _list_matches(self, s: SessionRecord) -> bool:
+        """이 세션의 사진이 모두 지금 목록의 같은 번호 단계와 면·조명이 맞는지."""
+        steps = self.steps_for(s)
+        return all(sh.step_index < len(steps) and _same_step(sh, steps[sh.step_index]) for sh in self.store.shots(s.id))
 
     def _taken(self, s: SessionRecord, step: Step) -> bool:
         if not step.captures:
             return False
-        have = {sh.camera for sh in self.store.shots(s.id) if sh.step_index == step.index}
+        have = {sh.camera for sh in self.store.shots(s.id) if _same_step(sh, step)}
         return all(cam.value in have for cam in step.cameras)
 
     def skip_optional(self, session_id: int, reason: str) -> None:
@@ -289,13 +325,13 @@ class CaptureService:
 
     def missing(self, session_id: int) -> list[str]:
         s = self.store.get_session(session_id)
-        have = {(sh.step_index, sh.camera) for sh in self.store.shots(session_id)}
+        shots = self.store.shots(session_id)
         out = []
         for step in self.steps_for(s):
             if step.kind is not StepKind.SHOT:
                 continue
             for cam in step.cameras:
-                if (step.index, cam.value) in have:
+                if any(sh.camera == cam.value and _same_step(sh, step) for sh in shots):
                     continue
                 if step.optional and s.scr1_skip_reason:
                     continue
@@ -304,6 +340,7 @@ class CaptureService:
 
     def complete(self, session_id: int) -> SessionRecord:
         with self._lock:
+            self._check_list_unchanged(self.store.get_session(session_id))
             missing = self.missing(session_id)
             if missing:
                 raise Incomplete(missing)
@@ -325,16 +362,37 @@ class CaptureService:
             futures = [pool.submit(d.capture, settings) for d in devices]
             return [f.result() for f in futures]  # 실패는 카메라 순서대로 처음 것을 올린다
 
+    @staticmethod
+    def _list_key(s: SessionRecord, step: Step) -> str:
+        if s.mode == "TRAINING":
+            return s.shotlist or ""
+        if s.mode == "QUICK" and s.shotlist and step.face in SIDE_FACES:
+            return "side"  # 전체 검사의 옆면은 옆면 카메라가 있으면 그것으로(없으면 CAM1을 내려서)
+        return ""
+
+    def _prepare(self, session_id: int) -> None:
+        """다음에 찍을 단계의 카메라를 미리 연다(11/12 위·옆면 카메라 번갈아 열기).
+
+        안내 단계(노트북을 옆면 카메라 앞에 세우기)에서 옆면 실시간 화면이 바로 보이고, 첫 옆면 촬영이
+        카메라를 바꾸느라 기다리지 않게 한다. 바꾸기는 몇 초 걸리므로 뒤에서 한다.
+        """
+        s = self.store.get_session(session_id)
+        steps = self.steps_for(s)
+        step = next((st for st in steps[s.current_step:] if st.captures), None)
+        if s.status != "IN_PROGRESS" or step is None:
+            return
+        swap = self.list_cameras.get(self._list_key(s, step), {})
+        for cam in step.cameras:
+            hook = getattr(swap.get(cam, self.cameras.get(cam)), "before_use", None)
+            if hook is not None:
+                threading.Thread(target=hook, name="cam-prepare", daemon=True).start()
+                return  # 한 묶음은 한 번만 바꾸면 된다
+
     def _capture(self, s: SessionRecord, step: Step) -> list[ShotRecord]:
         if shutil.disk_usage(self.data_dir).free < self._min_free:
             raise DiskFull("디스크 공간이 부족해요. 찍지 않았어요")
         light = step.light or Light.L1
-        if s.mode == "TRAINING":
-            key = s.shotlist or ""
-        elif s.mode == "QUICK" and s.shotlist and step.face in SIDE_FACES:
-            key = "side"  # 전체 검사의 옆면은 옆면 카메라가 있으면 그것으로(없으면 CAM1을 내려서)
-        else:
-            key = ""
+        key = self._list_key(s, step)
         swap = self.list_cameras.get(key, {})
         presets = self.list_presets.get(key, self.presets) if swap else self.presets
         settings = presets.for_light(light)
